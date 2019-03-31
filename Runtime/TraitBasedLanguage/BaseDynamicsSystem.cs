@@ -1,5 +1,6 @@
 ﻿using System;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.Collections;
 using Unity.Entities;
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
@@ -9,6 +10,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     ///
     /// See also: <seealso cref="Unity.AI.Planner.DomainLanguage.TraitBased.BaseAction{T}"/>
     /// </summary>
+    [UpdateInGroup(typeof(PlannerSystemGroup))]
     [UpdateAfter(typeof(ActionSystemGroup))]
     [DisableAutoCreation]
     public abstract class BaseDynamicsSystem : ComponentSystem
@@ -27,8 +29,8 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <inheritdoc/>
         protected override void OnUpdate()
         {
-            var createdStateEntities = m_CreatedStateInfo.GetEntityArray();
-            var createdStateInfos = m_CreatedStateInfo.GetComponentDataArray<CreatedStateInfo>();
+            var createdStateEntities = m_CreatedStateInfo.ToEntityArray(Allocator.TempJob);
+            var createdStateInfos = m_CreatedStateInfo.ToComponentDataArray<CreatedStateInfo>(Allocator.TempJob);
             for (var i = 0; i < createdStateEntities.Length; i++)
             {
                 var parentStateEntity = createdStateInfos[i].ParentStateEntity;
@@ -36,6 +38,8 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
 
                 OnStateUpdate(parentStateEntity, createdStateEntity);
             }
+            createdStateInfos.Dispose();
+            createdStateEntities.Dispose();
         }
 
         /// <summary>

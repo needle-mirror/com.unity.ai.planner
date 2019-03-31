@@ -1,10 +1,9 @@
 {
     "name": "Unity.AI.Planner.Editor.Tests",
     "references": [
-        "Unity.Entities",
-        "Unity.Properties",
         "Unity.AI.Planner",
-        "Unity.AI.Planner.Editor"
+        "Unity.AI.Planner.Editor",
+        "Unity.Entities"
     ],
     "optionalUnityReferences": [
         "TestAssemblies"

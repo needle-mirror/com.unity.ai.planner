@@ -6,7 +6,7 @@ using Unity.Entities;
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
-    class ActionSystemGroup { }
+    class ActionSystemGroup : ComponentSystemGroup {}
 
     interface IActionSystem
     {
@@ -188,8 +188,8 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// </summary>
         protected override void OnUpdate()
         {
-            var expansionNodes = m_ExpansionList.GetComponentDataArray<PolicyGraphNode>();
-            var pgnEntities = m_ExpansionList.GetEntityArray();
+            var expansionNodes = m_ExpansionList.ToComponentDataArray<PolicyGraphNode>(Allocator.TempJob);
+            var pgnEntities = m_ExpansionList.ToEntityArray(Allocator.TempJob);
             for (var i = 0; i < expansionNodes.Length; i++) // Can process states in parallel
             {
                 var node = expansionNodes[i];
@@ -205,9 +205,13 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
                     ApplyEffects(m_ArgumentPermutations[p], policyGraphNodeEntity, stateEntity, horizon);
                 }
 
-                expansionNodes = m_ExpansionList.GetComponentDataArray<PolicyGraphNode>();
-                pgnEntities = m_ExpansionList.GetEntityArray();
+                expansionNodes.Dispose();
+                expansionNodes = m_ExpansionList.ToComponentDataArray<PolicyGraphNode>(Allocator.TempJob);
+                pgnEntities.Dispose();
+                pgnEntities = m_ExpansionList.ToEntityArray(Allocator.TempJob);
             }
+            pgnEntities.Dispose();
+            expansionNodes.Dispose();
         }
 
         /// <summary>

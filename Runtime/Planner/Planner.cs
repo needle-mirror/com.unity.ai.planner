@@ -372,10 +372,12 @@ namespace Unity.AI.Planner
         }
     }
 
+    class PlannerSystemGroup : ComponentSystemGroup { }
+
     /// <summary>
     /// A system which governs the exploration of a planning domain state space by extending a policy graph
     /// </summary>
-    [UpdateAfter(typeof(EntityManager))]
+    [UpdateInGroup(typeof(PlannerSystemGroup))]
     [UpdateBefore(typeof(ActionSystemGroup))]
     [DisableAutoCreation]
     public sealed class PlannerSystem : ComponentSystem
@@ -394,6 +396,13 @@ namespace Unity.AI.Planner
         /// <returns>Returns the initialized PlannerSystem</returns>
         public static PlannerSystem Initialize(World world)
         {
+            var plannerSystemGroup = world.GetOrCreateManager<PlannerSystemGroup>();
+            var actionSystemGroup = world.GetOrCreateManager<ActionSystemGroup>();
+            plannerSystemGroup.AddSystemToUpdateList(actionSystemGroup);
+
+            var plannerSystem = world.GetOrCreateManager<PlannerSystem>();
+            plannerSystemGroup.AddSystemToUpdateList(plannerSystem);
+
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 IEnumerable<Type> allTypes;
@@ -411,7 +420,10 @@ namespace Unity.AI.Planner
                 CreateBehaviourManagersForMatchingTypes(false, allTypes, world);
             }
 
-            var plannerSystem = world.GetOrCreateManager<PlannerSystem>();
+            var simulationSystemGroup = world.GetOrCreateManager<SimulationSystemGroup>();
+            simulationSystemGroup.AddSystemToUpdateList(plannerSystemGroup);
+            simulationSystemGroup.SortSystemUpdateList();
+
             return plannerSystem;
         }
 
@@ -434,6 +446,7 @@ namespace Unity.AI.Planner
 
             if (policyNodeInfo.Complete)  // Completed root; no need to expand.
                 return;
+
 
             var actionReferenceBuffer = EntityManager.GetBuffer<ActionNodeReference>(policyNodeEntity);
             while (actionReferenceBuffer.Length > 0)
@@ -533,31 +546,66 @@ namespace Unity.AI.Planner
                 && !t.ContainsGenericParameters
                 && !string.IsNullOrEmpty(t.Namespace) && t.Namespace.StartsWith(world.Name));
 
+            var simulationSystemGroup = world.GetOrCreateManager<SimulationSystemGroup>();
             foreach (var type in systemTypes)
             {
                 if (editorWorld && type.GetCustomAttributes(typeof(ExecuteInEditMode), true).Length == 0)
                     continue;
 
-                GetBehaviourManagerAndLogException(world, type);
+                var groups = type.GetCustomAttributes(typeof(UpdateInGroupAttribute), true);
+                if (groups.Length == 0)
+                {
+                    simulationSystemGroup.AddSystemToUpdateList(GetOrCreateManagerAndLogException(world, type) as ComponentSystemBase);
+                }
+
+                foreach (var g in groups)
+                {
+                    var group = g as UpdateInGroupAttribute;
+                    if (group == null)
+                        continue;
+
+                    if (!(typeof(ComponentSystemGroup)).IsAssignableFrom(group.GroupType))
+                    {
+                        Debug.LogError($"Invalid [UpdateInGroup] attribute for {type}: {group.GroupType} must be derived from ComponentSystemGroup.");
+                        continue;
+                    }
+
+                    var groupMgr = GetOrCreateManagerAndLogException(world, group.GroupType);
+                    if (groupMgr == null)
+                    {
+                        Debug.LogWarning(
+                            $"Skipping creation of {type} due to errors creating the group {group.GroupType}. Fix these errors before continuing.");
+                        continue;
+                    }
+
+                    if (groupMgr is ComponentSystemGroup systemGroup)
+                    {
+                        systemGroup.AddSystemToUpdateList(GetOrCreateManagerAndLogException(world, type) as ComponentSystemBase);
+                    }
+                }
+
             }
         }
 
-        static void GetBehaviourManagerAndLogException(World world, Type type)
+        static ScriptBehaviourManager GetOrCreateManagerAndLogException(World world, Type type)
         {
             try
             {
-                world.GetOrCreateManager(type);
+                return world.GetOrCreateManager(type);
             }
             catch (Exception e)
             {
                 Debug.LogException(e);
             }
+
+            return null;
         }
     }
 
     /// <summary>
     /// A system which extends a policy graph given newly explored actions and newly reached states
     /// </summary>
+    [UpdateInGroup(typeof(PlannerSystemGroup))]
     [UpdateAfter(typeof(ActionSystemGroup))]
     [DisableAutoCreation]
     public abstract class PolicyGraphUpdateSystem : ComponentSystem
@@ -653,33 +701,37 @@ namespace Unity.AI.Planner
         internal void DestroyState(Entity stateEntity, bool immediate = false)
         {
             var domainObjectBuffer = EntityManager.GetBuffer<DomainObjectReference>(stateEntity);
-            var domainObjectReferences = new NativeArray<DomainObjectReference>(domainObjectBuffer.AsNativeArray(), Allocator.Temp);
-
-            for (var i = 0; i < domainObjectReferences.Length; i++)
-            {
-                var domainObjectEntity = domainObjectReferences[i].DomainObjectEntity;
-                if (immediate)
-                    EntityManager.DestroyEntity(domainObjectEntity);
-                else
-                    PostUpdateCommands.DestroyEntity(domainObjectEntity);
-            }
 
             if (immediate)
-                EntityManager.DestroyEntity(stateEntity);
+            {
+                var objectArray = new NativeArray<Entity>(domainObjectBuffer.Length + 1, Allocator.TempJob);
+                for (var i = 0; i < domainObjectBuffer.Length; i++)
+                {
+                    objectArray[i] = domainObjectBuffer[i].DomainObjectEntity;
+                }
+                objectArray[objectArray.Length-1] = stateEntity;
+                EntityManager.DestroyEntity(objectArray);
+                objectArray.Dispose();
+            }
             else
+            {
+                for (var i = 0; i < domainObjectBuffer.Length; i++)
+                {
+                   PostUpdateCommands.DestroyEntity(domainObjectBuffer[i].DomainObjectEntity);
+                }
                 PostUpdateCommands.DestroyEntity(stateEntity);
-
-            domainObjectReferences.Dispose();
+            }
         }
 
         /// <inheritdoc />
         protected override void OnUpdate()
         {
-            var entities = m_ExpansionList.GetEntityArray();
+            var entities = m_ExpansionList.ToEntityArray(Allocator.TempJob);
             for (var i = 0; i < entities.Length; i++)
             {
                 PostUpdateCommands.RemoveComponent<Selected>(entities[i]);
             }
+            entities.Dispose();
 
             try
             {
@@ -692,11 +744,12 @@ namespace Unity.AI.Planner
             finally
             {
                 // Remove all entities that we've just processed
-                entities = m_CreatedStateInfo.GetEntityArray();
+                entities = m_CreatedStateInfo.ToEntityArray(Allocator.TempJob);
                 for (var i = 0; i < entities.Length; i++)
                 {
                     PostUpdateCommands.RemoveComponent<CreatedStateInfo>(entities[i]);
                 }
+                entities.Dispose();
             }
         }
 
@@ -771,25 +824,19 @@ namespace Unity.AI.Planner
         {
             m_PolicyGraphNodesToUpdate.Clear();
 
-            var createdStateInfos = m_CreatedStateInfo.GetComponentDataArray<CreatedStateInfo>();
-            var createdStateHashCodes = m_CreatedStateInfo.GetComponentDataArray<HashCode>();
-            var createdStateEntities = m_CreatedStateInfo.GetEntityArray();
-
-            // Hash each of the new states.
-            for (var i = 0; i < createdStateEntities.Length; i++)
-            {
-                createdStateHashCodes[i] = HashState(createdStateEntities[i]);
-            }
+            var createdStateInfos = m_CreatedStateInfo.ToComponentDataArray<CreatedStateInfo>(Allocator.TempJob);
+            var createdStateEntities = m_CreatedStateInfo.ToEntityArray(Allocator.TempJob);
 
             while (createdStateEntities.Length > 0)
             {
                 var createdStateEntity = createdStateEntities[0];
                 var createdStateInfo = createdStateInfos[0];
                 var horizon = createdStateInfo.StateHorizon;
-                var stateHash = createdStateHashCodes[0];
-                Entity policyGraphNodeEntity;
+                var stateHash = HashState(createdStateEntity);
+                EntityManager.SetComponentData(createdStateEntity, stateHash);
                 var stateHorizonKey = new StateHorizonKey { Horizon = horizon, StateHash = stateHash };
 
+                Entity policyGraphNodeEntity;
                 if (LookupState(stateHash, createdStateEntity, out var matchedStateEntity))
                 {
                     // Remove created state (duplicate of existing state)
@@ -872,10 +919,13 @@ namespace Unity.AI.Planner
 
                 // Because the arrays are changing underneath, it's necessary to remove components as we process this list
                 EntityManager.RemoveComponent<CreatedStateInfo>(createdStateEntity);
-                createdStateEntities = m_CreatedStateInfo.GetEntityArray();
-                createdStateHashCodes = m_CreatedStateInfo.GetComponentDataArray<HashCode>();
-                createdStateInfos = m_CreatedStateInfo.GetComponentDataArray<CreatedStateInfo>();
+                createdStateEntities.Dispose();
+                createdStateEntities = m_CreatedStateInfo.ToEntityArray(Allocator.TempJob);
+                createdStateInfos.Dispose();
+                createdStateInfos = m_CreatedStateInfo.ToComponentDataArray<CreatedStateInfo>(Allocator.TempJob);
             }
+            createdStateInfos.Dispose();
+            createdStateEntities.Dispose();
 
             Backup();
         }

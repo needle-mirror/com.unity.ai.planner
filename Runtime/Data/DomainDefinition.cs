@@ -77,7 +77,6 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         [SerializeField]
         UnityObject m_ObjectValue;
 
-
         public object GetValue(Type fieldType)
         {
             if (fieldType == typeof(Bool))
@@ -302,12 +301,6 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             }
         }
 
-        class TypeContainer
-        {
-            public string Version;
-            public List<TraitDefinition> Types = new List<TraitDefinition>();
-        }
-
         void GenerateEnum(EnumDefinition enumDefinition)
         {
             if (enumDefinition == null)
@@ -336,51 +329,11 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             if (traitDefinition == null || !traitDefinition.Dynamic)
                 return;
 
-            // Use a surrogate class to allow easy transfer to Schema
-            var typeContainer = new TypeContainer {Version = "1"};
-            typeContainer.Types.Add(traitDefinition);
-            var json = JsonUtility.ToJson(typeContainer, true);
 
-            json = json.Replace("m_", string.Empty).Replace("Fields", "Properties")
-                .Replace("UnityEngine.Transform,UnityEngine", "int") // Use instance IDs for blittable structs
-                .Replace(@"""Type"":", @"""ValueType"":");
-
-            // NOTE: We can write out a .properties file, which should actually be a json deserialized version
-            // of Schema, which is not exactly what we are saving out; Then, you can generate a .cs file from that
-//            var path = $"Assets/Generated/AI/{traitDefinition.Name}.properties";
-//            Directory.CreateDirectory(Path.GetDirectoryName(path));
-//            File.WriteAllText(path, json);
-//            AssetDatabase.ImportAsset(path);
-
-            // Deserialize to a generic object tree
-            var obj = JsonSerializer.Deserialize(json);
-
-            // Unpack the fully migrated object to the current schema version
-            var schema = new Schema();
-            PropertyContainer.Transfer(obj, schema);
-            schema.UsingAssemblies.Add("Unity.AI.Planner");
-
-            foreach (var typeNode in schema.Types)
-            {
-                typeNode.Namespace = name;
-                typeNode.IsStruct = true;
-
-                foreach (var property in typeNode.Properties)
-                {
-                    property.IncludeBackingField = false;
-
-                    if (property.ValueType == typeof(DomainObjectID).FullName)
-                        property.PropertyType = PropertyType.StructValue;
-                }
-            }
-
-            var builder = new CSharpSchemaBuilder();
             var path = $"{GeneratedClassDirectory}{traitDefinition.Name}.cs";
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            builder.Build(path, schema);
 
             var className = traitDefinition.Name;
-            path = $"{GeneratedClassDirectory}{className}.Extra.cs";
             var cw = new CodeWriter();
             cw.Line("using System;");
             cw.Line("using Unity.AI.Planner;");
@@ -393,17 +346,12 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 cw.Line("[Serializable]");
                 using (cw.Scope($"public partial struct {className} : ITrait<{className}>, IEquatable<{className}>"))
                 {
-                    // TODO: Go back to public properties once the entity debugger/inspector and StructObjectProxy are working correctly
-                    foreach (var typeNode in schema.Types)
+                    foreach (var field in traitDefinition.Fields)
                     {
-                        foreach (var property in typeNode.Properties)
-                        {
-                            cw.Line($"public {property.ValueType} m_{property.Name};");
-                        }
+                        cw.Line($"public {field.Type} {field.Name};");
                     }
                     cw.Line();
 
-//                    cw.Line($"~{className}() {{ ObjectPool.Release(this); }}");
                     using (cw.Scope($"public bool Equals({className} other)"))
                     {
                         var firstFieldWritten = false;
@@ -413,7 +361,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                             if (!firstFieldWritten)
                             {
                                 cw.WriteIndent();
-                                cw.Write($"return m_{fieldName} == other.m_{fieldName}");
+                                cw.Write($"return {fieldName} == other.{fieldName}");
                                 cw.IncrementIndent();
                                 firstFieldWritten = true;
                             }
@@ -421,7 +369,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                             {
                                 cw.Line();
                                 cw.WriteIndent();
-                                cw.Write($"&& m_{fieldName} == other.m_{fieldName}");
+                                cw.Write($"&& {fieldName} == other.{fieldName}");
                             }
                         }
 
@@ -452,14 +400,14 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                                 cw.Line("return 397");
                                 cw.IncrementIndent();
                                 cw.WriteIndent();
-                                cw.Write($"^ m_{fieldName}.GetHashCode()");
+                                cw.Write($"^ {fieldName}.GetHashCode()");
                                 firstFieldWritten = true;
                             }
                             else
                             {
                                 cw.Line();
                                 cw.WriteIndent();
-                                cw.Write($"^ m_{fieldName}.GetHashCode()");
+                                cw.Write($"^ {fieldName}.GetHashCode()");
                             }
                         }
 
@@ -479,6 +427,31 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                     cw.Line();
 
                     cw.Line("public object Clone() { return MemberwiseClone(); }");
+                    cw.Line();
+
+                    using (cw.Scope("public void SetField(string fieldName, object value)"))
+                    {
+                        if (traitDefinition.Fields.Any())
+                        {
+                            using (cw.Scope("switch (fieldName)"))
+                            {
+                                foreach (var field in traitDefinition.Fields)
+                                {
+                                    var fieldName = field.Name;
+                                    var fieldType = field.Type;
+                                    cw.Line($"case nameof({fieldName}):");
+                                    cw.IncrementIndent();
+                                    if (EnumDefinitions.Any(ed => ed.Name == fieldType))
+                                        cw.Line($"{fieldName} = ({fieldType})Enum.ToObject(typeof({fieldType}), value);");
+                                    else
+                                        cw.Line($"{fieldName} = ({field.Type})value;");
+                                    cw.Line("break;");
+                                    cw.DecrementIndent();
+                                }
+                            }
+                        }
+                    }
+                    cw.Line();
 
                     using (cw.Scope("public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)"))
                     {
@@ -528,9 +501,15 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                         {
                             var traitType = GetType(trait.Name);
                             var traitMaskField = traitType.GetField("TraitMask",
-                                BindingFlags.Public | BindingFlags.Static);
-                            var traitMask = traitMaskField.GetValue(null);
-                            cw.Line($"{trait.Name} = {traitMask},");
+                                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+                            if (traitMaskField is null)
+                            {
+                                Debug.LogError($"Custom trait, {traitType}, does not contain field TraitMask.");
+                                return;
+                            }
+
+                            cw.Line($"{trait.Name} = {traitMaskField.GetValue(null)},");
                         }
                     }
                 }
@@ -591,7 +570,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 
                         foreach (var trait in TraitDefinitions)
                         {
-                            cw.Line($"{trait.Name}Trait = ComponentType.Create<{trait.Name}>();");
+                            cw.Line($"{trait.Name}Trait = ComponentType.ReadWrite<{trait.Name}>();");
                         }
                         cw.Line();
 
@@ -650,50 +629,64 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                     {
                         cw.Line("m_EntityListLHS.Clear();");
                         cw.Line("m_EntityListRHS.Clear();");
-                        cw.Line("");
+                        cw.Line();
+
                         cw.Line("// Easy check is to make sure each state has the same number of domain objects");
                         cw.Line("var lhsObjectBuffer = EntityManager.GetBuffer<DomainObjectReference>(lhsStateEntity);");
                         cw.Line("var rhsObjectBuffer = EntityManager.GetBuffer<DomainObjectReference>(rhsStateEntity);");
-                        cw.Line("if (lhsObjectBuffer.Length != rhsObjectBuffer.Length)");
-                        cw.Line("    return false;");
-                        cw.Line("");
-                        cw.Line("for (var i = 0; i < lhsObjectBuffer.Length; i++)");
-                        cw.Line("{");
-                        cw.Line("    m_EntityListLHS.Add(lhsObjectBuffer[i].DomainObjectEntity);");
-                        cw.Line("    m_EntityListRHS.Add(rhsObjectBuffer[i].DomainObjectEntity);");
-                        cw.Line("}");
-                        cw.Line("");
+
+                        using (cw.Scope("if (lhsObjectBuffer.Length != rhsObjectBuffer.Length)"))
+                        {
+                            cw.Line("return false;");
+                        }
+                        cw.Line();
+
+                        using (cw.Scope("for (var i = 0; i < lhsObjectBuffer.Length; i++)"))
+                        {
+                            cw.Line("m_EntityListLHS.Add(lhsObjectBuffer[i].DomainObjectEntity);");
+                            cw.Line("m_EntityListRHS.Add(rhsObjectBuffer[i].DomainObjectEntity);");
+                        }
+                        cw.Line();
+
                         cw.Line("// Next, check that each object has at least one match (by hash/checksum/trait mask)");
                         cw.Line("var entityHashCodes = GetComponentDataFromEntity<HashCode>();");
                         cw.Line("var lhsHashCode = entityHashCodes[lhsStateEntity];");
                         cw.Line("var rhsHashCode = entityHashCodes[rhsStateEntity];");
-                        cw.Line("if (lhsHashCode != rhsHashCode)");
-                        cw.Line("    return false;");
-                        cw.Line("");
-                        cw.Line("for (var index = 0; index < m_EntityListLHS.Count; index++)");
-                        cw.Line("{");
-                        cw.Line("    var entityLHS = m_EntityListLHS[index];");
-                        cw.Line("");
-                        cw.Line("    // Check for any objects with matching hash code.");
-                        cw.Line("    var hashLHS = entityHashCodes[entityLHS];");
-                        cw.Line("    var foundMatch = false;");
-                        cw.Line("    for (var rhsIndex = 0; rhsIndex < m_EntityListRHS.Count; rhsIndex++)");
-                        cw.Line("    {");
-                        cw.Line("        var entityRHS = m_EntityListRHS[rhsIndex];");
-                        cw.Line("        if (hashLHS == entityHashCodes[entityRHS])");
-                        cw.Line("        {");
-                        cw.Line("            foundMatch = true;");
-                        cw.Line("            break;");
-                        cw.Line("        }");
-                        cw.Line("    }");
-                        cw.Line("");
-                        cw.Line("    // No matching object found.");
-                        cw.Line("    if (!foundMatch)");
-                        cw.Line("        return false;");
-                        cw.Line("}");
-                        cw.Line("");
-                        cw.Line("// todo do not need to grab zero-sized components");
 
+                        using (cw.Scope("if (lhsHashCode != rhsHashCode)"))
+                        {
+                            cw.Line("return false;");
+                        }
+                        cw.Line();
+
+                        using (cw.Scope("for (var index = 0; index < m_EntityListLHS.Count; index++)"))
+                        {
+                            cw.Line("var entityLHS = m_EntityListLHS[index];");
+                            cw.Line();
+                            cw.Line("// Check for any objects with matching hash code.");
+                            cw.Line("var hashLHS = entityHashCodes[entityLHS];");
+                            cw.Line("var foundMatch = false;");
+                            using (cw.Scope("for (var rhsIndex = 0; rhsIndex < m_EntityListRHS.Count; rhsIndex++)"))
+                            {
+                                cw.Line("var entityRHS = m_EntityListRHS[rhsIndex];");
+
+                                using (cw.Scope("if (hashLHS == entityHashCodes[entityRHS])"))
+                                {
+                                    cw.Line("foundMatch = true;");
+                                    cw.Line("break;");
+                                }
+                            }
+                            cw.Line();
+
+                            cw.Line("// No matching object found.");
+                            using (cw.Scope("if (!foundMatch)"))
+                            {
+                                cw.Line("return false;");
+                            }
+                        }
+                        cw.Line();
+
+                        // todo do not need to grab zero-sized components
                         // GetComponentDataFromEntity for each trait
                         // Ex: var Locations = GetComponentDataFromEntity<Location>(true);
                         foreach (var trait in TraitDefinitions)
@@ -702,73 +695,78 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                         }
                         cw.Line();
 
-
-                        cw.Line("");
-                        cw.Line("while (m_EntityListLHS.Count > 0)");
-                        cw.Line("{");
-                        cw.Line("    var entityLHS = m_EntityListLHS[0];");
-                        cw.Line("");
-                        cw.Line("    // Check for any objects with matching hash code.");
-                        cw.Line("    var hashLHS = entityHashCodes[entityLHS];");
-                        cw.Line("    var firstMatchIndex = -1;");
-                        cw.Line("    for (var rhsIndex = 0; rhsIndex < m_EntityListRHS.Count; rhsIndex++)");
-                        cw.Line("    {");
-                        cw.Line("        var entityRHS = m_EntityListRHS[rhsIndex];");
-                        cw.Line("        if (hashLHS == entityHashCodes[entityRHS])");
-                        cw.Line("        {");
-                        cw.Line("            firstMatchIndex = rhsIndex;");
-                        cw.Line("            break;");
-                        cw.Line("        }");
-                        cw.Line("    }");
-                        cw.Line("");
-                        cw.Line("    var traitMask = (TraitMask)hashLHS.TraitMask;");
-                        cw.Line("");
-
-                        // hasTrait checks
-                        // Ex: var hasLocation = (traitMask & TraitMask.Location) != 0;
-                        cw.IncrementIndent();
-                        foreach (var trait in TraitDefinitions)
+                        using (cw.Scope("while (m_EntityListLHS.Count > 0)"))
                         {
-                            cw.Line($"var has{trait.Name} = (traitMask & TraitMask.{trait.Name}) != 0;");
+                            cw.Line("var entityLHS = m_EntityListLHS[0];");
+                            cw.Line();
+                            cw.Line("// Check for any objects with matching hash code.");
+                            cw.Line("var hashLHS = entityHashCodes[entityLHS];");
+                            cw.Line("var firstMatchIndex = -1;");
+                            using (cw.Scope("for (var rhsIndex = 0; rhsIndex < m_EntityListRHS.Count; rhsIndex++)"))
+                            {
+                                cw.Line("var entityRHS = m_EntityListRHS[rhsIndex];");
+                                using (cw.Scope("if (hashLHS == entityHashCodes[entityRHS])"))
+                                {
+                                    cw.Line("firstMatchIndex = rhsIndex;");
+                                    cw.Line("break;");
+                                }
+                            }
+
+                            using (cw.Scope("if (firstMatchIndex == -1)"))
+                            {
+                                cw.Line("return false;");
+                            }
+                            cw.Line();
+
+                            cw.Line("var traitMask = (TraitMask)hashLHS.TraitMask;");
+                            cw.Line();
+
+                            // hasTrait checks
+                            // Ex: var hasLocation = (traitMask & TraitMask.Location) != 0;
+                            foreach (var trait in TraitDefinitions)
+                            {
+                                cw.Line($"var has{trait.Name} = (traitMask & TraitMask.{trait.Name}) != 0;");
+                            }
+
+                            cw.Line();
+                            cw.Line("var foundMatch = false;");
+                            using (cw.Scope(
+                                "for (var rhsIndex = firstMatchIndex; rhsIndex < m_EntityListRHS.Count; rhsIndex++)"))
+                            {
+                                cw.Line("var entityRHS = m_EntityListRHS[rhsIndex];");
+                                using (cw.Scope("if (hashLHS != entityHashCodes[entityRHS])"))
+                                {
+                                    cw.Line("continue;");
+                                }
+                                cw.Line();
+
+                                // Equality checks per trait.
+                                // Ex: if (hasLocation && !zeroSizedLocation && !Locations[entityLHS].Equals(Locations[entityRHS]))
+                                //         continue;
+                                foreach (var trait in TraitDefinitions)
+                                {
+                                    using (cw.Scope(
+                                        $"if (has{trait.Name} && !zeroSized{trait.Name} && !{trait.Name}s[entityLHS].Equals({trait.Name}s[entityRHS]))")
+                                    )
+                                    {
+                                        cw.Line("continue;");
+                                    }
+                                }
+                                cw.Line();
+
+                                cw.Line("m_EntityListLHS.RemoveAt(0);");
+                                cw.Line("m_EntityListRHS.RemoveAt(rhsIndex);");
+                                cw.Line("foundMatch = true;");
+                                cw.Line("break;");
+                            }
+
+                            cw.Line();
+                            using (cw.Scope("if (!foundMatch)"))
+                            {
+                                cw.Line("return false;");
+                            }
                         }
-                        cw.Line();
-                        cw.DecrementIndent();
 
-
-                        cw.Line("");
-                        cw.Line("    var foundMatch = false;");
-                        cw.Line("    for (var rhsIndex = firstMatchIndex; rhsIndex < m_EntityListRHS.Count; rhsIndex++)");
-                        cw.Line("    {");
-                        cw.Line("        var entityRHS = m_EntityListRHS[rhsIndex];");
-                        cw.Line("        if (hashLHS != entityHashCodes[entityRHS])");
-                        cw.Line("            continue;");
-                        cw.Line("");
-
-                        // Equality checks per trait.
-                        // Ex: if (hasLocation && !zeroSizedLocation && !Locations[entityLHS].Equals(Locations[entityRHS]))
-                        //         continue;
-                        cw.IncrementIndent();
-                        cw.IncrementIndent();
-                        foreach (var trait in TraitDefinitions)
-                        {
-                            cw.Line($"if (has{trait.Name} && !zeroSized{trait.Name} && !{trait.Name}s[entityLHS].Equals({trait.Name}s[entityRHS]))");
-                            cw.Line("    continue;");
-                        }
-                        cw.Line();
-                        cw.DecrementIndent();
-                        cw.DecrementIndent();
-
-
-                        cw.Line("");
-                        cw.Line("        m_EntityListLHS.RemoveAt(0);");
-                        cw.Line("        m_EntityListRHS.RemoveAt(rhsIndex);");
-                        cw.Line("        foundMatch = true;");
-                        cw.Line("        break;");
-                        cw.Line("    }");
-                        cw.Line("");
-                        cw.Line("    if (!foundMatch)");
-                        cw.Line("        return false;");
-                        cw.Line("}");
                         cw.Line("return true;");
                     }
                 }

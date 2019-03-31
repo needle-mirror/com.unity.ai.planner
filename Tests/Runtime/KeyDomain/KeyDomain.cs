@@ -89,12 +89,12 @@ namespace Unity.AI.Planner.Tests
         {
             base.OnCreateManager();
 
-            EndTrait = ComponentType.Create<EndTrait>();
-            ColorTrait = ComponentType.Create<ColorTrait>();
-            CarrierTrait = ComponentType.Create<CarrierTrait>();
-            CarriableTrait = ComponentType.Create<CarriableTrait>();
-            LocalizedTrait = ComponentType.Create<LocalizedTrait>();
-            LockableTrait = ComponentType.Create<LockableTrait>();
+            EndTrait = ComponentType.ReadWrite<EndTrait>();
+            ColorTrait = ComponentType.ReadWrite<ColorTrait>();
+            CarrierTrait = ComponentType.ReadWrite<CarrierTrait>();
+            CarriableTrait = ComponentType.ReadWrite<CarriableTrait>();
+            LocalizedTrait = ComponentType.ReadWrite<LocalizedTrait>();
+            LockableTrait = ComponentType.ReadWrite<LockableTrait>();
         }
 
         protected override bool IsTerminal(Entity stateEntity) => EntityManager.HasComponent(stateEntity, EndTrait);

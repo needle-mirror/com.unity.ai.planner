@@ -133,7 +133,7 @@ namespace UnityEngine.AI.Planner.Agent
             updateSystem.PolicyGraph = policy;
             policy.Reset(initialStateEntity);
 
-            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(World.AllWorlds.ToArray());
+            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(world);
             return (initialStateEntity, policy);
         }
 

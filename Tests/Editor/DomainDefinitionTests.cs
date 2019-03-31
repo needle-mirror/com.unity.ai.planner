@@ -138,7 +138,6 @@ namespace UnityEditor.AI.Planner.Tests
             {
                 var path = $"{m_DomainDefinition.GeneratedClassDirectory}{trait.Name}.cs";
                 Assert.IsTrue(File.Exists(path));
-                Assert.IsTrue(File.Exists(Path.ChangeExtension(path, ".Extra.cs")));
             }
         }
 

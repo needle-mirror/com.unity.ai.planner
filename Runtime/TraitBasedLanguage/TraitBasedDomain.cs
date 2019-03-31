@@ -1,10 +1,10 @@
-﻿using System.Text;
+﻿using System;
+using System.Text;
 using Unity.AI.Planner.Utility;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Entities.Properties;
 using Unity.Properties;
-
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
@@ -63,7 +63,6 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         {
             // Copy state entity
             var stateCopyEntity = entityManager.Instantiate(parentStateEntity);
-//            entityManager.SetComponentData(stateCopyEntity, new HashCode());
 
             // Copy all object entities.
             var objectBuffer = entityManager.GetBuffer<DomainObjectReference>(stateCopyEntity);
@@ -99,7 +98,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
             for (var i = 0; i < requiredTypes.Length; i++)
             {
                 var requiredType = requiredTypes[i];
-                var subtractive = requiredType.AccessModeType == ComponentType.AccessMode.Subtractive;
+                var subtractive = requiredType.AccessModeType == ComponentType.AccessMode.Exclude;
 
                 bool matches = subtractive;
                 for (var j = 0; j < typeSet.Length; j++)

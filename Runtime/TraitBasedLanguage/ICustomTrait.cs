@@ -1,5 +1,4 @@
-﻿using Unity.Properties;
-
+﻿using System;
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
@@ -14,7 +13,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// Interface marking a trait as a custom implementation
     /// </summary>
     /// <typeparam name="T">Trait type</typeparam>
-    public interface ICustomTrait<T> : ICustomTrait, ITrait<T> where T : struct, IPropertyContainer
+    public interface ICustomTrait<T> : ICustomTrait, ITrait<T>
     {
     }
 }

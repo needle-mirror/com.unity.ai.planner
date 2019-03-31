@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using NUnit.Framework;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.Collections;
 using Unity.Entities;
 using UnityEngine.TestTools;
 
@@ -14,8 +15,10 @@ namespace Unity.AI.Planner.Tests
         {
             base.Setup();
 
-            World.GetOrCreateManager<CounterDynamicsSystem>();
-            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(World);
+            var system = World.GetOrCreateManager<CounterDynamicsSystem>();
+            var plannerSystemGroup = World.GetOrCreateManager<PlannerSystemGroup>();
+            plannerSystemGroup.AddSystemToUpdateList(system);
+            plannerSystemGroup.SortSystemUpdateList();
 
             var allEntities = m_EntityManager.GetAllEntities();
             foreach (var entity in allEntities)
@@ -49,7 +52,7 @@ namespace Unity.AI.Planner.Tests
             {
                 var counterLookup = GetComponentDataFromEntity<Counter>();
 
-                var createdStateEntities = m_CreatedStateInfo.GetEntityArray();
+                var createdStateEntities = m_CreatedStateInfo.ToEntityArray(Allocator.TempJob);
                 for (var i = 0; i < createdStateEntities.Length; i++)
                 {
                     var createdStateEntity = createdStateEntities[i];
@@ -69,6 +72,7 @@ namespace Unity.AI.Planner.Tests
                         }
                     }
                 }
+                createdStateEntities.Dispose();
             }
         }
 

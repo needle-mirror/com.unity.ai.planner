@@ -1,14 +1,20 @@
 ﻿using System;
 using Unity.Entities;
-using Unity.Properties;
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
     /// <summary>
     /// The interface denoting that the container is a trait. Base interface for <see cref="ITrait{T}"/>.
     /// </summary>
-    public interface ITrait : IComponentData, IPropertyContainer
+    public interface ITrait : IComponentData
     {
+        /// <summary>
+        /// Set a field on the trait (alternative to using reflection)
+        /// </summary>
+        /// <param name="fieldName">Name of the field</param>
+        /// <param name="value">Value to set</param>
+        void SetField(string fieldName, object value);
+
         /// <summary>
         /// Sets the component on a given domain object
         /// </summary>
@@ -28,5 +34,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// The interface denoting the container is a trait
     /// </summary>
     /// <typeparam name="T">Trait type</typeparam>
-    public interface ITrait<T> : ITrait, IStructPropertyContainer<T> where T : struct, IPropertyContainer {}
+    public interface ITrait<T> : ITrait
+    {
+    }
 }

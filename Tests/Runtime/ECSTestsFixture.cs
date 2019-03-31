@@ -4,37 +4,12 @@ using Unity.Jobs;
 
 namespace Unity.AI.Planner.Tests
 {
-    [DisableAutoCreation]
-    class EmptySystem : JobComponentSystem
-    {
-        protected override JobHandle OnUpdate(JobHandle dep) { return dep; }
-
-
-        new public ComponentGroup GetComponentGroup(params EntityArchetypeQuery[] queries)
-        {
-            return base.GetComponentGroup(queries);
-        }
-
-        new public ComponentGroup GetComponentGroup(params ComponentType[] componentTypes)
-        {
-            return base.GetComponentGroup(componentTypes);
-        }
-#if !UNITY_ZEROPLAYER
-        new public ComponentGroupArray<T> GetEntities<T>() where T : struct
-        {
-            return base.GetEntities<T>();
-        }
-#endif
-    }
-
     class ECSTestsFixture
     {
         protected World m_PreviousWorld;
         protected World World;
         protected EntityManager m_Manager;
         protected EntityManager.EntityManagerDebug m_ManagerDebug;
-
-        protected int StressTestEntityCount = 1000;
 
         [SetUp]
         public virtual void Setup()
@@ -76,14 +51,6 @@ namespace Unity.AI.Planner.Tests
                 World.Active = m_PreviousWorld;
                 m_PreviousWorld = null;
                 m_Manager = null;
-            }
-        }
-
-        public EmptySystem EmptySystem
-        {
-            get
-            {
-                return World.Active.GetOrCreateManager<EmptySystem>();
             }
         }
     }

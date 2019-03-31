@@ -1,7 +1,6 @@
 using System;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.Entities;
-using Unity.Properties;
 
 namespace Unity.AI.Planner.Tests
 {
@@ -11,45 +10,20 @@ namespace Unity.AI.Planner.Tests
         White
     }
 
-    enum KeyTraitMask
-    {
-        ColorTrait = 1,
-        CarrierTrait = 2,
-        CarriableTrait = 4,
-        LocalizedTrait = 8,
-        LockableTrait = 16,
-        EndTrait = 32
-    }
-
     struct ColorTrait : IEquatable<ColorTrait>, ITrait
     {
         public Color Color;
 
-        public static ValueStructProperty<ColorTrait, Color> ColorProperty { get; private set; }
-
-        static StructPropertyBag<ColorTrait> s_PropertyBag { get; set; }
-        public IPropertyBag PropertyBag => s_PropertyBag;
-        public IVersionStorage VersionStorage => null;
-
-        static ColorTrait()
+        public void SetField(string fieldName, object value)
         {
-            InitializeProperties();
-            InitializePropertyBag();
+            switch (fieldName)
+            {
+                case nameof(Color):
+                    Color = (Color)value;
+                    break;
+            }
         }
 
-        static void InitializePropertyBag()
-        {
-            s_PropertyBag = new StructPropertyBag<ColorTrait>(ColorProperty);
-        }
-
-        static void InitializeProperties()
-        {
-            ColorProperty = new ValueStructProperty<ColorTrait, Color>(
-                "Color",
-                (ref ColorTrait c) => c.Color,
-                (ref ColorTrait c, Color v) => c.Color = v
-            );
-        }
 
         public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)
         {
@@ -73,30 +47,14 @@ namespace Unity.AI.Planner.Tests
     {
         public DomainObjectID CarriedObject;
 
-        public static ValueStructProperty<CarrierTrait, DomainObjectID> CarriedProperty { get; private set; }
-
-        static StructPropertyBag<CarrierTrait> s_PropertyBag { get; set; }
-        public IPropertyBag PropertyBag => s_PropertyBag;
-        public IVersionStorage VersionStorage => null;
-
-        static CarrierTrait()
+        public void SetField(string fieldName, object value)
         {
-            InitializeProperties();
-            InitializePropertyBag();
-        }
-
-        static void InitializePropertyBag()
-        {
-            s_PropertyBag = new StructPropertyBag<CarrierTrait>(CarriedProperty);
-        }
-
-        static void InitializeProperties()
-        {
-            CarriedProperty = new ValueStructProperty<CarrierTrait, DomainObjectID>(
-                "CarriedObject",
-                (ref CarrierTrait c) => c.CarriedObject,
-                (ref CarrierTrait c, DomainObjectID v) => c.CarriedObject = v
-            );
+            switch (fieldName)
+            {
+                case nameof(CarriedObject):
+                    CarriedObject = (DomainObjectID)value;
+                    break;
+            }
         }
 
         public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)
@@ -121,30 +79,14 @@ namespace Unity.AI.Planner.Tests
     {
         public DomainObjectID Carrier;
 
-        public static ValueStructProperty<CarriableTrait, DomainObjectID> CarrierProperty { get; private set; }
-
-        static StructPropertyBag<CarriableTrait> s_PropertyBag { get; set; }
-        public IPropertyBag PropertyBag => s_PropertyBag;
-        public IVersionStorage VersionStorage => null;
-
-        static CarriableTrait()
+        public void SetField(string fieldName, object value)
         {
-            InitializeProperties();
-            InitializePropertyBag();
-        }
-
-        static void InitializePropertyBag()
-        {
-            s_PropertyBag = new StructPropertyBag<CarriableTrait>(CarrierProperty);
-        }
-
-        static void InitializeProperties()
-        {
-            CarrierProperty = new ValueStructProperty<CarriableTrait, DomainObjectID>(
-                "Carrier",
-                (ref CarriableTrait c) => c.Carrier,
-                (ref CarriableTrait c, DomainObjectID v) => c.Carrier = v
-            );
+            switch (fieldName)
+            {
+                case nameof(Carrier):
+                    Carrier = (DomainObjectID)value;
+                    break;
+            }
         }
 
         public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)
@@ -169,30 +111,14 @@ namespace Unity.AI.Planner.Tests
     {
         public DomainObjectID Location;
 
-        public static ValueStructProperty<LocalizedTrait, DomainObjectID> LocationProperty { get; private set; }
-
-        static StructPropertyBag<LocalizedTrait> s_PropertyBag { get; set; }
-        public IPropertyBag PropertyBag => s_PropertyBag;
-        public IVersionStorage VersionStorage => null;
-
-        static LocalizedTrait()
+        public void SetField(string fieldName, object value)
         {
-            InitializeProperties();
-            InitializePropertyBag();
-        }
-
-        static void InitializePropertyBag()
-        {
-            s_PropertyBag = new StructPropertyBag<LocalizedTrait>(LocationProperty);
-        }
-
-        static void InitializeProperties()
-        {
-            LocationProperty = new ValueStructProperty<LocalizedTrait, DomainObjectID>(
-                "Location",
-                (ref LocalizedTrait c) => c.Location,
-                (ref LocalizedTrait c, DomainObjectID v) => c.Location = v
-            );
+            switch (fieldName)
+            {
+                case nameof(Location):
+                    Location = (DomainObjectID)value;
+                    break;
+            }
         }
 
         public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)
@@ -217,30 +143,14 @@ namespace Unity.AI.Planner.Tests
     {
         public Bool Locked;
 
-        public static ValueStructProperty<LockableTrait, bool> LockedProperty { get; private set; }
-
-        static StructPropertyBag<LockableTrait> s_PropertyBag { get; set; }
-        public IPropertyBag PropertyBag => s_PropertyBag;
-        public IVersionStorage VersionStorage => null;
-
-        static LockableTrait()
+        public void SetField(string fieldName, object value)
         {
-            InitializeProperties();
-            InitializePropertyBag();
-        }
-
-        static void InitializePropertyBag()
-        {
-            s_PropertyBag = new StructPropertyBag<LockableTrait>(LockedProperty);
-        }
-
-        static void InitializeProperties()
-        {
-            LockedProperty = new ValueStructProperty<LockableTrait, bool>(
-                "Locked",
-                (ref LockableTrait c) => c.Locked,
-                (ref LockableTrait c, bool v) => c.Locked = v
-            );
+            switch (fieldName)
+            {
+                case nameof(Locked):
+                    Locked = (Bool)value;
+                    break;
+            }
         }
 
         public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)
@@ -263,29 +173,14 @@ namespace Unity.AI.Planner.Tests
 
     struct EndTrait : IEquatable<EndTrait>, ITrait
     {
-        static StructPropertyBag<EndTrait> s_PropertyBag { get; set; }
-        public IPropertyBag PropertyBag => s_PropertyBag;
-        public IVersionStorage VersionStorage => null;
-
-        static EndTrait()
-        {
-            InitializeProperties();
-            InitializePropertyBag();
-        }
-
-        static void InitializePropertyBag()
-        {
-            s_PropertyBag = new StructPropertyBag<EndTrait>();
-        }
-
-        static void InitializeProperties() { }
+        public void SetField(string fieldName, object value) {}
 
         public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)
         {
             entityManager.SetComponentData(domainObjectEntity, this);
         }
 
-        public void SetTraitMask(EntityManager entityManager, Entity domainObjectEntity) { }
+        public void SetTraitMask(EntityManager entityManager, Entity domainObjectEntity) {}
 
         public bool Equals(EndTrait other)
         {

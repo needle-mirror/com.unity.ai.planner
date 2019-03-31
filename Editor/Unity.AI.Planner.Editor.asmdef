@@ -3,9 +3,7 @@
     "references": [
         "Unity.PlayableGraphVisualizer.Editor",
         "Unity.AI.Planner",
-        "Unity.Properties",
-        "Unity.Entities",
-        "Unity.Entities.Properties"
+        "Unity.Entities"
     ],
     "optionalUnityReferences": [],
     "includePlatforms": [

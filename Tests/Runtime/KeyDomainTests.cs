@@ -31,13 +31,29 @@ namespace Unity.AI.Planner.Tests
 
             // It's necessary to create systems manually in edit mode
             m_EntityManager = World.GetExistingManager<EntityManager>();
+
             m_MoveAction = World.GetOrCreateManager<MoveAction>();
             m_PickupKeyAction = World.GetOrCreateManager<PickupKeyAction>();
             m_UnlockRoomAction = World.GetOrCreateManager<UnlockRoomAction>();
 
+            var actionSystemGroup = World.GetOrCreateManager<ActionSystemGroup>();
+            actionSystemGroup.AddSystemToUpdateList(m_MoveAction);
+            actionSystemGroup.AddSystemToUpdateList(m_PickupKeyAction);
+            actionSystemGroup.AddSystemToUpdateList(m_UnlockRoomAction);
+
             // Establish components
             var plannerSystem = World.GetOrCreateManager<PlannerSystem>();
             var keyDomainUpdateSystem = World.GetOrCreateManager<KeyDomainUpdateSystem>();
+
+            var plannerSystemGroup = World.GetOrCreateManager<PlannerSystemGroup>();
+            plannerSystemGroup.AddSystemToUpdateList(actionSystemGroup);
+            plannerSystemGroup.AddSystemToUpdateList(plannerSystem);
+            plannerSystemGroup.AddSystemToUpdateList(keyDomainUpdateSystem);
+            plannerSystemGroup.SortSystemUpdateList();
+
+            var simulationSystemGroup = World.GetOrCreateManager<SimulationSystemGroup>();
+            simulationSystemGroup.AddSystemToUpdateList(plannerSystemGroup);
+
             m_PolicyGraph = new PolicyGraphContainer(128, keyDomainUpdateSystem, World);
 
             // Hook up references

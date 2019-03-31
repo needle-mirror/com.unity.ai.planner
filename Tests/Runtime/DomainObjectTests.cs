@@ -24,8 +24,8 @@ namespace Unity.AI.Planner.Tests
             {
                 base.OnCreateManager();
 
-                m_NestedTraitType = ComponentType.Create<NestedTrait>();
-                m_LocalizedTraitType = ComponentType.Create<LocalizedTrait>();
+                m_NestedTraitType = ComponentType.ReadWrite<NestedTrait>();
+                m_LocalizedTraitType = ComponentType.ReadWrite<LocalizedTrait>();
             }
 
             internal override HashCode HashState(Entity stateEntity)

@@ -1,11 +1,11 @@
 {
     "name": "Unity.AI.Planner",
     "references": [
-        "Unity.Entities",
         "Unity.Collections",
-        "Unity.Properties",
+        "Unity.Entities",
         "Unity.Properties.Codegen",
-        "Unity.Entities.Properties"
+        "Unity.Entities.Properties",
+        "Unity.Properties"
     ],
     "optionalUnityReferences": [],
     "includePlatforms": [],
@@ -14,5 +14,6 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,
-    "defineConstraints": []
+    "defineConstraints": [],
+    "versionDefines": []
 }

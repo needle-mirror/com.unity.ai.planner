@@ -1,9 +1,8 @@
 {
     "name": "Unity.AI.Planner.Tests",
     "references": [
-        "Unity.Entities",
-        "Unity.Properties",
-        "Unity.AI.Planner"
+        "Unity.AI.Planner",
+        "Unity.Entities"
     ],
     "optionalUnityReferences": [
         "TestAssemblies"

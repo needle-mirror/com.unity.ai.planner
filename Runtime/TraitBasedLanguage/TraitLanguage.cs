@@ -1,6 +1,5 @@
 using System;
 using Unity.Entities;
-using Unity.Properties;
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
@@ -12,30 +11,14 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <summary>
     /// A unique identifier assigned to each domain object within a state
     /// </summary>
-    public struct DomainObjectID : IStructPropertyContainer<DomainObjectID>, IEquatable<DomainObjectID>
+    public struct DomainObjectID : IEquatable<DomainObjectID>
     {
-        static ValueStructProperty<DomainObjectID, int> s_ValueProperty{ get; }
-            = new ValueStructProperty<DomainObjectID, int>(
-                "Value",
-                (ref DomainObjectID c) => c.m_Value,
-                (ref DomainObjectID c, int v) => c.m_Value = v
-            );
-
-        static StructPropertyBag<DomainObjectID> s_PropertyBag { get; }
-            = new StructPropertyBag<DomainObjectID>(s_ValueProperty);
-
-        /// <inheritdoc cref="Unity.Properties.IPropertyContainer.PropertyBag" />
-        public IPropertyBag PropertyBag => s_PropertyBag;
-
-        /// <inheritdoc cref="Unity.Properties.IPropertyContainer.VersionStorage" />
-        public IVersionStorage VersionStorage => null;
-
-        int m_Value;
+        public int Value;
 
         /// <summary>
         /// The reserved DomainObjectID value specifying a reference to no domain object
         /// </summary>
-        public static DomainObjectID None = new DomainObjectID { m_Value = 0 };
+        public static DomainObjectID None = new DomainObjectID { Value = 0 };
 
         static int s_DomainObjectIDs = 1; // 0 is the same as default (uninitialized)
 
@@ -45,7 +28,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <returns>Returns a new DomainObjectID with an unassigned ID</returns>
         public static DomainObjectID GetNext()
         {
-            return new DomainObjectID { m_Value = s_DomainObjectIDs++ };
+            return new DomainObjectID { Value = s_DomainObjectIDs++ };
         }
 
         /// <summary>
@@ -54,7 +37,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <param name="x">A DomainObjectID</param>
         /// <param name="y">A DomainObjectID</param>
         /// <returns>Returns if two DomainObjectIDs are equal</returns>
-        public static bool operator ==(DomainObjectID x, DomainObjectID y) => x.m_Value == y.m_Value;
+        public static bool operator ==(DomainObjectID x, DomainObjectID y) => x.Value == y.Value;
 
         /// <summary>
         /// Compares two given DomainObjectIDs
@@ -62,37 +45,25 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <param name="x">A DomainObjectID</param>
         /// <param name="y">A DomainObjectID</param>
         /// <returns>Returns if two DomainObjectIDs are not equal</returns>
-        public static bool operator !=(DomainObjectID x, DomainObjectID y) => x.m_Value != y.m_Value;
+        public static bool operator !=(DomainObjectID x, DomainObjectID y) => x.Value != y.Value;
 
         /// <summary>
         /// Compares the DomainObjectID to another DomainObjectID
         /// </summary>
         /// <param name="other">The DomainObjectID for comparison</param>
         /// <returns>Returns true if the DomainObjectIDs are equal</returns>
-        public bool Equals(DomainObjectID other) => m_Value == other.m_Value;
+        public bool Equals(DomainObjectID other) => Value == other.Value;
 
         /// <inheritdoc />
         public override bool Equals(object obj) => !(obj is null) && obj is DomainObjectID other && Equals(other);
 
         /// <inheritdoc />
-        public override int GetHashCode() => m_Value;
-
-        /// <inheritdoc />
-        public void MakeRef<TContext>(ByRef<DomainObjectID, TContext> byRef, TContext context)
-        {
-            byRef(ref this, context);
-        }
-
-        /// <inheritdoc />
-        public TReturn MakeRef<TContext, TReturn>(ByRef<DomainObjectID, TContext, TReturn> byRef, TContext context)
-        {
-            return byRef(ref this, context);
-        }
+        public override int GetHashCode() => Value;
 
         /// <inheritdoc />
         public override string ToString()
         {
-            return Equals(None) ? "None" : $"<< {m_Value} >>";
+            return Equals(None) ? "None" : $"<< {Value} >>";
         }
     }
 
@@ -105,22 +76,6 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// A unique ID assigned to the domain object
         /// </summary>
         public DomainObjectID ID;
-
-        static StructValueStructProperty<DomainObjectTrait, DomainObjectID> s_IDProperty { get; }
-            = new StructValueStructProperty<DomainObjectTrait, DomainObjectID>(
-                "ID",
-                (ref DomainObjectTrait c) => c.ID,
-                (ref DomainObjectTrait c, DomainObjectID v) => c.ID = v,
-                GetValueRef
-            );
-
-        /// <inheritdoc cref="Unity.Properties.IPropertyContainer.PropertyBag" />
-        public IPropertyBag PropertyBag => s_PropertyBag;
-
-        /// <inheritdoc cref="Unity.Properties.IPropertyContainer.VersionStorage" />
-        public IVersionStorage VersionStorage => null;
-
-        static StructPropertyBag<DomainObjectTrait> s_PropertyBag = new StructPropertyBag<DomainObjectTrait>(s_IDProperty);
 
         /// <inheritdoc />
         public bool Equals(DomainObjectTrait other) => ID.Equals(other.ID);
@@ -138,31 +93,26 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         }
 
         /// <inheritdoc />
+        public void SetField(string fieldName, object value)
+        {
+            switch (fieldName)
+            {
+                case nameof(ID):
+                    ID = (DomainObjectID)value;
+                    break;
+            }
+        }
+
+        /// <inheritdoc />
         public void SetComponentData(EntityManager entityManager, Entity domainObjectEntity)
         {
             entityManager.SetComponentData(domainObjectEntity, this);
         }
 
         /// <inheritdoc />
-        public void SetTraitMask(EntityManager entityManager, Entity domainObjectEntity) { }
-
-        static void GetValueRef(StructValueStructProperty<DomainObjectTrait, DomainObjectID>.ByRef byRef,
-            StructValueStructProperty<DomainObjectTrait, DomainObjectID> property, ref DomainObjectTrait container,
-            IPropertyVisitor visitor)
+        public void SetTraitMask(EntityManager entityManager, Entity domainObjectEntity)
         {
-            byRef(property, ref container, ref container.ID, visitor);
-        }
-
-        /// <inheritdoc />
-        public void MakeRef<TContext>(ByRef<DomainObjectTrait, TContext> byRef, TContext context)
-        {
-            byRef(ref this, context);
-        }
-
-        /// <inheritdoc />
-        public TReturn MakeRef<TContext, TReturn>(ByRef<DomainObjectTrait, TContext, TReturn> byRef, TContext context)
-        {
-            return byRef(ref this, context);
+            // DomainObjectTrait is assumed to be on each domain object, so not necessary to reserve a bit for it
         }
     }
 

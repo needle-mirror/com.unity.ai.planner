@@ -6,7 +6,6 @@ using Unity.AI.Planner;
 using Unity.AI.Planner.Agent;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.Entities;
-using Unity.Properties;
 using UnityEngine;
 using UnityEngine.Serialization;
 using UnityObject = UnityEngine.Object;
@@ -176,21 +175,22 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         ITrait InitializeTrait(EntityManager entityManager, TraitObjectData traitData, Dictionary<string, Entity> objectLookup)
         {
             var traitMatch = m_DomainDefinition.TraitDefinitions.First(td => td.Name == traitData.TraitDefinitionName);
-            var trait = (IPropertyContainer)Activator.CreateInstance(m_DomainDefinition.GetType(traitMatch.Name));
+            var trait = (ITrait)Activator.CreateInstance(m_DomainDefinition.GetType(traitMatch.Name));
 
             traitData.InitializeFieldValues(traitMatch, m_DomainDefinition);
             foreach (var field in traitMatch.Fields)
             {
+                var fieldName = field.Name;
                 var fieldType = m_DomainDefinition.GetType(field.Type);
 
                 if (fieldType == typeof(DomainObjectID))
                 {
                     // Lookup domain objects by name
-                    if (traitData.TryGetValue(field.Name, out string objectName) && objectName != null)
+                    if (traitData.TryGetValue(fieldName, out string objectName) && objectName != null)
                     {
                         objectLookup.TryGetValue(objectName, out var targetObject);
                         var id = entityManager.GetComponentData<DomainObjectTrait>(targetObject).ID;
-                        (trait.PropertyBag.FindProperty(field.Name) as IValueStructProperty)?.SetObjectValue(ref trait, id);
+                        trait.SetField(fieldName, id);
                     }
                 }
                 else
@@ -203,11 +203,11 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                     if (value is UnityObject && !unityObject)
                         continue;
 
-                    (trait.PropertyBag.FindProperty(field.Name) as IValueStructProperty)?.SetObjectValue(ref trait, value);
+                    trait.SetField(fieldName, value);
                 }
             }
 
-            return (ITrait)trait;
+            return trait;
         }
     }
 }
