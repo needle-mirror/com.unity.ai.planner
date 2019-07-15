@@ -17,10 +17,10 @@ namespace UnityEditor.AI.Planner.Utility
             List<string> m_ParameterNames;
             List<string> m_Operand;
             Action<List<string>> m_OnClose;
-            bool m_PropertyTraversal;
+            bool m_FieldTraversal;
 
             public ParameterPopup(Func<string, Type> getType, List<ParameterDefinition> parameters, List<string> extraParameters,
-                List<string> operand, Action<List<string>> onClose, bool propertyTraversal = true)
+                List<string> operand, Action<List<string>> onClose, bool fieldTraversal = true)
             {
                 m_GetType = getType;
                 m_Parameters = parameters;
@@ -29,7 +29,7 @@ namespace UnityEditor.AI.Planner.Utility
                 m_ParameterNames.AddRange(m_Parameters.Select(param => param.Name));
                 m_Operand = operand;
                 m_OnClose = onClose;
-                m_PropertyTraversal = propertyTraversal;
+                m_FieldTraversal = fieldTraversal;
             }
 
             public override void OnGUI(Rect rect)
@@ -56,24 +56,24 @@ namespace UnityEditor.AI.Planner.Utility
                     }
                 }
 
-                if (m_PropertyTraversal && m_Operand.Count > 0 && !m_ExtraParameters.Contains(m_Operand[0]))
+                if (m_FieldTraversal && m_Operand.Count > 0 && !m_ExtraParameters.Contains(m_Operand[0]))
                 {
-                    var subPropertyIndex = 0;
+                    var subFieldIndex = 0;
                     IEnumerable<Type> types = null;
-                    foreach (var currentProperty in m_Operand)
+                    foreach (var currentField in m_Operand)
                     {
-                        if (int.TryParse(currentProperty, out _) || float.TryParse(currentProperty, out _))
+                        if (int.TryParse(currentField, out _) || float.TryParse(currentField, out _))
                             break;
 
-                        if (string.IsNullOrEmpty(currentProperty))
+                        if (string.IsNullOrEmpty(currentField))
                         {
-                            m_Operand.RemoveRange(subPropertyIndex, m_Operand.Count - subPropertyIndex);
+                            m_Operand.RemoveRange(subFieldIndex, m_Operand.Count - subFieldIndex);
                             break;
                         }
 
                         if (types == null)
                         {
-                            var parameterDefinition = m_Parameters.Find(p => p.Name == currentProperty);
+                            var parameterDefinition = m_Parameters.Find(p => p.Name == currentField);
                             if (parameterDefinition == null)
                                 break;
 
@@ -82,46 +82,46 @@ namespace UnityEditor.AI.Planner.Utility
                         }
                         else
                         {
-                            var split = currentProperty.Split('.');
+                            var split = currentField.Split('.');
                             var typeName = split[0];
                             var type = m_GetType(typeName);
 
-                            var property = type.GetProperty(split[1], BindingFlags.Public | BindingFlags.Instance);
-                            if (property != null)
-                                types = new[] { property.PropertyType };
+                            var field = type.GetField(split[1], BindingFlags.Public | BindingFlags.Instance);
+                            if (field != null)
+                                types = new[] { field.FieldType };
                             else
                                 types = new Type[] { };
                         }
 
-                        var properties = types.SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                            .Where(p => p.Name != "PropertyBag" && p.Name != "VersionStorage")
+                        var properties = types.SelectMany(t => t.GetFields(BindingFlags.Public | BindingFlags.Instance)
+                            .Where(p => p.Name != "FieldBag" && p.Name != "VersionStorage")
                             .Select(p => $"{t.Name}.{p.Name}")).ToList();
                         properties.Insert(0, "...");
 
-                        var subsequentPropertyIndex = subPropertyIndex + 1;
-                        var subsequentProperty = subsequentPropertyIndex < m_Operand.Count ? m_Operand[subsequentPropertyIndex] : currentProperty;
+                        var subsequentFieldIndex = subFieldIndex + 1;
+                        var subsequentField = subsequentFieldIndex < m_Operand.Count ? m_Operand[subsequentFieldIndex] : currentField;
 
                         EditorGUI.BeginChangeCheck();
-                        var propertyValueIndex = EditorGUILayout.Popup(GUIContent.none, properties.IndexOf(subsequentProperty), properties.ToArray());
-                        if (EditorGUI.EndChangeCheck() && propertyValueIndex > 0)
+                        var fieldValueIndex = EditorGUILayout.Popup(GUIContent.none, properties.IndexOf(subsequentField), properties.ToArray());
+                        if (EditorGUI.EndChangeCheck() && fieldValueIndex > 0)
                         {
-                            var propertyValue = properties[propertyValueIndex];
-                            if (subsequentPropertyIndex == m_Operand.Count)
+                            var fieldValue = properties[fieldValueIndex];
+                            if (subsequentFieldIndex == m_Operand.Count)
                             {
-                                m_Operand.Add(propertyValue);
+                                m_Operand.Add(fieldValue);
                                 break;
                             }
 
-                            if (m_Operand[subsequentPropertyIndex] != propertyValue)
+                            if (m_Operand[subsequentFieldIndex] != fieldValue)
                             {
-                                m_Operand[subsequentPropertyIndex] = propertyValue;
-                                var removeStart = subsequentPropertyIndex + 1;
+                                m_Operand[subsequentFieldIndex] = fieldValue;
+                                var removeStart = subsequentFieldIndex + 1;
                                 m_Operand.RemoveRange(removeStart, m_Operand.Count - removeStart);
                                 break;
                             }
                         }
 
-                        subPropertyIndex++;
+                        subFieldIndex++;
                     }
                 }
 
@@ -261,22 +261,22 @@ namespace UnityEditor.AI.Planner.Utility
                 var type = domainDefinition.GetType(finalElement[0]);
                 if (type != null)
                 {
-                    var propertyInfo = type.GetProperty(finalElement[1], BindingFlags.Public | BindingFlags.Instance);
-                    if (propertyInfo != null)
+                    var fieldInfo = type.GetField(finalElement[1], BindingFlags.Public | BindingFlags.Instance);
+                    if (fieldInfo != null)
                     {
-                        var propertyType = propertyInfo.PropertyType;
-                        if (propertyType.IsEnum)
-                            return Enum.GetNames(propertyType).Select(e => $"{propertyType.Name}.{e}").ToList();
+                        var fieldType = fieldInfo.FieldType;
+                        if (fieldType.IsEnum)
+                            return Enum.GetNames(fieldType).Select(e => $"{fieldType.Name}.{e}").ToList();
 
-                        if (propertyType.IsClass)
+                        if (fieldType.IsClass)
                             return new List<string> { k_None };
 
-                        if (propertyType.IsValueType)
+                        if (fieldType.IsValueType)
                         {
-                            if (!propertyType.IsPrimitive) // IsStruct
+                            if (!fieldType.IsPrimitive) // IsStruct
                                 return new List<string> { k_Default };
 
-                            switch (Type.GetTypeCode(propertyType))
+                            switch (Type.GetTypeCode(fieldType))
                             {
                                 case TypeCode.Boolean:
                                     return new List<string> { "true", "false" };
@@ -308,7 +308,7 @@ namespace UnityEditor.AI.Planner.Utility
             return null;
         }
 
-        public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
+        public override float GetPropertyHeight(SerializedProperty field, GUIContent label)
         {
             return -2f;
         }

@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using Unity.Entities;
 using Unity.Jobs;
@@ -17,7 +18,7 @@ namespace Unity.AI.Planner.Tests
             m_PreviousWorld = World.Active;
             World = World.Active = new World("Test World");
 
-            m_Manager = World.GetOrCreateManager<EntityManager>();
+            m_Manager = World.EntityManager;
             m_ManagerDebug = new EntityManager.EntityManagerDebug(m_Manager);
 
 #if !UNITY_2019_2_OR_NEWER
@@ -35,12 +36,11 @@ namespace Unity.AI.Planner.Tests
             {
                 // Clean up systems before calling CheckInternalConsistency because we might have filters etc
                 // holding on SharedComponentData making checks fail
-                var system = World.GetExistingManager<ComponentSystemBase>();
-                while (system != null)
+                while (World.Systems.Any())
                 {
+                    var system = World.Systems.First();
                     system.Enabled = false;
-                    World.DestroyManager(system);
-                    system = World.GetExistingManager<ComponentSystemBase>();
+                    World.DestroySystem(system);
                 }
 
                 m_ManagerDebug.CheckInternalConsistency();

@@ -15,14 +15,14 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     [DisableAutoCreation]
     public abstract class BaseDynamicsSystem : ComponentSystem
     {
-        ComponentGroup m_CreatedStateInfo;
+        EntityQuery m_CreatedStateInfo;
 
         /// <inheritdoc/>
         protected override void OnCreateManager()
         {
             base.OnCreateManager();
 
-            m_CreatedStateInfo = GetComponentGroup(ComponentType.ReadOnly<State>(),
+            m_CreatedStateInfo = GetEntityQuery(ComponentType.ReadOnly<State>(),
                 ComponentType.ReadOnly<CreatedStateInfo>());
         }
 

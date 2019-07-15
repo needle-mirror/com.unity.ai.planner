@@ -20,7 +20,7 @@ namespace Unity.AI.Planner.Tests
 
         public static void Initialize(World world)
         {
-            var entityManager = world.GetOrCreateManager<EntityManager>();
+            var entityManager = world.EntityManager;
 
             s_RoomArchetype = entityManager.CreateArchetype(typeof(LockableTrait), typeof(ColorTrait));
             s_KeyArchetype = entityManager.CreateArchetype(typeof(CarriableTrait), typeof(ColorTrait));

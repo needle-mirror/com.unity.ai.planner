@@ -119,7 +119,7 @@ namespace UnityEngine.AI.Planner.Agent
         {
 
             var world = new World(m_DomainData.Name); //plannerSystem.ActiveWorld);plannerSystem.ActiveWorld;
-            m_EntityManager = world.GetOrCreateManager<EntityManager>();
+            m_EntityManager = world.EntityManager;
             var plannerSystem = PlannerSystem.Initialize(world);//m_DomainData.Name);
 
             var initialStateEntity = m_DomainData.GetInitialState(m_EntityManager);

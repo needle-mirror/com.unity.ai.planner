@@ -26,7 +26,15 @@ namespace UnityEditor.AI.Planner.DomainLanguage.TraitBased
 
             var domainDefinitionAssigned = planDefinition.DomainDefinition != null;
             if (!domainDefinitionAssigned)
+            {
                 EditorGUILayout.HelpBox(MissingDomainDefinitionMessage, MessageType.Error);
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("m_DomainDefinition"));
+
+                if (serializedObject.hasModifiedProperties)
+                    serializedObject.ApplyModifiedProperties();
+
+                EditorGUILayout.Space();
+            }
 
             GUI.enabled = editable && assetOnDisk && domainDefinitionAssigned;
             if (GUILayout.Button("Edit Plan Definition"))
@@ -42,7 +50,7 @@ namespace UnityEditor.AI.Planner.DomainLanguage.TraitBased
 
             EditorGUILayout.Separator();
 
-            GUI.enabled = editable;
+            GUI.enabled = false;
 
             DrawDefaultInspector();
         }

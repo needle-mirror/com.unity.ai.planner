@@ -396,11 +396,11 @@ namespace Unity.AI.Planner
         /// <returns>Returns the initialized PlannerSystem</returns>
         public static PlannerSystem Initialize(World world)
         {
-            var plannerSystemGroup = world.GetOrCreateManager<PlannerSystemGroup>();
-            var actionSystemGroup = world.GetOrCreateManager<ActionSystemGroup>();
+            var plannerSystemGroup = world.GetOrCreateSystem<PlannerSystemGroup>();
+            var actionSystemGroup = world.GetOrCreateSystem<ActionSystemGroup>();
             plannerSystemGroup.AddSystemToUpdateList(actionSystemGroup);
 
-            var plannerSystem = world.GetOrCreateManager<PlannerSystem>();
+            var plannerSystem = world.GetOrCreateSystem<PlannerSystem>();
             plannerSystemGroup.AddSystemToUpdateList(plannerSystem);
 
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -420,7 +420,7 @@ namespace Unity.AI.Planner
                 CreateBehaviourManagersForMatchingTypes(false, allTypes, world);
             }
 
-            var simulationSystemGroup = world.GetOrCreateManager<SimulationSystemGroup>();
+            var simulationSystemGroup = world.GetOrCreateSystem<SimulationSystemGroup>();
             simulationSystemGroup.AddSystemToUpdateList(plannerSystemGroup);
             simulationSystemGroup.SortSystemUpdateList();
 
@@ -546,7 +546,7 @@ namespace Unity.AI.Planner
                 && !t.ContainsGenericParameters
                 && !string.IsNullOrEmpty(t.Namespace) && t.Namespace.StartsWith(world.Name));
 
-            var simulationSystemGroup = world.GetOrCreateManager<SimulationSystemGroup>();
+            var simulationSystemGroup = world.GetOrCreateSystem<SimulationSystemGroup>();
             foreach (var type in systemTypes)
             {
                 if (editorWorld && type.GetCustomAttributes(typeof(ExecuteInEditMode), true).Length == 0)
@@ -587,11 +587,11 @@ namespace Unity.AI.Planner
             }
         }
 
-        static ScriptBehaviourManager GetOrCreateManagerAndLogException(World world, Type type)
+        static ComponentSystemBase GetOrCreateManagerAndLogException(World world, Type type)
         {
             try
             {
-                return world.GetOrCreateManager(type);
+                return world.GetOrCreateSystem(type);
             }
             catch (Exception e)
             {
@@ -618,8 +618,8 @@ namespace Unity.AI.Planner
         const float k_DiscountFactor = 0.95f;
         const float k_PolicyValueTolerance = 10e-10f;
 
-        ComponentGroup m_ExpansionList;
-        ComponentGroup m_CreatedStateInfo;
+        EntityQuery m_ExpansionList;
+        EntityQuery m_CreatedStateInfo;
 
 
         SortedSet<(Entity, int, Entity)> m_PolicyGraphNodesToUpdate = new SortedSet<(Entity, int, Entity)>(
@@ -644,10 +644,10 @@ namespace Unity.AI.Planner
         {
             base.OnCreateManager();
 
-            m_ExpansionList = GetComponentGroup(ComponentType.ReadOnly<PolicyGraphNode>(),
+            m_ExpansionList = GetEntityQuery(ComponentType.ReadOnly<PolicyGraphNode>(),
                 ComponentType.ReadOnly<Selected>());
 
-            m_CreatedStateInfo = GetComponentGroup(ComponentType.ReadOnly<State>(), typeof(HashCode),
+            m_CreatedStateInfo = GetEntityQuery(ComponentType.ReadOnly<State>(), typeof(HashCode),
                 ComponentType.ReadOnly<CreatedStateInfo>());
 
             s_PolicyGraphNodeArchetype = EntityManager.CreateArchetype(typeof(PolicyGraphNode),
@@ -811,7 +811,7 @@ namespace Unity.AI.Planner
 
         internal IActionSystem GetActionSystem(Guid actionSystemGuid)
         {
-            foreach (var manager in World.BehaviourManagers)
+            foreach (var manager in World.Systems)
             {
                 if (manager is IActionSystem actionSystem && actionSystem.ActionSystemGuid == actionSystemGuid)
                     return actionSystem;

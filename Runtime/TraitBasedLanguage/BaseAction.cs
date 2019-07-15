@@ -30,7 +30,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <summary>
         /// List of states marked for expansion
         /// </summary>
-        protected ComponentGroup m_ExpansionList;
+        protected EntityQuery m_ExpansionList;
 
         /// <summary>
         /// Name for the action system
@@ -119,7 +119,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <inheritdoc/>
         protected override void OnCreateManager()
         {
-            m_ExpansionList = GetComponentGroup(ComponentType.ReadOnly<PolicyGraphNode>(),
+            m_ExpansionList = GetEntityQuery(ComponentType.ReadOnly<PolicyGraphNode>(),
                 ComponentType.ReadOnly<Selected>());
 
             s_ActionNodeArchetype = EntityManager.CreateArchetype(typeof(ActionNode), typeof(ActionResult),

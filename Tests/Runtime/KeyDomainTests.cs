@@ -30,28 +30,28 @@ namespace Unity.AI.Planner.Tests
             KeyDomain.Initialize(World);
 
             // It's necessary to create systems manually in edit mode
-            m_EntityManager = World.GetExistingManager<EntityManager>();
+            m_EntityManager = World.EntityManager;
 
-            m_MoveAction = World.GetOrCreateManager<MoveAction>();
-            m_PickupKeyAction = World.GetOrCreateManager<PickupKeyAction>();
-            m_UnlockRoomAction = World.GetOrCreateManager<UnlockRoomAction>();
+            m_MoveAction = World.GetOrCreateSystem<MoveAction>();
+            m_PickupKeyAction = World.GetOrCreateSystem<PickupKeyAction>();
+            m_UnlockRoomAction = World.GetOrCreateSystem<UnlockRoomAction>();
 
-            var actionSystemGroup = World.GetOrCreateManager<ActionSystemGroup>();
+            var actionSystemGroup = World.GetOrCreateSystem<ActionSystemGroup>();
             actionSystemGroup.AddSystemToUpdateList(m_MoveAction);
             actionSystemGroup.AddSystemToUpdateList(m_PickupKeyAction);
             actionSystemGroup.AddSystemToUpdateList(m_UnlockRoomAction);
 
             // Establish components
-            var plannerSystem = World.GetOrCreateManager<PlannerSystem>();
-            var keyDomainUpdateSystem = World.GetOrCreateManager<KeyDomainUpdateSystem>();
+            var plannerSystem = World.GetOrCreateSystem<PlannerSystem>();
+            var keyDomainUpdateSystem = World.GetOrCreateSystem<KeyDomainUpdateSystem>();
 
-            var plannerSystemGroup = World.GetOrCreateManager<PlannerSystemGroup>();
+            var plannerSystemGroup = World.GetOrCreateSystem<PlannerSystemGroup>();
             plannerSystemGroup.AddSystemToUpdateList(actionSystemGroup);
             plannerSystemGroup.AddSystemToUpdateList(plannerSystem);
             plannerSystemGroup.AddSystemToUpdateList(keyDomainUpdateSystem);
             plannerSystemGroup.SortSystemUpdateList();
 
-            var simulationSystemGroup = World.GetOrCreateManager<SimulationSystemGroup>();
+            var simulationSystemGroup = World.GetOrCreateSystem<SimulationSystemGroup>();
             simulationSystemGroup.AddSystemToUpdateList(plannerSystemGroup);
 
             m_PolicyGraph = new PolicyGraphContainer(128, keyDomainUpdateSystem, World);

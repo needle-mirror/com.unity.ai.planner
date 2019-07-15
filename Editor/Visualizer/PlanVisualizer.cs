@@ -64,7 +64,7 @@ namespace UnityEditor.AI.Planner.Visualizer
             if (m_World != null && m_World.IsCreated)
             {
                 var actionSystemGuid = ActionNode.ActionSystemGuid;
-                foreach (var manager in m_World.BehaviourManagers)
+                foreach (var manager in m_World.Systems)
                 {
                     if (manager is IActionSystem actionSystem)
                     {
@@ -114,7 +114,7 @@ namespace UnityEditor.AI.Planner.Visualizer
             if (!world.IsCreated)
                 return actionSystemGuid.ToString();
 
-            foreach (var manager in world.BehaviourManagers)
+            foreach (var manager in world.Systems)
             {
                 if (manager is IActionSystem actionSystem)
                 {
@@ -371,8 +371,8 @@ namespace UnityEditor.AI.Planner.Visualizer
         public PlanVisualizer(World world, PolicyGraphContainer graphContainer, Func<ActionContext> getCurrentAction)
         {
             m_World = world;
-            m_EntityManager = m_World.GetExistingManager<EntityManager>();
-            m_Planner = m_World.GetExistingManager<PlannerSystem>();
+            m_EntityManager = m_World.EntityManager;
+            m_Planner = m_World.GetExistingSystem<PlannerSystem>();
             m_PolicyGraph = graphContainer;
             m_GetCurrentAction = getCurrentAction;
         }

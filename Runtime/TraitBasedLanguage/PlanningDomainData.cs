@@ -169,7 +169,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public PolicyGraphUpdateSystem GetPolicyGraphUpdateSystem(World world)
         {
             var updateSystemType = m_DomainDefinition.GetType(m_DomainDefinition.PolicyGraphUpdateSystemName);
-            return (PolicyGraphUpdateSystem)world.GetOrCreateManager(updateSystemType);
+            return (PolicyGraphUpdateSystem)world.GetOrCreateSystem(updateSystemType);
         }
 
         ITrait InitializeTrait(EntityManager entityManager, TraitObjectData traitData, Dictionary<string, Entity> objectLookup)

@@ -15,8 +15,8 @@ namespace Unity.AI.Planner.Tests
         {
             base.Setup();
 
-            var system = World.GetOrCreateManager<CounterDynamicsSystem>();
-            var plannerSystemGroup = World.GetOrCreateManager<PlannerSystemGroup>();
+            var system = World.GetOrCreateSystem<CounterDynamicsSystem>();
+            var plannerSystemGroup = World.GetOrCreateSystem<PlannerSystemGroup>();
             plannerSystemGroup.AddSystemToUpdateList(system);
             plannerSystemGroup.SortSystemUpdateList();
 
@@ -38,13 +38,13 @@ namespace Unity.AI.Planner.Tests
         [DisableAutoCreation]
         class CounterDynamicsSystem : ComponentSystem
         {
-            ComponentGroup m_CreatedStateInfo;
+            EntityQuery m_CreatedStateInfo;
 
             protected override void OnCreateManager()
             {
                 base.OnCreateManager();
 
-                m_CreatedStateInfo = GetComponentGroup(ComponentType.ReadOnly<State>(),
+                m_CreatedStateInfo = GetEntityQuery(ComponentType.ReadOnly<State>(),
                     ComponentType.ReadOnly<CreatedStateInfo>());
             }
 
