@@ -1,16 +1,13 @@
 # Plan Visualizer
 
-With the Plan Visualizer, you can debug and monitor the plan expansion for an individual agent by the planner system. You can open the Plan Visualizer either through the Window menu (Window -> AI -> Plan Visualizer)
+With the Plan Visualizer, you can debug and monitor the plan expansion for an individual agent by the planner system. You can open the Plan Visualizer through the Window menu (Window -> AI -> Plan Visualizer)
 
 ![Show Plan Visualizer](images/ShowPlanVisualizer.png)
 
-or by selecting your agent and clicking _View Plan_
-
-![View Plan](images/ViewPlan.png)
 
 ## Window
 
-The window shows the plan in the form of a tree (although internally it is a graph). Here you can see the current action/state and the resulting states from actions taken from the current state.
+The window shows the plan in the form of a tree (although, internally it is a graph). Here you can see the current action/state and the resulting states from actions taken from the current state.
 
 ![Window](images/PlanVisualizer.png)
 

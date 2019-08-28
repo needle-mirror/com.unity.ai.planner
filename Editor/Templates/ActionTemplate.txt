@@ -1,0 +1,194 @@
+using System;
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Jobs;
+using Unity.AI.Planner;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
+using AI.Planner.Domains;
+{{- if include_enums }}
+using {{ domain_namespace }}.Enums;
+{{- end }}
+
+namespace {{ action_namespace }}.{{ agent_name }}
+{
+    struct {{ action_name }} : IJobParallelForDefer
+    {
+        public static Guid ActionGuid = Guid.NewGuid();
+        {{ for p in parameter_list }}
+        const int k_{{ p.name }}Index = {{ for.index }};
+        {{- end }}
+        const int k_MaxArguments = {{ parameter_list.size }};
+
+        {{- for p in parameter_list }}
+        static readonly ComponentType[] s_{{ p.name }}Filter = { {{- for r in p.required_traits -}} ComponentType.ReadWrite<{{ r }}>(),{{ end }}
+                                                        {{- for e in p.prohibited_traits }} ComponentType.Exclude<{{ e }}>(),{{ end }}};
+        {{- end }}
+
+        {{- for c in created_objects }}
+        static readonly ComponentType[] s_{{ c.name }}Types = { {{- for r in c.required_traits -}} ComponentType.ReadWrite<{{ r }}>(),{{ end }}};
+        {{- end }}
+
+        [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
+        [ReadOnly] StateDataContext m_StateDataContext;
+
+        internal {{ action_name }}(NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
+        {
+            m_StatesToExpand = statesToExpand.AsDeferredJobArray();
+            m_StateDataContext = stateDataContext;
+        }
+
+        void GenerateArgumentPermutations(StateData stateData, NativeList<ActionKey> argumentPermutations)
+        {
+            {{- for p in parameter_list }}
+            var {{ p.name }}Objects = new NativeList<(DomainObject, int)>(2, Allocator.Temp);
+            stateData.GetDomainObjects({{ p.name }}Objects, s_{{ p.name }}Filter);
+            {{- end }}
+
+            {{- for p in precondition_traits }}
+            var {{ p }}Buffer = stateData.{{ p }}Buffer;
+            {{- end }}
+
+            {{- for p in parameter_list }}
+            {{ param_index = for.index }}
+            for (int i{{ param_index }} = 0; i{{ param_index }} < {{ p.name }}Objects.Length; i{{ param_index }}++)
+            {
+                var ({{ p.name }}Object, {{ p.name }}Index) = {{ p.name }}Objects[i{{ param_index }}];
+
+                {{- for p in precondition_list }}
+                {{ if param_index == p.loop_index }}
+                if (!({{ p.operand_a }} {{ p.operator }} {{ p.operand_b }}))
+                    continue;
+                {{- end }}
+                {{- end }}
+            {{- end }}
+
+                var actionKey = new ActionKey(k_MaxArguments) {
+                                                        ActionGuid = ActionGuid,
+                                                    {{- for p in parameter_list }}
+                                                       [k_{{ p.name }}Index] = {{ p.name }}Index,
+                                                    {{- end }}
+                                                    };
+
+
+                {{~ if custom_precondition != null && custom_precondition != "" ~}}
+                if (new {{ custom_precondition }}().CheckCustomPrecondition(stateData, actionKey))
+                {{~ end ~}}
+                argumentPermutations.Add(actionKey);
+
+            {{- for p in parameter_list }}
+            }
+            {{- end }}
+
+            {{- for p in parameter_list }}
+                {{ p.name }}Objects.Dispose();
+            {{- end }}
+        }
+
+        (StateEntityKey, ActionKey, ActionResult, StateEntityKey) ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
+        {
+            var originalState = m_StateDataContext.GetStateData(originalStateEntityKey);
+            var originalStateObjectBuffer = originalState.DomainObjects;
+
+            {{- for p in object_effect_params }}
+            {{ if p != "" }}var original{{ p }}Object = originalStateObjectBuffer[action[k_{{ p }}Index]];{{ end }}
+            {{- end }}
+
+            var newState = m_StateDataContext.CopyStateData(originalState);
+
+            {{- for p in object_effect_traits }}
+            var new{{ p }}Buffer = newState.{{ p }}Buffer;
+            {{- end }}
+
+            {{- for c in created_objects }}
+            var (new{{ c.name }}Object, new{{ c.name}}ObjectID) = newState.AddDomainObject( s_{{ c.name }}Types);
+            {{- end }}
+
+            {{- for e in object_effect_list }}
+            {
+                {{-
+                if array.contains created_object_names e.operand_a.parameter
+                    prefix_a = "new"
+                else
+                    prefix_a = "original"
+                end
+
+                if array.contains created_object_names e.operand_b.parameter
+                    prefix_b = "new"
+                else
+                    prefix_b = "original"
+                end
+                }}
+                var @{{ e.operand_a.trait }} = new{{ e.operand_a.trait }}Buffer[{{prefix_a}}{{ e.operand_a.parameter }}Object.{{ e.operand_a.trait }}Index];
+                {{- if e.operand_b.trait == "" }}
+                @{{ e.operand_a.trait }}.{{ e.operand_a.field }} {{ e.operator }} {{ e.operand_b.parameter }};
+                {{- else }}
+                @{{ e.operand_a.trait }}.{{ e.operand_a.field }} {{ e.operator }} new{{ e.operand_b.trait }}Buffer[{{prefix_b}}{{ e.operand_b.parameter }}Object.{{ e.operand_b.trait }}Index].{{ e.operand_b.field }};
+                {{- end}}
+                new{{ e.operand_a.trait }}Buffer[{{prefix_a}}{{ e.operand_a.parameter }}Object.{{ e.operand_a.trait }}Index] = @{{ e.operand_a.trait }};
+            }
+            {{- end }}
+
+            {{ for d in removed_objects }}
+            newState.RemoveDomainObjectAtIndex(action[k_{{ d }}Index]);
+            {{- end }}
+
+            {{~ if custom_effect != null && custom_effect != "" ~}}
+            new {{ custom_effect }}().ApplyCustomActionEffectsToState(originalState, action, newState);
+            {{~ end ~}}
+
+            var reward = Reward(originalState, action, newState);
+            var actionResult = new ActionResult { Probability = 1f, TransitionUtilityValue = reward };
+            var resultingStateKey = m_StateDataContext.GetStateDataKey(newState);
+
+            return (originalStateEntityKey, action, actionResult, resultingStateKey);
+        }
+
+        float Reward(StateData originalState, ActionKey action, StateData newState)
+        {
+            var reward = {{ reward_value }}f;
+            {{~ if custom_reward != null && custom_reward != "" ~}}
+            new {{ custom_reward }}().SetCustomReward(originalState, action, newState, ref reward);
+            {{~ end ~}}
+            return reward;
+        }
+
+        public void Execute(int jobIndex)
+        {
+            m_StateDataContext.JobIndex = jobIndex; //todo check that all actions set the job index
+
+            var stateEntityKey = m_StatesToExpand[jobIndex];
+            var stateData = m_StateDataContext.GetStateData(stateEntityKey);
+
+            var argumentPermutations = new NativeList<ActionKey>(4, Allocator.Temp);
+            GenerateArgumentPermutations(stateData, argumentPermutations);
+
+            var transitionInfo = new NativeArray<{{ action_name }}FixupReference>(argumentPermutations.Length, Allocator.Temp);
+            for (var i = 0; i < argumentPermutations.Length; i++)
+            {
+                transitionInfo[i] = new {{ action_name }}FixupReference { TransitionInfo = ApplyEffects(argumentPermutations[i], stateEntityKey) };
+            }
+
+            // fixups
+            var stateEntity = stateEntityKey.Entity;
+            var fixupBuffer = m_StateDataContext.EntityCommandBuffer.AddBuffer<{{ action_name }}FixupReference>(jobIndex, stateEntity);
+            fixupBuffer.CopyFrom(transitionInfo);
+
+            transitionInfo.Dispose();
+            argumentPermutations.Dispose();
+        }
+
+        {{ for p in parameter_list }}
+        public static T Get{{ p.name | string.upcase | string.slice 0 length:1 }}{{ p.name | string.slice 1 }}Trait<T>(StateData state, ActionKey action) where T : struct, ITrait
+        {
+            return state.GetTraitOnObjectAtIndex<T>(action[k_{{ p.name }}Index]);
+        }
+        {{ end }}
+    }
+
+    public struct {{ action_name }}FixupReference : IBufferElementData
+    {
+        public (StateEntityKey, ActionKey, ActionResult, StateEntityKey) TransitionInfo;
+    }
+}
+
+

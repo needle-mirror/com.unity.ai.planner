@@ -1,0 +1,75 @@
+using System;
+using Unity.Entities;
+using Unity.AI.Planner;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
+{{- if include_enums }}
+using {{ namespace }}.Enums;
+{{- end }}
+
+namespace {{ namespace }}
+{
+    [Serializable]
+    public struct {{ name }} : ITrait, IEquatable<{{ name }}>
+    {
+        public const bool IsZeroSized = {{ fields.empty? }};
+
+        {{- for field in fields }}
+        public {{ field.field_type }} {{ field.field_name }};
+        {{- end }}
+
+        public void SetField(string fieldName, object value)
+        {
+        {{- if !fields.empty? }}
+            switch (fieldName)
+            {
+            {{- for field in fields }}
+                case nameof({{ field.field_name }}):
+                {{- if (field.field_type | string.contains ".Enums.") }}
+                    {{ field.field_name }} = ({{ field.field_type }})Enum.ToObject(typeof({{ field.field_type }}), value);
+                {{- else }}
+                    {{ field.field_name }} = ({{ field.field_type }})value;
+                {{- end }}
+                    break;
+            {{- end }}
+            }
+        {{- end }}
+        }
+
+        public bool Equals({{ name }} other)
+        {
+        {{- if fields.empty? }}
+            return true;
+        {{- else }}
+        {{ for field in fields }}
+            {{- if for.index == 0 }}    return {{ else }} && {{ end }}
+            {{- if field.field_type | string.contains "NativeString" }}
+                    {{- field.field_name }}.Equals(other.{{ field.field_name }})
+            {{- else }}
+                    {{- field.field_name }} == other.{{ field.field_name }}
+            {{- end }}
+            {{- end }};
+        {{- end }}
+        }
+
+        public override int GetHashCode()
+        {
+        {{- if fields.empty? }}
+            return ComponentType.ReadOnly<{{ name }}>().TypeIndex;
+        {{- else }}
+            return 397
+            {{- for field in fields }}
+                ^ {{ field.field_name }}.GetHashCode()
+            {{- end }};
+        {{- end }}
+        }
+
+        public override string ToString()
+        {
+        {{- if fields.empty? }}
+            return $"{{ name }}";
+        {{- else }}
+            return $"{{ name }}:{{ for field in fields }} { {{- field.field_name -}} }{{ end -}}";
+        {{- end }}
+        }
+    }
+}

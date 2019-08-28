@@ -10,10 +10,12 @@ To install this package, follow the instructions in the [Package Manager documen
 
 # Using AI Planner
 To create an AI agent with the AI Planner, see the following guides:
-* [Creating a domain definition](DomainDefinition.md)
-* [Creating a plan definition](PlanDefinition.md)
-* [Extending the BaseAgent class](BaseAgent.md)
-* [Implementing operational actions](OperationalActions.md)
+* [Defining the domain](DomainDefinition.md)
+* [Defining actions](ActionDefinition.md)
+* [Defining termination conditions](TerminationDefinition.md)
+* [Configuring the scene](ConfigureScene.md)
+* [Creating an AI agent](AgentDefinition.md)
+* [Executing plans through operational actions](OperationalActions.md)
 
 During execution, it is also useful to view an agent's plan through the [plan visualizer](PlanVisualizer.md).
 
@@ -32,7 +34,7 @@ For a complete sample project, see: [Otto](https://github.com/Unity-Technologies
 ## Requirements
 
 This version of AI Planner is compatible with the following versions of the Unity Editor:
-* 2019.1 and later 
+* 2019.2  
 
 
 ## Package contents
@@ -41,15 +43,19 @@ The following table indicates the runtime folders that will be of interest to yo
 
 |Location|Description|
 |---|---|
-|[`Runtime/Agent`](../Runtime/Agent)|Contains classes and interfaces for the agent and operational actions.|
-|[`Runtime/Data`](../Runtime/Data)|Contains serialized data definitions.|
-|[`Runtime/Planner`](../Runtime/Planner)|Contains the planning system.|
-|[`Runtime/TraitBasedLanguage`](../Runtime/TraitBasedLanguage)|Contains state and action representations used by the planner.|
-|[`Runtime/Utility`](../Runtime/Utility)|Contains utility classes for the package.|
+|`Runtime/Agent`|Contains classes and interfaces for the agent and operational actions.|
+|`Runtime/Planner`|Contains the planning system.|
+|`Runtime/Serialization`|Contains serialized data definitions.|
+|`Runtime/TraitBasedLanguage`|Contains state and action representations used by the planner.|
+|`Runtime/Utility`|Contains utility classes for the package.|
+|`Runtime/World`|Contains utility classes for monitoring game objects.|
 
+## Known issues
+* Prolonged usage of the planner can cause large allocations of native memory. 
 
 ## Document revision history
  
 |Date|Reason|
 |---|---|
+|Aug 28, 2019|Document updated. Matches preview package version 0.1.0.|
 |Mar 18, 2019|Document created. Matches preview package version 0.0.1.|

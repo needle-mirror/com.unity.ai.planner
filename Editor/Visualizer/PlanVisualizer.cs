@@ -3,40 +3,39 @@ using System.Collections.Generic;
 using System.Text;
 using GraphVisualizer;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
-using Unity.Entities;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {
-    abstract class BaseVisualizerNode : Node, IVisualizerNode
+    abstract class BaseNode : Node, IVisualizerNode
     {
         public bool ExpansionNode { get; }
         public string Label { get; }
 
-        protected World m_World;
-        protected EntityManager m_EntityManager;
+        protected IPlanInternal m_Plan;
 
-        protected BaseVisualizerNode(World world, EntityManager entityManager, string label, object content, bool expansion = false,  float weight = 1, bool active = false)
+        protected BaseNode(IPlanInternal plan, string label, object content, bool expansion = false,  float weight = 1, bool active = false)
             : base(content, weight, active)
         {
             Label = label;
             ExpansionNode = expansion;
-            m_World = world;
-            m_EntityManager = entityManager;
+            m_Plan = plan;
         }
 
         public abstract IEnumerable<Node> GetNodeChildren(int maxDepth, int maxChildrenNodes);
 
-        protected abstract string GetExpansionString();
+        protected virtual string GetExpansionString()
+        {
+            return "\u2026";
+        }
 
         public override string GetContentTypeName()
         {
             if (ExpansionNode)
-                return weight == 0f ? "\u2026" : GetExpansionString();
+                return GetExpansionString();
 
-            return Label;
+            return Label ?? base.GetContentTypeName();
         }
 
         protected static string InfoString(string key, double value) => string.Format(
@@ -45,191 +44,183 @@ namespace UnityEditor.AI.Planner.Visualizer
         protected static string InfoString(string key, int value) => $"<b>{key}:</b> {value:D}";
 
         protected static string InfoString(string key, object value) => "<b>" + key + ":</b> " + (value ?? string.Empty);
-
     }
 
-    class VisualizerActionNode : BaseVisualizerNode
+    class ActionNode : BaseNode
     {
-        public ActionNode ActionNode { get; }
+        public (IStateKey, IActionKey) StateActionKey => ((IStateKey, IActionKey))content;
 
-        public VisualizerActionNode(World world, EntityManager entityManager, object content, ActionNode actionNode,
-            float weight = 1, bool active = false, bool expansion = false)
-            : base(world, entityManager, GetActionName(world, actionNode.ActionSystemGuid), content, expansion, weight, active)
+        struct Successor : IComparable<Successor>
         {
-            ActionNode = actionNode;
+            public ActionResult ActionResult;
+            public IStateKey StateKey;
+
+            public int CompareTo(Successor other) => other.ActionResult.Probability.CompareTo(ActionResult.Probability);
         }
 
-        public override Type GetContentType()
+        // Local cache
+        List<(ActionResult, IStateKey)> s_ActionResults = new List<(ActionResult, IStateKey)>();
+        List<Successor> s_Successors = new List<Successor>();
+
+
+        public ActionNode(IPlanInternal plan, (IStateKey, IActionKey) stateActionKey, bool expansion = false, float weight = 1, bool active = false)
+            : base(plan, plan.GetActionName(stateActionKey.Item2), stateActionKey, expansion, weight, active)
         {
-            if (m_World != null && m_World.IsCreated)
+        }
+
+        public override Color GetColor()
+        {
+            if (!string.IsNullOrEmpty(Label))
             {
-                var actionSystemGuid = ActionNode.ActionSystemGuid;
-                foreach (var manager in m_World.Systems)
-                {
-                    if (manager is IActionSystem actionSystem)
-                    {
-                        if (actionSystem.ActionSystemGuid == actionSystemGuid)
-                            return actionSystem.GetType();
-                    }
-                }
+                float h = (float)Math.Abs(Label.GetHashCode()) / int.MaxValue;
+                return Color.HSVToRGB(h, 0.6f, 1.0f);
             }
 
-            return ActionNode.Equals(default) ? content?.GetType() : ActionNode.GetType();
+            return base.GetColor();
         }
 
         protected override string GetExpansionString()
         {
-            var graphNode = (Entity)content;
-            var actionResultBuffer = m_EntityManager.GetBuffer<ActionResult>(graphNode);
-            return $"{actionResultBuffer.Length} State(s)";
+            if (weight < 0f)
+                return base.GetExpansionString(); // Back to parent node
+
+            var actionResultCount = m_Plan.GetActionResults(StateActionKey, null);
+            return $"{actionResultCount} State(s)";
         }
 
         public override string ToString()
         {
-            var graphNodeEntity = (Entity)content;
-            if (ExpansionNode || graphNodeEntity == default || !m_EntityManager.IsCreated)
+            if (ExpansionNode)
                 return base.ToString();
 
-            var actionNode = m_EntityManager.GetComponentData<ActionNode>(graphNodeEntity);
-            if (actionNode.ActionSystemGuid == default)
-                return base.ToString();
-
+            var actionInfo = m_Plan.GetActionInfo(StateActionKey);
             var sb = new StringBuilder();
 
             sb.AppendLine();
             sb.AppendLine(Label);
 
             sb.AppendLine();
-            sb.AppendLine(InfoString("Policy Value", actionNode.ActionValue));
-            sb.AppendLine(InfoString("Iterations", actionNode.VisitCount));
-            sb.AppendLine(InfoString("Complete", actionNode.Complete));
+            sb.AppendLine(InfoString("Action Value", actionInfo.ActionValue));
+            sb.AppendLine(InfoString("Visit Count", actionInfo.VisitCount));
+            sb.AppendLine(InfoString("Complete", actionInfo.Complete));
 
-            // todo arguments?
+            SortSuccessorStates(s_ActionResults, ref s_Successors, out _, out _);
+
+            sb.AppendLine();
+            var successor = s_Successors[0];
+            sb.AppendLine(InfoString("Resulting state", $"{successor.StateKey.Label}"));
+            sb.AppendLine($"Probability: {successor.ActionResult.Probability}");
+            sb.AppendLine($"Transition Utility Value: {successor.ActionResult.TransitionUtilityValue}");
+
+            // TODO arguments?
 
             return sb.ToString();
         }
 
-        public static string GetActionName(World world, Guid actionSystemGuid)
+        static void SortSuccessorStates(List<(ActionResult, IStateKey)> actionResults, ref List<Successor> successors, out float minProbability, out float maxProbability)
         {
-            if (!world.IsCreated)
-                return actionSystemGuid.ToString();
-
-            foreach (var manager in world.Systems)
-            {
-                if (manager is IActionSystem actionSystem)
-                {
-                    if (actionSystem.ActionSystemGuid == actionSystemGuid)
-                        return actionSystem.Name;
-                }
-            }
-
-            return null;
-        }
-
-        struct ActionResultNode : IComparable<ActionResultNode>
-        {
-            public ActionNode ActionNode;
-            public PolicyGraphNode Child;
-            public Entity ChildEntity;
-            public float Probability;
-
-            public int CompareTo(ActionResultNode other) => other.Probability.CompareTo(Probability);
-        }
-
-        public override IEnumerable<Node> GetNodeChildren(int maxDepth, int maxChildrenNodes)
-        {
-            var graphNodeEntity = (Entity)content;
-            if (graphNodeEntity == default)
-                yield break;
-
-            var actionResultBuffer = m_EntityManager.GetBuffer<ActionResult>(graphNodeEntity);
-
-            // Handle current node
-            if (maxDepth > 0 && depth > maxDepth)
-            {
-                if (depth == maxDepth + 1 && actionResultBuffer.Length > 0)
-                {
-                    var expansionNode = new VisualizerActionNode(m_World, m_EntityManager, graphNodeEntity, default,
-                        Mathf.Min(weight, float.Epsilon), expansion: true);
-                    yield return expansionNode;
-                }
-
-                yield break;
-            }
-
             // Grab all child nodes and sort them
-            var minProbability = float.MaxValue;
-            var maxProbability = float.MinValue;
-            var sortedChildrenNodes = new List<ActionResultNode>();
-            var actionNode = m_EntityManager.GetComponentData<ActionNode>(graphNodeEntity);
-            for (var i = 0; i < actionResultBuffer.Length; i++)
+            minProbability = float.MaxValue;
+            maxProbability = float.MinValue;
+            successors.Clear();
+            for (var i = 0; i < actionResults.Count; i++)
             {
-                var actionResult = actionResultBuffer[i];
-                var policyNodeEntity = actionResult.PolicyGraphNodeEntity;
+                var actionResultPair = actionResults[i];
+                var actionResult = actionResultPair.Item1;
+                var resultingState = actionResultPair.Item2;
+
                 var resultProbability = actionResult.Probability;
                 minProbability = Mathf.Min(minProbability, resultProbability);
                 maxProbability = Mathf.Max(maxProbability, resultProbability);
 
-                sortedChildrenNodes.Add(new ActionResultNode()
+                successors.Add(new Successor()
                 {
-                    ActionNode = actionNode,
-                    Child = m_EntityManager.GetComponentData<PolicyGraphNode>(policyNodeEntity),
-                    ChildEntity = policyNodeEntity,
-                    Probability = resultProbability,
+                    ActionResult = actionResult,
+                    StateKey = resultingState
                 });
             }
 
-            sortedChildrenNodes.Sort();
+            successors.Sort();
+        }
+
+        public override IEnumerable<Node> GetNodeChildren(int maxDepth, int maxChildrenNodes)
+        {
+            m_Plan.GetActionResults(StateActionKey, s_ActionResults);
+
+            // Handle current node
+            if (maxDepth > 0 && depth > maxDepth)
+            {
+                if (depth == maxDepth + 1 && s_ActionResults.Count > 0)
+                {
+                    var expansionNode = new ActionNode(m_Plan, StateActionKey, true,
+                        Mathf.Min(weight, float.Epsilon));
+                    yield return expansionNode;
+                }
+
+                yield break;
+            }
+
+            var successors = new List<Successor>();
+            SortSuccessorStates(s_ActionResults, ref successors, out var minProbability, out var maxProbability);
 
             // Yield children
             var c = 0;
-            foreach (var childPolicyNode in sortedChildrenNodes)
+            foreach (var successor in successors)
             {
                 if (c >= maxChildrenNodes)
                     yield break;
 
-                var probability = childPolicyNode.Probability;
+                var probability = successor.ActionResult.Probability;
                 var nodeWeight = Math.Abs(probability - 1.0f) < 10e-6 ?
                     float.MaxValue :
-                    Mathf.InverseLerp(minProbability, maxProbability, childPolicyNode.Probability);
-                yield return new VisualizerPolicyNode(m_World, m_EntityManager, childPolicyNode.ChildEntity, childPolicyNode.Child, nodeWeight);
+                    Mathf.InverseLerp(minProbability, maxProbability, probability);
+
+                yield return new StateNode(m_Plan, successor.StateKey, weight: nodeWeight);
 
                 c++;
             }
         }
     }
 
-    class VisualizerPolicyNode : BaseVisualizerNode
+    class StateNode : BaseNode
     {
-        public PolicyGraphNode PolicyGraphNode { get; }
+        public IStateKey StateKey => (IStateKey)content;
 
-        public VisualizerPolicyNode(World world, EntityManager entityManager, object content, PolicyGraphNode policyGraphNode,
-            float weight = 1, bool active = false, bool expansion = false)
-            : base(world, entityManager, GetPolicyNodeLabel(policyGraphNode), content, expansion, weight, active)
+        struct Successor : IComparable<Successor>
         {
-            PolicyGraphNode = policyGraphNode;
+            public IActionKey ActionKey;
+            public ActionInfo ActionInfo;
+
+            public int CompareTo(Successor other) => other.ActionInfo.ActionValue.CompareTo(ActionInfo.ActionValue);
+        }
+
+        // Local cache
+        static List<IActionKey> s_Actions = new List<IActionKey>();
+        static List<Successor> s_Successors = new List<Successor>();
+
+        public StateNode(IPlanInternal plan, IStateKey stateKey, bool expansion = false, float weight = 1, bool active = false)
+            : base(plan, stateKey.Label, stateKey, expansion, weight, active)
+        {
         }
 
         public override Type GetContentType()
         {
-            return PolicyGraphNode.Equals(default) ? content?.GetType() : PolicyGraphNode.GetType();
+            var stateInfo = m_Plan.GetStateInfo(StateKey);
+            return stateInfo.GetType();
         }
 
         protected override string GetExpansionString()
         {
-            var graphNode = (Entity)content;
-            var actionReferenceBuffer = m_EntityManager.GetBuffer<ActionNodeReference>(graphNode);
-            return $"{actionReferenceBuffer.Length} Action(s)";
+            if (weight < 0f)
+                return base.GetExpansionString(); // Back to parent node
+
+            var actionsCount = m_Plan.GetActions(StateKey, null);
+            return $"{actionsCount} Action(s)";
         }
 
         public override string ToString()
         {
-            var graphNodeEntity = (Entity)content;
-            if (ExpansionNode || graphNodeEntity == default || !m_EntityManager.IsCreated)
-                return base.ToString();
-
-            var pgn = m_EntityManager.GetComponentData<PolicyGraphNode>(graphNodeEntity);
-            if (pgn.StateEntity == default)
+            if (ExpansionNode)
                 return base.ToString();
 
             var sb = new StringBuilder();
@@ -237,124 +228,108 @@ namespace UnityEditor.AI.Planner.Visualizer
             sb.AppendLine();
             sb.AppendLine(Label);
 
+            var stateInfo = m_Plan.GetStateInfo(StateKey);
             sb.AppendLine();
-            sb.AppendLine(InfoString("Entity", graphNodeEntity.Index));
-            sb.AppendLine(InfoString("State Entity", pgn.StateEntity.Index));
+            sb.AppendLine(InfoString("Policy Value", stateInfo.PolicyValue));
+            sb.AppendLine(InfoString("Visit Count", stateInfo.VisitCount));
 
             sb.AppendLine();
-            if (pgn.OptimalActionEntity != default)
+            sb.AppendLine(InfoString("Complete", stateInfo.Complete));
+
+            sb.AppendLine();
+            if (m_Plan.GetOptimalAction(StateKey, out var optimalActionKey))
+                sb.AppendLine(InfoString("Optimal Action", m_Plan.GetActionName(optimalActionKey)));
+
+            m_Plan.GetActions(StateKey, s_Actions);
+
+            SortSuccessorActions(s_Actions, ref s_Successors, out _, out _);
+
+            foreach (var successor in s_Successors)
             {
-                var optimalActionNode = m_EntityManager.GetComponentData<ActionNode>(pgn.OptimalActionEntity);
-                sb.AppendLine(InfoString("Optimal Action", VisualizerActionNode.GetActionName(m_World, optimalActionNode.ActionSystemGuid)));
+                var actionKey = successor.ActionKey;
+                var stateActionKey = (StateKey, actionKey);
+
+                var actionInfo = m_Plan.GetActionInfo(stateActionKey);
+                sb.AppendLine($"    {m_Plan.GetActionName(actionKey)}: {actionInfo.ActionValue}");
             }
 
-            var actionReferenceBuffer = m_EntityManager.GetBuffer<ActionNodeReference>(graphNodeEntity);
-            for (var i = 0; i < actionReferenceBuffer.Length; i++)
+            sb.AppendLine();
+            var stateManager = m_Plan.StateManager;
+            if (stateManager != null) // null when stateManager does not implement IStateManagerInternal
             {
-                var actionNodeEntity = actionReferenceBuffer[i].ActionNodeEntity;
-                var actionNode = m_EntityManager.GetComponentData<ActionNode>(actionNodeEntity);
+                var stateData = stateManager.GetStateData(StateKey, false);
+                var stateString = stateData.ToString();
+                if (GUILayout.Button("Copy State", EditorStyles.miniButton))
+                    stateString.CopyToClipboard();
 
-                var actionResultsBuffer = m_EntityManager.GetBuffer<ActionResult>(actionNodeEntity);
-                var transitionUtilityValue = string.Empty;
-                if (actionResultsBuffer.Length > 0)
-                    transitionUtilityValue = actionResultsBuffer[0].TransitionUtilityValue.ToString();
-
-                sb.AppendLine($"    {VisualizerActionNode.GetActionName(m_World, actionNode.ActionSystemGuid)}: {actionNode.ActionValue} ({transitionUtilityValue})");
+                sb.AppendLine(InfoString("State", null));
+                sb.AppendLine(stateString);
             }
-
-            sb.AppendLine();
-            sb.AppendLine(InfoString("Policy Value", pgn.PolicyValue));
-            sb.AppendLine(InfoString("Iterations", pgn.Iterations));
-
-            sb.AppendLine();
-            sb.AppendLine(InfoString("Complete", pgn.Complete));
-
-            sb.AppendLine();
-            var stateString = TraitBasedDomain.GetStateString(m_EntityManager, pgn.StateEntity);
-            if (GUILayout.Button("Copy State", EditorStyles.miniButton))
-                stateString.CopyToClipboard();
-
-            sb.AppendLine(InfoString("State", null));
-            sb.AppendLine(stateString);
 
             return sb.ToString();
         }
 
-        static string GetPolicyNodeLabel(PolicyGraphNode policyGraphNode)
+        void SortSuccessorActions(List<IActionKey> actions, ref List<Successor> successors, out float minActionValue, out float maxActionValue)
         {
-            return policyGraphNode.Equals(default) ? null : $"State: {policyGraphNode.StateEntity.Index}";
-        }
+            // Grab all child nodes and sort them
+            minActionValue = float.MaxValue;
+            maxActionValue = float.MinValue;
+            successors.Clear();
+            for (var i = 0; i < actions.Count; i++)
+            {
+                var actionKey = actions[i];
+                var actionInfo = m_Plan.GetActionInfo((StateKey, actionKey));
+                var actionValue = actionInfo.ActionValue;
+                minActionValue = Mathf.Min(minActionValue, actionValue);
+                maxActionValue = Mathf.Max(maxActionValue, actionValue);
 
-        struct PolicyChildNode : IComparable<PolicyChildNode>
-        {
-            public PolicyGraphNode PolicyGraphNode;
-            public ActionNode Child;
-            public Entity ChildEntity;
+                successors.Add(new Successor()
+                {
+                    ActionKey = actionKey,
+                    ActionInfo = actionInfo,
+                });
+            }
 
-            public int CompareTo(PolicyChildNode other) => other.Child.ActionValue.CompareTo(Child.ActionValue);
+            successors.Sort();
         }
 
         public override IEnumerable<Node> GetNodeChildren(int maxDepth, int maxChildrenNodes)
         {
-            var graphNodeEntity = (Entity)content;
-            var actionReferenceBuffer = m_EntityManager.GetBuffer<ActionNodeReference>(graphNodeEntity);
+            m_Plan.GetActions(StateKey, s_Actions);
 
             // Handle current node
             if (maxDepth > 0 && depth > maxDepth)
             {
-                if (depth == maxDepth + 1 && actionReferenceBuffer.Length > 0)
+                if (depth == maxDepth + 1 && s_Actions.Count > 0)
                 {
-                    var expansionNode = new VisualizerPolicyNode(m_World, m_EntityManager, graphNodeEntity, default,
-                        Mathf.Min(weight, float.Epsilon), expansion: true);
+                    var expansionNode = new StateNode(m_Plan, StateKey,  true,
+                        Mathf.Min(weight, float.Epsilon));
                     yield return expansionNode;
                 }
 
                 yield break;
             }
 
-            // Grab all child nodes and sort them
-            var minActionValue = float.MaxValue;
-            var maxActionValue = float.MinValue;
-            var sortedChildrenNodes = new List<PolicyChildNode>();
-            var policyGraphNode = m_EntityManager.GetComponentData<PolicyGraphNode>(graphNodeEntity);
-            for (var i = 0; i < actionReferenceBuffer.Length; i++)
-            {
-                var actionNodeEntity = actionReferenceBuffer[i].ActionNodeEntity;
-                var actionNode = m_EntityManager.GetComponentData<ActionNode>(actionNodeEntity);
-                var actionValue = actionNode.ActionValue;
-                minActionValue = Mathf.Min(minActionValue, actionValue);
-                maxActionValue = Mathf.Max(maxActionValue, actionValue);
-
-                sortedChildrenNodes.Add(new PolicyChildNode()
-                {
-                    PolicyGraphNode = policyGraphNode,
-                    Child = actionNode,
-                    ChildEntity = actionNodeEntity
-                });
-            }
-
-            sortedChildrenNodes.Sort();
+            var successors = new List<Successor>();
+            SortSuccessorActions(s_Actions, ref successors, out var minActionValue, out var maxActionValue);
 
             // Yield children
-            var pgn = m_EntityManager.GetComponentData<PolicyGraphNode>(graphNodeEntity);
-            var optimalActionNode = pgn.OptimalActionEntity != default ?
-                m_EntityManager.GetComponentData<ActionNode>(pgn.OptimalActionEntity) : default;
+            m_Plan.GetOptimalAction(StateKey, out var optimalActionKey);
             var c = 0;
-            foreach (var childPolicyNode in sortedChildrenNodes)
+            foreach (var successor in successors)
             {
                 if (c >= maxChildrenNodes)
                     yield break;
 
-                var action = childPolicyNode.Child;
-                var nodeWeight = !optimalActionNode.Equals(default) && action.Equals(optimalActionNode) ? float.MaxValue
-                    : Mathf.InverseLerp(minActionValue, maxActionValue, childPolicyNode.Child.ActionValue);
-                yield return new VisualizerActionNode(m_World, m_EntityManager, childPolicyNode.ChildEntity, action, nodeWeight);
+                var actionKey = successor.ActionKey;
+                var nodeWeight = actionKey.Equals(optimalActionKey) ? float.MaxValue
+                    : Mathf.InverseLerp(minActionValue, maxActionValue, successor.ActionInfo.ActionValue);
+                yield return new ActionNode(m_Plan, (StateKey, actionKey), weight: nodeWeight);
 
                 c++;
             }
         }
     }
-
 
     class PlanVisualizer : Graph, IPlanVisualizer
     {
@@ -362,35 +337,21 @@ namespace UnityEditor.AI.Planner.Visualizer
         public int MaxChildrenNodes { get; set; }
         public IVisualizerNode RootNodeOverride { get; set; }
 
-        World m_World;
-        EntityManager m_EntityManager;
-        PlannerSystem m_Planner;
-        Func<ActionContext> m_GetCurrentAction;
-        PolicyGraphContainer m_PolicyGraph;
+        IPlanInternal m_Plan;
 
-        public PlanVisualizer(World world, PolicyGraphContainer graphContainer, Func<ActionContext> getCurrentAction)
+        public PlanVisualizer(IPlanInternal plan)
         {
-            m_World = world;
-            m_EntityManager = m_World.EntityManager;
-            m_Planner = m_World.GetExistingSystem<PlannerSystem>();
-            m_PolicyGraph = graphContainer;
-            m_GetCurrentAction = getCurrentAction;
+            m_Plan = plan;
         }
 
         protected override IEnumerable<Node> GetChildren(Node node)
         {
-            if (!m_EntityManager.IsCreated)
-                yield break;
-
-            foreach (var childNode in ((BaseVisualizerNode) node).GetNodeChildren(MaxDepth, MaxChildrenNodes))
+            foreach (var childNode in ((BaseNode)node).GetNodeChildren(MaxDepth, MaxChildrenNodes))
                 yield return childNode;
         }
 
         protected override void Populate()
         {
-            if (!m_EntityManager.IsCreated)
-                return;
-
             if (RootNodeOverride == null)
                 PopulateWithRoot();
             else
@@ -399,78 +360,60 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         void PopulateWithRoot()
         {
-            var rootNodeEntity = m_PolicyGraph.PolicyGraphRootEntity;
-            var rootPolicyGraphNode = m_EntityManager.GetComponentData<PolicyGraphNode>(rootNodeEntity);
-            if (rootNodeEntity.Equals(default))
-                return;
+            var rootStateKey = m_Plan.RootStateKey;
 
             // If action is in progress or optimal action is assigned, use action node as root.
-            var action = m_GetCurrentAction != null ? m_GetCurrentAction() : default;
-            var actionEntity = action == default ? rootPolicyGraphNode.OptimalActionEntity : action.ActionEntity;
-            if (actionEntity != default)
+            var actionKey = m_Plan.CurrentAction;
+            if (actionKey == null)
+                m_Plan.GetOptimalAction(rootStateKey, out actionKey);
+
+            if (actionKey != null)
             {
-                var actionNode = m_EntityManager.GetComponentData<ActionNode>(actionEntity);
-                var visualizerActionNode = CreateActionNode(actionEntity, actionNode, 1f, true);
+                var visualizerActionNode = CreateActionNode((rootStateKey, actionKey),1f, true);
                 AddNodeHierarchy(visualizerActionNode);
                 return;
             }
 
             // If the root has not yet been expanded, root the graph at the policy graph node.
-            var rootPolicyNode = CreatePolicyNode(rootNodeEntity, rootPolicyGraphNode, 1f, true);
+            var rootPolicyNode = CreateStateNode(rootStateKey, 1f, true);
             AddNodeHierarchy(rootPolicyNode);
         }
 
         void PopulateWithRootOverride()
         {
             var parentVisualizerNode = RootNodeOverride.parent;
-            Entity parentNodeEntity = default;
 
-            if (RootNodeOverride is VisualizerActionNode visActionNode)
+            if (RootNodeOverride is ActionNode visActionNode)
             {
-                var visualizerNode = CreateActionNode((Entity) RootNodeOverride.content, visActionNode.ActionNode, 1f, true);
+                var visualizerNode = CreateActionNode(visActionNode.StateActionKey, 1f, true);
                 AddNodeHierarchy(visualizerNode);
 
-                PolicyGraphNode parentPolicyGraphNode = default;
-                if (parentVisualizerNode != null)
-                {
-                    parentNodeEntity = (Entity)parentVisualizerNode.content;
-                    parentPolicyGraphNode = ((VisualizerPolicyNode)parentVisualizerNode).PolicyGraphNode;
-                }
-
-                var backNode = CreatePolicyNode(parentNodeEntity, parentPolicyGraphNode, 0f, false, true);
+                var parentState = (StateNode)parentVisualizerNode;
+                var backNode = CreateStateNode(parentState.StateKey, -1f, expansion: true);
                 backNode.AddChild(visualizerNode);
                 AddNode(backNode);
             }
-            else if (RootNodeOverride is VisualizerPolicyNode visPolicyNode)
+            else if (RootNodeOverride is StateNode visStateNode)
             {
-                var visualizerNode = CreatePolicyNode((Entity) RootNodeOverride.content, visPolicyNode.PolicyGraphNode,
-                    1f, true);
+                var visualizerNode = CreateStateNode(visStateNode.StateKey, 1f, true);
                 AddNodeHierarchy(visualizerNode);
 
-                ActionNode parentAction = default;
-                if (parentVisualizerNode != null)
-                {
-                    parentNodeEntity = (Entity)parentVisualizerNode.content;
-                    parentAction = ((VisualizerActionNode)parentVisualizerNode).ActionNode;
-                }
+                ActionNode parentAction = (ActionNode)parentVisualizerNode;
 
-                var backNode = CreateActionNode(parentNodeEntity, parentAction, 0f, false, true);
+                var backNode = CreateActionNode(parentAction.StateActionKey, -1f, expansion: true);
                 backNode.AddChild(visualizerNode);
                 AddNode(backNode);
             }
-
         }
 
-        BaseVisualizerNode CreateActionNode(Entity nodeEntity, ActionNode actionNode,
-            float weight, bool active = false, bool expansion = false)
+        BaseNode CreateActionNode((IStateKey, IActionKey) stateActionKey, float weight, bool active = false, bool expansion = false)
         {
-            return new VisualizerActionNode(m_World, m_EntityManager, nodeEntity, actionNode, weight, active, expansion);
+            return new ActionNode(m_Plan, stateActionKey, expansion, weight, active);
         }
 
-        BaseVisualizerNode CreatePolicyNode(Entity nodeEntity, PolicyGraphNode policyNode,
-             float weight, bool active = false, bool expansion = false)
+        BaseNode CreateStateNode(IStateKey stateKey, float weight, bool active = false, bool expansion = false)
         {
-            return new VisualizerPolicyNode(m_World, m_EntityManager, nodeEntity, policyNode, weight, active, expansion);
+            return new StateNode(m_Plan, stateKey, expansion, weight, active);
         }
     }
 }

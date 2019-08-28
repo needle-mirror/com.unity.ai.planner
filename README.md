@@ -6,12 +6,12 @@ The AI Planner includes authoring tools and a system for automated decision-maki
 * Assisting in creating tutorials
 * Automated testing
 
-Start by creating a domain definition in the authoring tool that models the problem space at an abstract level. Then, create one or more plan definitions that provide rules for what actions or decisions can be made. Submit these to the planner system and get back a plan that converges on an optimal solution and can update as changes in the world occur.
+Start by defining a planning domain, composed of objects with which your agent may interact. Then, create definitions for what actions or decisions an agent may make. Once the planning problem is defined, the planner system will iteratively build a plan that converges to an optimal solution. Execute these plans by creating an agent script and game code to control your characters.
 
 ## Required Software
-Unity 2019.1
+Unity 2019.2
 
 ## Documentation
-Documentation for the AI Planner is available in [unpublished](Documentation~/index.md) and [published](https://docs.unity3d.com/Packages/com.unity.ai.planner@0.0/) form.
+Documentation for the AI Planner is available in [unpublished](Documentation~/index.md) and [published](https://docs.unity3d.com/Packages/com.unity.ai.planner@0.1/) form.
 
 For further discussion, [please visit the forum](https://forum.unity.com/forums/ai-navigation-previews.122/).

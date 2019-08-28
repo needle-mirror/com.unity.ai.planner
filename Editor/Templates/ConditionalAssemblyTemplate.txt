@@ -1,0 +1,8 @@
+[assembly: ConditionalCompilation.OptionalDependency("{{ namespace }}.ConditionalType", "{{ define }}")]
+
+namespace {{ namespace }}
+{
+    public class ConditionalType
+    {
+    }
+}

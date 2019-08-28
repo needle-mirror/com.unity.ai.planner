@@ -4,30 +4,23 @@ using System.Reflection;
 using GraphVisualizer;
 using Unity.AI.Planner;
 using Unity.AI.Planner.Agent;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Jobs;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.Agent;
+using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {
     class PlanVisualizerWindow : EditorWindow, IHasCustomMenu
     {
-        public IPolicyGraphInternal Plan
-        {
-            set
-            {
-                m_Plan = value;
-                InitializePlanVisualizer(m_Plan, null);
-            }
-        }
-
         List<Type> m_AgentTypes;
 
         IGraphRenderer m_Renderer;
         IGraphLayout m_Layout;
 
         [NonSerialized]
-        IPolicyGraphInternal m_Plan;
+        IPlanInternal m_Plan;
         IPlanVisualizer m_Visualizer;
         IVisualizerNode m_RootNodeOverride;
 
@@ -54,7 +47,7 @@ namespace UnityEditor.AI.Planner.Visualizer
             {
                 var baseType = t.BaseType;
                 if (!t.IsAbstract && baseType != null && baseType.IsGenericType
-                    && baseType.GetGenericTypeDefinition() == typeof(BaseAgent<>))
+                    && baseType.GetGenericTypeDefinition() == typeof(BaseAgent<,,,,,,,,,>))
                 {
                     m_AgentTypes.Add(t);
                 }
@@ -109,23 +102,23 @@ namespace UnityEditor.AI.Planner.Visualizer
         {
             var activeGameObject = Selection.activeGameObject;
 
-            if (EditorApplication.isPlaying)
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 if (!activeGameObject)
                     activeGameObject = FindBaseAgentObject();
 
                 if (activeGameObject)
                 {
-                    if (!GetPlan(activeGameObject, out var plan, out var getCurrentAction))
+                    if (!GetPlan(activeGameObject, out var plan))
                     {
                         activeGameObject = FindBaseAgentObject();
-                        GetPlan(activeGameObject, out plan, out getCurrentAction);
+                        GetPlan(activeGameObject, out plan);
                     }
 
-                    if (plan != null && getCurrentAction != null)
+                    if (plan != null)
                     {
                         m_Plan = plan;
-                        InitializePlanVisualizer(m_Plan, getCurrentAction);
+                        InitializePlanVisualizer(m_Plan);
                     }
                 }
             }
@@ -136,16 +129,14 @@ namespace UnityEditor.AI.Planner.Visualizer
             }
         }
 
-        void InitializePlanVisualizer(IPolicyGraph plan, Func<ActionContext> getCurrentAction)
+        void InitializePlanVisualizer(IPlanInternal plan)
         {
-            if (plan is PolicyGraphContainer graphContainer)
-                m_Visualizer = new PlanVisualizer(graphContainer.World, graphContainer, getCurrentAction);
+            m_Visualizer = new PlanVisualizer(plan);
         }
 
-        static bool GetPlan(GameObject go, out IPolicyGraphInternal plan, out Func<ActionContext> getCurrentAction)
+        static bool GetPlan(GameObject go, out IPlanInternal plan)
         {
             plan = null;
-            getCurrentAction = null;
 
             if (go == null)
                 return false;
@@ -156,30 +147,23 @@ namespace UnityEditor.AI.Planner.Visualizer
                 if (!component.enabled)
                     continue;
 
-                var fields = component.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var field in fields)
+                var componentType = component.GetType();
+                var baseType = componentType.BaseType; // BaseAgent
+                if (baseType != null)
                 {
-                    if (IsAssignableToGenericType(field.FieldType, typeof(Controller<>)))
+                    var fields = baseType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var field in fields)
                     {
-                        var controller = field.GetValue(component);
-                        if (controller != null)
+                        if (plan == null && typeof(IPlanInternal).IsAssignableFrom(field.FieldType))
                         {
-                            var controllerType = controller.GetType();
-                            var planField = controllerType.GetField("m_Plan", BindingFlags.NonPublic | BindingFlags.Instance);
-                            plan = (IPolicyGraphInternal)planField.GetValue(controller);
-
-                            var actionField = controllerType.GetField("m_CurrentAction", BindingFlags.NonPublic | BindingFlags.Instance);
-                            getCurrentAction = () => (ActionContext)actionField.GetValue(controller);
-                            break;
+                            plan = (IPlanInternal)field.GetValue(component);
+                            return true;
                         }
                     }
                 }
-
-                if (plan != null && getCurrentAction != null)
-                    break;
             }
 
-            return plan != null && getCurrentAction != null;
+            return false;
         }
 
         static bool IsAssignableToGenericType(Type givenType, Type genericType)
@@ -273,7 +257,7 @@ namespace UnityEditor.AI.Planner.Visualizer
                             m_RootNodeOverride = (IVisualizerNode)m_RootNodeOverride.parent;
 
                             // If there isn't another parent, then we're actually back at the root
-                            if (m_RootNodeOverride.parent == null)
+                            if (m_RootNodeOverride != null && m_RootNodeOverride.parent == null)
                                 m_RootNodeOverride = null;
                         }
 
@@ -301,9 +285,6 @@ namespace UnityEditor.AI.Planner.Visualizer
             GUILayout.FlexibleSpace();
             if (m_Plan != null)
             {
-                var rootNode = m_Plan.RootNode;
-                if (rootNode != null)
-                    GUILayout.Label($"Root Iterations: {m_Plan.RootNode.Iterations}");
                 EditorGUILayout.Space();
                 GUILayout.Label($"Max Plan Depth: {m_Plan.MaxHorizonFromRoot}");
             }

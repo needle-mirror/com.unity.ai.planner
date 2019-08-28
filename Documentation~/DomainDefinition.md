@@ -1,15 +1,17 @@
-# Domain Definition
+# Defining the domain
 
-The first step in setting up a planning domain is to create a domain definition. To begin, create a new asset of type "Domain Definition" via the asset creation menu (Create -> AI -> Domain Definition) or the Create menu from the project window. 
+For the Planner to be able to solve a problem, a model that represents this problem need to be created first. This model is expressed using a Trait-Based domain language that can represent a large variety of scenarios.
 
-![Image](images/CreateDomainDefinition.png)
+To define a planning domain two types of assets can be used: "Trait Definition" and "Enum Definition". They can be created via the asset creation menu (Create -> AI -> Trait or Enum Definition) or the Create menu from the project window.
 
-You can edit the domain definition in the authoring pane, which is used to define enumerations, traits, and aliases.
+![Image](images/CreateDomainAssets.png)
+
+You can edit domain assets in Unity inspector.
 
 
 ## Enumerations
 
-The trait-based domain language supports most basic data types, such as int, float, bool, and enum. For the latter, the authoring tool allows you to define custom enumerations to be used by properties in your domain's traits.
+The trait-based domain language supports most basic data types, such as int, float, bool, and enum. For the latter, "Enum Definition" assets allows you to define custom enumerations to be used by properties in your domain's traits.
 
 ![Image](images/Enumerations.png)
 
@@ -18,14 +20,6 @@ The trait-based domain language supports most basic data types, such as int, flo
 
 Traits are the fundamental data which represents your game/simulation. Each trait specifies a quality which objects can possess, such as the ability to be carried or to be used as a weapon. Each trait is composed of properties which reflect attributes specific to each trait. For example, consider creating a trait "Consumable" which marks objects that can be consumed. Such a trait may possess a property "Consumable Type" (an enumeration) which denotes if the consumable is food or drink. In this way, traits are defined by:
 * A name
-* A list of typed properties
+* A list of typed properties with default values
 
 ![Image](images/Traits.png)
-
-
-
-## Aliases
-
-As an authoring shorthand, aliases provide a means of referring to established sets of traits on an object. Such aliases can be used when specifying constraints in the [plan definition](PlanDefinition.md).
-
-![Image](images/Aliases.png)

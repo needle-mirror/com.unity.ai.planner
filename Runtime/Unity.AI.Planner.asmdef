@@ -3,11 +3,11 @@
     "references": [
         "Unity.Collections",
         "Unity.Entities",
-        "Unity.Properties.Codegen",
-        "Unity.Entities.Properties",
-        "Unity.Properties"
+        "Unity.Mathematics",
+        "Unity.Jobs",
+        "Unity.FullDotNet",
+        "Unity.Tiny.Debugging"
     ],
-    "optionalUnityReferences": [],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

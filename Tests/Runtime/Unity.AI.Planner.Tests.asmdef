@@ -2,7 +2,10 @@
     "name": "Unity.AI.Planner.Tests",
     "references": [
         "Unity.AI.Planner",
-        "Unity.Entities"
+        "Unity.Entities",
+        "Unity.PerformanceTesting",
+        "Unity.Collections",
+        "Unity.Jobs"
     ],
     "optionalUnityReferences": [
         "TestAssemblies"

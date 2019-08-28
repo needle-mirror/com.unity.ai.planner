@@ -1,0 +1,89 @@
+using System;
+using System.Collections.Generic;
+using AI.Planner.Domains;
+using Unity.AI.Planner;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Jobs;
+{{- for actionNamespace in action_namespaces }}
+using {{ domain_namespace }}.{{ actionNamespace }};
+{{- end}}
+
+namespace {{ domain_namespace }}
+{
+    using StateTransitionInfo = ValueTuple<StateEntityKey, ActionKey, ActionResult, StateEntityKey>;
+
+    public class ActionScheduler :
+        ITraitBasedActionScheduler<DomainObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey, ActionResult>,
+        IGetActionName
+    {
+        // Input
+        public NativeList<StateEntityKey> UnexpandedStates { get; set; }
+        public StateManager StateManager { get; set; }
+
+        // Output
+        public NativeQueue<StateTransitionInfo> CreatedStateInfo { get; set; }
+
+        public Guid[] ActionGuids => s_ActionGuids;
+
+        static Guid[] s_ActionGuids = {
+        {{- for action in actions }}
+            {{action.name}}.ActionGuid,
+        {{- end}}
+        };
+
+        static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
+        {
+            {{- for action in actions }}
+            { {{action.name}}.ActionGuid, nameof({{action.name}}) },
+            {{- end}}
+        };
+
+        public string GetActionName(IActionKey actionKey)
+        {
+            s_ActionGuidToNameLookup.TryGetValue(((IActionKeyWithGuid)actionKey).ActionGuid, out var name);
+            return name;
+        }
+
+        public JobHandle Schedule(JobHandle inputDeps)
+        {
+            {{- for action in actions }}
+            var {{action.name}}DataContext = StateManager.GetStateDataContext();
+            var {{action.name}}ECB = new EntityCommandBuffer(Allocator.TempJob);
+            {{action.name}}DataContext.EntityCommandBuffer = {{action.name}}ECB.ToConcurrent();
+            {{- end}}
+
+            var allActionJobs = new NativeArray<JobHandle>({{ num_actions }}, Allocator.TempJob)
+            {
+                {{- for action in actions }}
+                [{{for.index}}] = new {{action.name}}(UnexpandedStates, {{action.name}}DataContext).Schedule(UnexpandedStates, 0, inputDeps),
+                {{- end}}
+            };
+
+            JobHandle.CompleteAll(allActionJobs);
+
+            // Playback entity changes and output state transition info
+            var entityManager = StateManager.EntityManager;
+            {{- for action in actions }}
+
+            {{action.name}}ECB.Playback(entityManager);
+            for (int i = 0; i < UnexpandedStates.Length; i++)
+            {
+                var stateEntity = UnexpandedStates[i].Entity;
+                var {{action.name}}Refs = entityManager.GetBuffer<{{action.name}}FixupReference>(stateEntity);
+                for (int j = 0; j < {{action.name}}Refs.Length; j++)
+                    CreatedStateInfo.Enqueue({{action.name}}Refs[j].TransitionInfo);
+                entityManager.RemoveComponent<{{action.name}}FixupReference>(stateEntity);
+            }
+            {{- end}}
+
+            allActionJobs.Dispose();
+            {{- for action in actions }}
+            {{action.name}}ECB.Dispose();
+            {{- end}}
+
+            return default;
+        }
+    }
+}

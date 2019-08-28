@@ -1,0 +1,752 @@
+using System;
+using System.Text;
+using Unity.AI.Planner;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Jobs;
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Jobs;
+using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+
+namespace {{ domain_namespace }}
+{
+    // Domains don't share key types to enforce that planners are domain specific
+    public struct StateEntityKey : IEquatable<StateEntityKey>, IStateKey
+    {
+        public Entity Entity;
+        public int HashCode;
+
+        public bool Equals(StateEntityKey other) => Entity == other.Entity;
+
+        public override int GetHashCode() => HashCode;
+
+        public override string ToString() => $"StateEntityKey ({Entity} {HashCode})";
+        public string Label => Entity.ToString();
+    }
+
+    public struct TerminationEvaluator : ITerminationEvaluator<StateData>
+    {
+        public bool IsTerminal(StateData state)
+        {
+            return {{- for termination in terminations }}
+                new {{termination}}().IsTerminal(state) ||
+            {{- end }}
+            false;
+        }
+    }
+
+    public struct Heuristic : IHeuristic<StateData>
+    {
+        public float Evaluate(StateData state)
+        {
+            return 0f;
+        }
+    }
+
+    public static class TraitArrayIndex<T> where T : struct, ITrait
+    {
+        public static int Index = -1;
+    }
+
+    public struct DomainObject : IDomainObject
+    {
+        static DomainObject()
+        {
+            {{- for trait in trait_list }}
+            TraitArrayIndex<{{trait.name}}>.Index = {{ for.index }};
+            {{- end }}
+        }
+
+        public int Length => {{ num_traits }};
+
+        public byte this[int i]
+        {
+            get
+            {
+                switch (i)
+                {
+                    {{- for trait in trait_list }}
+                    case {{ for.index }}:
+                        return {{trait.name}}Index;
+                    {{- end }}
+                }
+
+                return Unset;
+            }
+            set
+            {
+                switch (i)
+                {
+                    {{- for trait in trait_list }}
+                    case {{ for.index }}:
+                        {{trait.name}}Index = value;
+                        break;
+                    {{- end }}
+                }
+            }
+        }
+
+        public static byte Unset = Byte.MaxValue;
+
+        public static DomainObject Default => new DomainObject
+        {
+            {{- for trait in trait_list }}
+            {{trait.name}}Index = Unset,
+            {{- end }}
+        };
+
+        {{~ for trait in trait_list }}
+        public byte {{trait.name}}Index;
+        {{- end }}
+
+        {{~ for trait in trait_list }}
+        static ComponentType s_{{trait.name}}Type = new ComponentType(typeof({{trait.name}}));
+        {{- end }}
+
+        public bool HasSameTraits(DomainObject other)
+        {
+            for (var i = 0; i < Length; i++)
+            {
+                var traitIndex = this[i];
+                var otherTraitIndex = other[i];
+                if (traitIndex == Unset && otherTraitIndex != Unset || traitIndex != Unset && otherTraitIndex == Unset)
+                    return false;
+            }
+            return true;
+        }
+
+        public bool HasTraitSubset(DomainObject traitSubset)
+        {
+            for (var i = 0; i < Length; i++)
+            {
+                var requiredTrait = traitSubset[i];
+                if (requiredTrait != Unset && this[i] == Unset)
+                    return false;
+            }
+            return true;
+        }
+
+        // todo - replace with more efficient subset check
+        public bool MatchesTraitFilter(ComponentType[] componentTypes)
+        {
+            foreach (var t in componentTypes)
+            {
+                {{~ for trait in trait_list }}
+                {{ if for.index != 0 }}else {{ end }}if (t == s_{{ trait.name }}Type)
+                {
+                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && {{ trait.name }}Index != Unset) ||
+                        (t.AccessModeType != ComponentType.AccessMode.Exclude && {{ trait.name }}Index == Unset))
+                        return false;
+                } {{- end }}
+                else
+                {
+                    throw new ArgumentException($"Incorrect trait type used in domain object query: {t}");
+                }
+            }
+
+            return true;
+        }
+    }
+
+    public struct StateData : ITraitBasedStateData<DomainObject>
+    {
+        public Entity StateEntity;
+        public DynamicBuffer<DomainObject> DomainObjects;
+        public DynamicBuffer<DomainObjectID> DomainObjectIDs;
+        {{~ for trait in trait_list }}
+        public DynamicBuffer<{{trait.name}}> {{trait.name}}Buffer;
+        {{- end }}
+        {{~ for trait in trait_list }}
+        static ComponentType s_{{trait.name}}Type = new ComponentType(typeof({{trait.name}}));
+        {{- end }}
+
+        public StateData(JobComponentSystem system, Entity stateEntity, bool readWrite = false)
+        {
+            StateEntity = stateEntity;
+            DomainObjects = system.GetBufferFromEntity<DomainObject>(!readWrite)[stateEntity];
+            DomainObjectIDs = system.GetBufferFromEntity<DomainObjectID>(!readWrite)[stateEntity];
+            {{~ for trait in trait_list }}
+            {{trait.name}}Buffer = system.GetBufferFromEntity<{{trait.name}}>(!readWrite)[stateEntity];
+            {{- end }}
+        }
+
+        public StateData(int jobIndex, EntityCommandBuffer.Concurrent entityCommandBuffer, Entity stateEntity)
+        {
+            StateEntity = stateEntity;
+            DomainObjects = entityCommandBuffer.AddBuffer<DomainObject>(jobIndex, stateEntity);
+            DomainObjectIDs = entityCommandBuffer.AddBuffer<DomainObjectID>(jobIndex, stateEntity);
+            {{~ for trait in trait_list }}
+            {{trait.name}}Buffer = entityCommandBuffer.AddBuffer<{{trait.name}}>(jobIndex, stateEntity);
+            {{- end }}
+        }
+
+        public StateData Copy(int jobIndex, EntityCommandBuffer.Concurrent entityCommandBuffer)
+        {
+            var stateEntity = entityCommandBuffer.Instantiate(jobIndex, StateEntity);
+            var domainObjects = entityCommandBuffer.SetBuffer<DomainObject>(jobIndex, stateEntity);
+            domainObjects.CopyFrom(DomainObjects.AsNativeArray());
+            var domainObjectIDs = entityCommandBuffer.SetBuffer<DomainObjectID>(jobIndex, stateEntity);
+            domainObjectIDs.CopyFrom(DomainObjectIDs.AsNativeArray());
+            {{~ for trait in trait_list }}
+            var {{trait.name}}s = entityCommandBuffer.SetBuffer<{{trait.name}}>(jobIndex, stateEntity);
+            {{trait.name}}s.CopyFrom({{trait.name}}Buffer.AsNativeArray());
+            {{- end }}
+
+            return new StateData
+            {
+                StateEntity = stateEntity,
+                DomainObjects = domainObjects,
+                DomainObjectIDs = domainObjectIDs,
+                {{~ for trait in trait_list }}
+                {{trait.name}}Buffer = {{trait.name}}s,
+                {{- end }}
+            };
+        }
+
+        public (DomainObject, DomainObjectID) AddDomainObject(ComponentType[] types, string name = null)
+        {
+            var domainObject = DomainObject.Default;
+            var domainObjectID = new DomainObjectID() { ID = ObjectID.GetNext() };
+#if DEBUG
+            if (!string.IsNullOrEmpty(name))
+                domainObjectID.Name.CopyFrom(name);
+#endif
+
+            foreach (var t in types)
+            {
+                {{- for trait in trait_list }}
+                {{ if for.index != 0 }}else {{ end }}if (t == s_{{ trait.name }}Type)
+                {
+                    {{ trait.name }}Buffer.Add(default);
+                    domainObject.{{ trait.name }}Index = (byte) ({{ trait.name }}Buffer.Length - 1);
+                }
+                {{- end }}
+            }
+
+            DomainObjectIDs.Add(domainObjectID);
+            DomainObjects.Add(domainObject);
+
+            return (domainObject, domainObjectID);
+        }
+
+        public void SetTraitOnObject(ITrait trait, ref DomainObject domainObject)
+        {
+            {{ for trait in trait_list }}if (trait is {{trait.name}} {{trait.name}}Trait)
+                SetTraitOnObject({{trait.name}}Trait, ref domainObject);
+            else {{ end }}
+                throw new ArgumentException($"Trait {trait} of type {trait.GetType()} is not supported in this domain.");
+        }
+
+
+        public TTrait GetTraitOnObject<TTrait>(DomainObject domainObject) where TTrait : struct, ITrait
+        {
+            var domainObjectTraitIndex = TraitArrayIndex<TTrait>.Index;
+            if (domainObjectTraitIndex == -1)
+                throw new ArgumentException($"Trait {typeof(TTrait)} not supported in this domain");
+
+            var traitBufferIndex = domainObject[domainObjectTraitIndex];
+            if (traitBufferIndex == DomainObject.Unset)
+                throw new ArgumentException($"Trait of type {typeof(TTrait)} does not exist on object {domainObject}.");
+
+            return GetBuffer<TTrait>()[traitBufferIndex];
+        }
+
+        public void SetTraitOnObject<TTrait>(TTrait trait, ref DomainObject domainObject) where TTrait : struct, ITrait
+        {
+            var objectIndex = GetDomainObjectIndex(domainObject);
+            if (objectIndex == -1)
+                throw new ArgumentException($"Object {domainObject} does not exist within the state data {this}.");
+
+            var traitIndex = TraitArrayIndex<TTrait>.Index;
+            var traitBuffer = GetBuffer<TTrait>();
+
+            var bufferIndex = domainObject[traitIndex];
+            if (bufferIndex == DomainObject.Unset)
+            {
+                traitBuffer.Add(trait);
+                domainObject[traitIndex] = (byte) (traitBuffer.Length - 1);
+
+                DomainObjects[objectIndex] = domainObject;
+            }
+            else
+            {
+                traitBuffer[bufferIndex] = trait;
+            }
+        }
+
+        public bool RemoveTraitOnObject<TTrait>(ref DomainObject domainObject) where TTrait : struct, ITrait
+        {
+            var objectTraitIndex = TraitArrayIndex<TTrait>.Index;
+            var traitBuffer = GetBuffer<TTrait>();
+
+            var traitBufferIndex = domainObject[objectTraitIndex];
+            if (traitBufferIndex == DomainObject.Unset)
+                return false;
+
+            // last index
+            var lastBufferIndex = traitBuffer.Length - 1;
+
+            // Swap back and remove
+            var lastTrait = traitBuffer[lastBufferIndex];
+            traitBuffer[lastBufferIndex] = traitBuffer[traitBufferIndex];
+            traitBuffer[traitBufferIndex] = lastTrait;
+            traitBuffer.RemoveAt(lastBufferIndex);
+
+            // Update index for object with last trait in buffer
+            for (int i = 0; i < DomainObjects.Length; i++)
+            {
+                var otherDomainObject = DomainObjects[i];
+                if (otherDomainObject[objectTraitIndex] == lastBufferIndex)
+                {
+                    otherDomainObject[objectTraitIndex] = traitBufferIndex;
+                    DomainObjects[i] = otherDomainObject;
+                    break;
+                }
+            }
+
+            // Update domainObject in buffer (ref is to a copy)
+            for (int i = 0; i < DomainObjects.Length; i++)
+            {
+                if (domainObject.Equals(DomainObjects[i]))
+                {
+                    domainObject[objectTraitIndex] = DomainObject.Unset;
+                    DomainObjects[i] = domainObject;
+                    return true;
+                }
+            }
+
+            throw new ArgumentException($"DomainObject {domainObject} does not exist in the state container {this}.");
+        }
+
+        public bool RemoveDomainObject(DomainObject domainObject)
+        {
+            var objectIndex = GetDomainObjectIndex(domainObject);
+            if (objectIndex == -1)
+                return false;
+
+            {{~ for trait in trait_list }}
+            RemoveTraitOnObject<{{ trait.name }}>(ref domainObject);
+            {{- end }}
+
+            DomainObjects.RemoveAt(objectIndex);
+            DomainObjectIDs.RemoveAt(objectIndex);
+
+            return true;
+        }
+
+
+        public TTrait GetTraitOnObjectAtIndex<TTrait>(int domainObjectIndex) where TTrait : struct, ITrait
+        {
+            var domainObjectTraitIndex = TraitArrayIndex<TTrait>.Index;
+            if (domainObjectTraitIndex == -1)
+                throw new ArgumentException($"Trait {typeof(TTrait)} not supported in this domain");
+
+            var domainObject = DomainObjects[domainObjectIndex];
+            var traitBufferIndex = domainObject[domainObjectTraitIndex];
+            if (traitBufferIndex == DomainObject.Unset)
+                throw new Exception($"Trait index for {typeof(TTrait)} is not set for domain object {domainObject}");
+
+            return GetBuffer<TTrait>()[traitBufferIndex];
+        }
+
+        public void SetTraitOnObjectAtIndex<T>(T trait, int domainObjectIndex) where T : struct, ITrait
+        {
+            var domainObjectTraitIndex = TraitArrayIndex<T>.Index;
+            if (domainObjectTraitIndex == -1)
+                throw new ArgumentException($"Trait {typeof(T)} not supported in this domain");
+
+            var domainObject = DomainObjects[domainObjectIndex];
+            var traitBufferIndex = domainObject[domainObjectTraitIndex];
+            var traitBuffer = GetBuffer<T>();
+            if (traitBufferIndex == DomainObject.Unset)
+            {
+                traitBuffer.Add(trait);
+                traitBufferIndex = (byte)(traitBuffer.Length - 1);
+                domainObject[domainObjectTraitIndex] = traitBufferIndex;
+                DomainObjects[domainObjectIndex] = domainObject;
+            }
+            else
+            {
+                traitBuffer[traitBufferIndex] = trait;
+            }
+        }
+
+        public bool RemoveTraitOnObjectAtIndex<TTrait>(int domainObjectIndex) where TTrait : struct, ITrait
+        {
+            var objectTraitIndex = TraitArrayIndex<TTrait>.Index;
+            var traitBuffer = GetBuffer<TTrait>();
+
+            var domainObject = DomainObjects[domainObjectIndex];
+            var traitBufferIndex = domainObject[objectTraitIndex];
+            if (traitBufferIndex == DomainObject.Unset)
+                return false;
+
+            // last index
+            var lastBufferIndex = traitBuffer.Length - 1;
+
+            // Swap back and remove
+            var lastTrait = traitBuffer[lastBufferIndex];
+            traitBuffer[lastBufferIndex] = traitBuffer[traitBufferIndex];
+            traitBuffer[traitBufferIndex] = lastTrait;
+            traitBuffer.RemoveAt(lastBufferIndex);
+
+            // Update index for object with last trait in buffer
+            for (int i = 0; i < DomainObjects.Length; i++)
+            {
+                var otherDomainObject = DomainObjects[i];
+                if (otherDomainObject[objectTraitIndex] == lastBufferIndex)
+                {
+                    otherDomainObject[objectTraitIndex] = traitBufferIndex;
+                    DomainObjects[i] = otherDomainObject;
+                    break;
+                }
+            }
+
+            domainObject[objectTraitIndex] = DomainObject.Unset;
+            DomainObjects[domainObjectIndex] = domainObject;
+
+            throw new ArgumentException($"DomainObject {domainObject} does not exist in the state container {this}.");
+        }
+
+        public bool RemoveDomainObjectAtIndex(int domainObjectIndex)
+        {
+            {{- for trait in trait_list }}
+            RemoveTraitOnObjectAtIndex<{{ trait.name }}>(domainObjectIndex);
+            {{- end }}
+
+            DomainObjects.RemoveAt(domainObjectIndex);
+            DomainObjectIDs.RemoveAt(domainObjectIndex);
+
+            return true;
+        }
+
+
+        public NativeArray<(DomainObject, int)> GetDomainObjects(NativeList<(DomainObject, int)> domainObjects, params ComponentType[] traitFilter)
+        {
+            for (var i = 0; i < DomainObjects.Length; i++)
+            {
+                var domainObject = DomainObjects[i];
+                if (domainObject.MatchesTraitFilter(traitFilter))
+                    domainObjects.Add((domainObject, i));
+            }
+
+            return domainObjects.AsArray();
+        }
+
+        public void GetDomainObjectIndices(DomainObject traitSubset, NativeList<int> domainObjects)
+        {
+            var domainObjectArray = DomainObjects.AsNativeArray();
+            for (var i = 0; i < domainObjectArray.Length; i++)
+            {
+                if (domainObjectArray[i].HasTraitSubset(traitSubset))
+                    domainObjects.Add(i);
+            }
+        }
+
+        public int GetDomainObjectIndex(DomainObject domainObject)
+        {
+            var objectIndex = -1;
+            for (int i = 0; i < DomainObjects.Length; i++)
+            {
+                if (DomainObjects[i].Equals(domainObject))
+                {
+                    objectIndex = i;
+                    break;
+                }
+            }
+
+            return objectIndex;
+        }
+
+        public int GetDomainObjectIndex(DomainObjectID domainObjectId)
+        {
+            var objectIndex = -1;
+            for (int i = 0; i < DomainObjectIDs.Length; i++)
+            {
+                if (DomainObjectIDs[i].Equals(domainObjectId))
+                {
+                    objectIndex = i;
+                    break;
+                }
+            }
+
+            return objectIndex;
+        }
+
+        public DomainObjectID GetDomainObjectID(DomainObject domainObject)
+        {
+            var index = GetDomainObjectIndex(domainObject);
+            return DomainObjectIDs[index];
+        }
+
+        public DomainObjectID GetDomainObjectID(int domainObjectIndex)
+        {
+            return DomainObjectIDs[domainObjectIndex];
+        }
+
+        public DomainObject GetDomainObject(DomainObjectID domainObject)
+        {
+            var index = GetDomainObjectIndex(domainObject);
+            return DomainObjects[index];
+        }
+
+
+        DynamicBuffer<T> GetBuffer<T>() where T : struct, ITrait
+        {
+            var index = TraitArrayIndex<T>.Index;
+            switch (index)
+            {
+                {{- for trait in trait_list }}
+                case {{ for.index }}:
+                    return {{trait.name}}Buffer.Reinterpret<T>();
+                {{- end }}
+            }
+
+            return default;
+        }
+
+        public bool Equals(StateData other)
+        {
+            if (StateEntity == other.StateEntity)
+                return true;
+
+            // Easy check is to make sure each state has the same number of domain objects
+            if (DomainObjects.Length != other.DomainObjects.Length
+                {{- for trait in trait_list }}
+                || {{trait.name}}Buffer.Length != other.{{trait.name}}Buffer.Length
+                {{- end }})
+                return false;
+
+            var lhsObjects = DomainObjects.AsNativeArray();
+            var rhsObjects = new NativeArray<DomainObject>(other.DomainObjects.Length, Allocator.Temp);
+            rhsObjects.CopyFrom(other.DomainObjects.AsNativeArray());
+
+            for (int lhsIndex = 0; lhsIndex < lhsObjects.Length; lhsIndex++)
+            {
+                var domainObjectLHS = lhsObjects[lhsIndex];
+                {{~ for trait in trait_list }}
+                var has{{trait.name}} = domainObjectLHS.{{trait.name}}Index != DomainObject.Unset;
+                {{- end }}
+
+                var foundMatch = false;
+                for (var rhsIndex = lhsIndex; rhsIndex < rhsObjects.Length; rhsIndex++)
+                {
+                    var domainObjectRHS = rhsObjects[rhsIndex];
+
+                    if (!domainObjectLHS.HasSameTraits(domainObjectRHS))
+                        continue;
+                    {{~ for trait in trait_list }}
+                    if (has{{trait.name}} && !{{trait.name}}Buffer[domainObjectLHS.{{trait.name}}Index].Equals(other.{{trait.name}}Buffer[domainObjectRHS.{{trait.name}}Index]))
+                        continue;
+
+                    {{- end }}
+
+                    // Swap match to lhs index (to align). Keeps remaining objs in latter part of array without resize.
+                    rhsObjects[rhsIndex] = rhsObjects[lhsIndex];  // technically only Lockable to preserve obj at lhsIndex
+
+                    foundMatch = true;
+                    break;
+                }
+
+                if (!foundMatch)
+                {
+                    rhsObjects.Dispose();
+                    return false;
+                }
+            }
+
+            rhsObjects.Dispose();
+            return true;
+        }
+
+        public override int GetHashCode()
+        {
+            // h = 3860031 + (h+y)*2779 + (h*y*2)   // from How to Hash a Set by Richard O’Keefe
+            var stateHashValue = 0;
+
+            var objectIDs = DomainObjectIDs;
+            foreach (var element in objectIDs.AsNativeArray())
+            {
+                var value = element.GetHashCode();
+                stateHashValue = 3860031 + (stateHashValue + value) * 2779 + (stateHashValue * value * 2);
+            }
+            {{~ for trait in trait_list }}
+            foreach (var element in {{trait.name}}Buffer.AsNativeArray())
+            {
+                var value = element.GetHashCode();
+                stateHashValue = 3860031 + (stateHashValue + value) * 2779 + (stateHashValue * value * 2);
+            }
+            {{- end }}
+
+            return stateHashValue;
+        }
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+
+            for (var domainObjectIndex = 0; domainObjectIndex < DomainObjects.Length; domainObjectIndex++)
+            {
+                var domainObject = DomainObjects[domainObjectIndex];
+                sb.AppendLine(DomainObjectIDs[domainObjectIndex].ToString());
+
+                var i = 0;
+                {{~ for trait in trait_list ~}}
+
+                {{ if for.index == 0 }}var {{ end }}traitIndex = domainObject[i++];
+                if (traitIndex != DomainObject.Unset)
+                    sb.AppendLine({{trait.name}}Buffer[traitIndex].ToString());
+                {{~ end ~}}
+
+                sb.AppendLine();
+            }
+
+            return sb.ToString();
+        }
+    }
+
+    public struct StateDataContext : ITraitBasedStateDataContext<DomainObject, StateEntityKey, StateData>
+    {
+        internal EntityCommandBuffer.Concurrent EntityCommandBuffer;
+        internal EntityArchetype m_StateArchetype;
+        internal int JobIndex; //todo assign
+
+        [ReadOnly] public BufferFromEntity<DomainObject> DomainObjects;
+        [ReadOnly] public BufferFromEntity<DomainObjectID> DomainObjectIDs;
+        {{~ for trait in trait_list }}
+        [ReadOnly] public BufferFromEntity<{{trait.name}}> {{trait.name}}Data;
+        {{- end }}
+
+        public StateDataContext(JobComponentSystem system, EntityArchetype stateArchetype)
+        {
+            EntityCommandBuffer = default;
+            DomainObjects = system.GetBufferFromEntity<DomainObject>(true);
+            DomainObjectIDs = system.GetBufferFromEntity<DomainObjectID>(true);
+            {{~ for trait in trait_list }}
+            {{trait.name}}Data = system.GetBufferFromEntity<{{trait.name}}>(true);
+            {{- end }}
+
+            m_StateArchetype = stateArchetype;
+            JobIndex = 0; // todo set on all actions
+        }
+
+        public StateData GetStateData(StateEntityKey stateKey)
+        {
+            var stateEntity = stateKey.Entity;
+
+            return new StateData
+            {
+                StateEntity = stateEntity,
+                DomainObjects = DomainObjects[stateEntity],
+                DomainObjectIDs = DomainObjectIDs[stateEntity],
+                {{~ for trait in trait_list }}
+                {{trait.name}}Buffer = {{trait.name}}Data[stateEntity],
+                {{- end }}
+            };
+        }
+
+        public StateData CopyStateData(StateData stateData)
+        {
+            return stateData.Copy(JobIndex, EntityCommandBuffer);
+        }
+
+        public StateEntityKey GetStateDataKey(StateData stateData)
+        {
+            return new StateEntityKey { Entity = stateData.StateEntity, HashCode = stateData.GetHashCode()};
+        }
+
+        public void DestroyState(StateEntityKey stateKey)
+        {
+            EntityCommandBuffer.DestroyEntity(JobIndex, stateKey.Entity);
+        }
+
+        public StateData CreateStateData()
+        {
+            return new StateData(JobIndex, EntityCommandBuffer, EntityCommandBuffer.CreateEntity(JobIndex, m_StateArchetype));
+        }
+
+        public bool Equals(StateData x, StateData y)
+        {
+            return x.Equals(y);
+        }
+
+        public int GetHashCode(StateData obj)
+        {
+            return obj.GetHashCode();
+        }
+    }
+
+    public class StateManager : JobComponentSystem, ITraitBasedStateManager<DomainObject, StateEntityKey, StateData, StateDataContext>, IStateManagerInternal
+    {
+        EntityArchetype m_StateArchetype;
+
+        public StateManager()
+        {
+            m_StateArchetype = default;
+        }
+
+        protected override void OnCreate()
+        {
+            m_StateArchetype = EntityManager.CreateArchetype(typeof(State), typeof(DomainObject), typeof(DomainObjectID), typeof(HashCode),
+                {{- for trait in trait_list }}
+                typeof({{trait.name}}){{ if for.index != for.length - 1 }},{{end}}
+                {{- end }});
+        }
+
+        public StateData CreateStateData()
+        {
+            var stateEntity = EntityManager.CreateEntity(m_StateArchetype);
+            return new StateData(this, stateEntity, true);
+        }
+
+        public StateData GetStateData(StateEntityKey stateKey, bool readWrite = false)
+        {
+            return !Enabled ? default : new StateData(this, stateKey.Entity, readWrite);
+        }
+
+        public void DestroyState(StateEntityKey stateKey)
+        {
+            EntityManager?.DestroyEntity(stateKey.Entity);
+        }
+
+        public StateDataContext GetStateDataContext()
+        {
+            return new StateDataContext(this, m_StateArchetype);
+        }
+
+        public StateEntityKey GetStateDataKey(StateData stateData)
+        {
+            return new StateEntityKey { Entity = stateData.StateEntity, HashCode = stateData.GetHashCode()};
+        }
+
+        public StateData CopyStateData(StateData stateData)
+        {
+            var copyStateEntity = EntityManager.Instantiate(stateData.StateEntity);
+            return new StateData(this, copyStateEntity, true);
+        }
+
+        public StateEntityKey CopyState(StateEntityKey stateKey)
+        {
+            var copyStateEntity = EntityManager.Instantiate(stateKey.Entity);
+            var stateData = GetStateData(stateKey);
+            return new StateEntityKey { Entity = copyStateEntity, HashCode = stateData.GetHashCode()};
+        }
+
+        protected override JobHandle OnUpdate(JobHandle inputDeps) => inputDeps;
+
+        public bool Equals(StateData x, StateData y)
+        {
+            return x.Equals(y);
+        }
+
+        public int GetHashCode(StateData obj)
+        {
+            return obj.GetHashCode();
+        }
+
+        public IStateData GetStateData(IStateKey stateKey, bool readWrite)
+        {
+            return GetStateData((StateEntityKey)stateKey, readWrite);
+        }
+    }
+}

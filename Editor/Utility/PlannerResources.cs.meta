@@ -1,0 +1,33 @@
+fileFormatVersion: 2
+guid: 386d82e94550a468eaa58a90b7dfff99
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - m_ImageRequiredTraitLabel: {fileID: 2800000, guid: 4f2de7f6845644bf2b636d0a493697d4,
+      type: 3}
+  - m_ImageRequiredTraitAdd: {fileID: 2800000, guid: a82272d576544468eb0c4114546236eb,
+      type: 3}
+  - m_ImageRequiredTraitMore: {fileID: 2800000, guid: f256a762cfad949f280b67fdbfc76a0a,
+      type: 3}
+  - m_ImageProhibitedTraitLabel: {fileID: 2800000, guid: 20a05d0238a1f4aacae9bbf75b13e37d,
+      type: 3}
+  - m_ImageProhibitedTraitAdd: {fileID: 2800000, guid: bbe404cde3f6f4b739cb801c83e497f1,
+      type: 3}
+  - m_ImageProhibitedTraitMore: {fileID: 2800000, guid: 7f832578100f94c42bb38a32e9dc0d9b,
+      type: 3}
+  - m_TemplateAction: {fileID: 4900000, guid: bb7963eb31de842ada852ad3d46fdf29, type: 3}
+  - m_TemplateActionScheduler: {fileID: 4900000, guid: f9f7d079587235a4fbec21268834168d,
+      type: 3}
+  - m_TemplateDomain: {fileID: 4900000, guid: 3ca977c8d237644e29fdd926ca266d44, type: 3}
+  - m_TemplateEnum: {fileID: 4900000, guid: 000c16408e03249d19c040b494c9d2dd, type: 3}
+  - m_TemplateTermination: {fileID: 4900000, guid: c88644c95abe05d40818d5a79278d2ae,
+      type: 3}
+  - m_TemplateTrait: {fileID: 4900000, guid: b7b927abe80824d2a9ecc8d3f68ba37b, type: 3}
+  - m_TemplateConditionalAssembly: {fileID: 4900000, guid: 58457d66bf1484f9aadea3b9d6eb1dda,
+      type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

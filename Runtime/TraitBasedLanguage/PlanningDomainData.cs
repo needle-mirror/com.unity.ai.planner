@@ -1,195 +1,145 @@
-﻿using System;
+﻿#if !UNITY_DOTSPLAYER
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using Unity.AI.Planner;
 using Unity.AI.Planner.Agent;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Utility;
 using Unity.Entities;
-using UnityEngine;
-using UnityEngine.Serialization;
 using UnityObject = UnityEngine.Object;
 
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
-    delegate uint TraitMaskDelegate(params Type[] traitFilter);
-
-    [Serializable]
-    class PlanningDomainData : IDisposable
+    class PlanningDomainData<TObject, TStateKey, TStateData, TStateDataContext, TStateManager>
+        where TObject : struct, IDomainObject
+        where TStateKey : struct, IEquatable<TStateKey>, IStateKey
+        where TStateData : struct, ITraitBasedStateData<TObject>
+        where TStateDataContext : struct, ITraitBasedStateDataContext<TObject, TStateKey, TStateData>
+        where TStateManager : JobComponentSystem, ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext>
     {
-        public string Name => m_DomainDefinition.name;
-        public IStateTermination[] StateTerminations => m_StateTerminations;
+        public string Name { get; private set; }
 
         public Dictionary<string, IOperationalAction> ActionMapping = new Dictionary<string, IOperationalAction>();
 
-        public TraitMaskDelegate GetTraitMask;
+        Dictionary<GameObject, DomainObjectID> m_InitialStateSourceObjects = new Dictionary<GameObject, DomainObjectID>();
 
-        // These fields are assigned in the editor, so ignore the warning that they are never assigned to
-        #pragma warning disable 0649
+        public IDictionary<GameObject, DomainObjectID> GetSourceObjects() => m_InitialStateSourceObjects;
 
-        [FormerlySerializedAs("m_BehaviorDefinition")]
-        [SerializeField]
-        PlanDefinition m_PlanDefinition;
 
-        [SerializeField]
-        List<DomainObjectData> m_InitialDomainObjectData;
+        ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext> m_StateManager;
 
-        [SerializeField]
-        List<TraitObjectData> m_InitialStateTraitData;
+        IEnumerable<IDomainObjectData> m_InitialDomainObjects;
+        PlanningDomainDefinition m_Definition;
 
-        #pragma warning restore 0649
-
-        DomainDefinition m_DomainDefinition;
-
-        // Forward simulation
-        IStateTermination[] m_StateTerminations;
-
-        public void Initialize()
+        internal void Initialize(string name, PlanningDomainDefinition domainDefinition, IEnumerable<IDomainObjectData> initialDomainObjects)
         {
-            m_DomainDefinition = m_PlanDefinition.DomainDefinition;
+            Name = name;
+            m_Definition = domainDefinition;
+            m_InitialDomainObjects = initialDomainObjects;
             InitializeActionMapping();
-            InitializeStateTerminations();
-            InitializeGetTraitMask();
         }
 
         void InitializeActionMapping()
         {
-            foreach (var actionDefinition in m_PlanDefinition.ActionDefinitions)
+            foreach (var actionDefinition in m_Definition.ActionDefinitions)
             {
                 IOperationalAction operationalAction = null;
-                var gameLogicType = m_DomainDefinition.GetType(actionDefinition.OperationalActionType);
+                Type gameLogicType = TypeResolver.GetType(actionDefinition.OperationalActionType);
                 if (gameLogicType != null)
-                    operationalAction = (IOperationalAction)Activator.CreateInstance(gameLogicType);
+                    operationalAction = (IOperationalAction) Activator.CreateInstance(gameLogicType);
 
                 ActionMapping[actionDefinition.Name] = operationalAction;
             }
         }
 
-        void InitializeStateTerminations()
+        public TStateData GetInitialState(EntityManager entityManager, List<TraitObjectData> initialStateData)
         {
-            var stateTerminations = new List<IStateTermination>();
-            foreach (var stateTerminationDefinition in m_PlanDefinition.StateTerminationDefinitions)
+            if (m_StateManager == null)
+                m_StateManager = entityManager.World.GetExistingSystem<TStateManager>();
+
+            var state = m_StateManager.CreateStateData();
+
+            if (m_InitialDomainObjects == null)
             {
-                var terminationType = m_PlanDefinition.GetType(stateTerminationDefinition.Name);
-                var instance = Activator.CreateInstance(terminationType) as IStateTermination;
-                stateTerminations.Add(instance);
+                return state;
             }
 
-            m_StateTerminations = stateTerminations.ToArray();
-        }
+            var objectIDToObject = new Dictionary<ObjectID, TObject>();
+            var objectIDLookup = new Dictionary<string, DomainObjectID>();
 
-        void InitializeGetTraitMask()
-        {
-            var traitMaskUtilityType = m_DomainDefinition.GetType("TraitMaskUtility");
-            var methodInfo = traitMaskUtilityType.GetMethod("GetTraitMask", BindingFlags.Public | BindingFlags.Static);
-            GetTraitMask = (TraitMaskDelegate)Delegate.CreateDelegate(typeof(TraitMaskDelegate), methodInfo);
-        }
-
-        public void Dispose()
-        {
-            if (m_StateTerminations != null)
-            {
-                foreach (var stateTermination in m_StateTerminations)
-                {
-                    stateTermination.Dispose();
-                }
-
-                m_StateTerminations = null;
-            }
-        }
-
-        public Entity GetInitialState(EntityManager entityManager)
-        {
-            if (m_DomainDefinition == null)
-            {
-                if (m_PlanDefinition == null)
-                    throw new Exception("Plan definition not specified.");
-
-                m_DomainDefinition = m_PlanDefinition.DomainDefinition;
-            }
-
-            var stateEntity = TraitBasedDomain.CreateState(entityManager);
-
-            var objectLookup = new Dictionary<string, Entity>(m_InitialDomainObjectData.Count);
+            var stateTraitTypes = initialStateData
+                .Select(t => new ComponentType(TypeResolver.GetType(t.TraitDefinition.Name)))
+                .ToArray();
+            var (stateObject, stateDomainObjectID) = state.AddDomainObject(stateTraitTypes, "State Traits");
+            objectIDLookup["State"] = stateDomainObjectID;
 
             // First pass - initialize objects (for linking in second pass)
-            foreach (var objectData in m_InitialDomainObjectData)
+            foreach (DomainObjectData objectData in m_InitialDomainObjects)
             {
                 var traits = objectData.TraitData;
                 var traitTypes = traits
-                    .Select(t => new ComponentType(m_PlanDefinition.GetType(t.TraitDefinitionName)))
-                    .Concat(new []{new ComponentType(typeof(HashCode))})
+                    .Select(t => new ComponentType(TypeResolver.GetType(t.TraitDefinition.Name)))
                     .ToArray();
 
-                var domainObjectEntity = TraitBasedDomain.CreateDomainObject(entityManager, stateEntity, traitTypes);
-                objectLookup[objectData.Name] = domainObjectEntity;
+                var (domainObject, domainObjectID) = state.AddDomainObject(traitTypes, objectData.Name);
+                objectIDLookup[objectData.Name] = domainObjectID;
+                objectIDToObject[domainObjectID.ID] = domainObject;
+
+                var sourceObject = objectData.SourceObject;
+                if (sourceObject)
+                {
+                    m_InitialStateSourceObjects[sourceObject] = domainObjectID;
+                }
             }
 
             // Second pass - set all properties
-            foreach (var objectData in m_InitialDomainObjectData)
+            foreach (DomainObjectData objectData in m_InitialDomainObjects)
             {
-                var domainObjectHashCodeValue = 0;
-                var domainObjectEntity = objectLookup[objectData.Name];
-
+                var domainObjectID = objectIDLookup[objectData.Name];
+                var domainObject = objectIDToObject[domainObjectID.ID];
                 foreach (var traitData in objectData.TraitData)
                 {
-                    var trait = InitializeTrait(entityManager, traitData, objectLookup);
-                    ComponentType componentType = trait.GetType();
-
-                    if (!componentType.IsZeroSized)
-                        trait.SetComponentData(entityManager, domainObjectEntity);
-                    else
-                        trait.SetTraitMask(entityManager, domainObjectEntity);
-
-                    domainObjectHashCodeValue += trait.GetHashCode();
+                    var trait = InitializeTrait(traitData, objectIDLookup);
+                    if (trait != null)
+                        state.SetTraitOnObject(trait, ref domainObject);
                 }
-
-                // Set hash code component
-                var objectHash = entityManager.GetComponentData<HashCode>(domainObjectEntity);
-                objectHash.Value = domainObjectHashCodeValue;
-                entityManager.SetComponentData(domainObjectEntity, objectHash);
             }
 
             // Initialize state traits
-            foreach (var traitData in m_InitialStateTraitData)
+            foreach (var traitData in initialStateData)
             {
-                var trait = InitializeTrait(entityManager, traitData, objectLookup);
-                ComponentType componentType = trait.GetType();
-
-                entityManager.AddComponent(stateEntity, componentType);
-                if (!componentType.IsZeroSized)
-                    trait.SetComponentData(entityManager, stateEntity);
-                else
-                    trait.SetTraitMask(entityManager, stateEntity);
+                var trait = InitializeTrait(traitData, objectIDLookup);
+                if (trait != null)
+                    state.SetTraitOnObject(trait, ref stateObject);
             }
 
-            return stateEntity;
+            return state;
         }
 
-        public PolicyGraphUpdateSystem GetPolicyGraphUpdateSystem(World world)
+        ITrait InitializeTrait(TraitObjectData traitData, Dictionary<string, DomainObjectID> objectIDLookup)
         {
-            var updateSystemType = m_DomainDefinition.GetType(m_DomainDefinition.PolicyGraphUpdateSystemName);
-            return (PolicyGraphUpdateSystem)world.GetOrCreateSystem(updateSystemType);
-        }
+            var traitMatch = m_Definition.GetTrait(traitData.TraitDefinition.Name);
+            if (traitMatch == null)
+            {
+                return null;
+            }
 
-        ITrait InitializeTrait(EntityManager entityManager, TraitObjectData traitData, Dictionary<string, Entity> objectLookup)
-        {
-            var traitMatch = m_DomainDefinition.TraitDefinitions.First(td => td.Name == traitData.TraitDefinitionName);
-            var trait = (ITrait)Activator.CreateInstance(m_DomainDefinition.GetType(traitMatch.Name));
-
-            traitData.InitializeFieldValues(traitMatch, m_DomainDefinition);
+            var trait = (ITrait)Activator.CreateInstance(TypeResolver.GetType(traitMatch.Name));
             foreach (var field in traitMatch.Fields)
             {
                 var fieldName = field.Name;
-                var fieldType = m_DomainDefinition.GetType(field.Type);
+                var fieldType = TypeResolver.GetType(field.Type);
+
+                if (fieldType == null)
+                    continue;
 
                 if (fieldType == typeof(DomainObjectID))
                 {
                     // Lookup domain objects by name
                     if (traitData.TryGetValue(fieldName, out string objectName) && objectName != null)
                     {
-                        objectLookup.TryGetValue(objectName, out var targetObject);
-                        var id = entityManager.GetComponentData<DomainObjectTrait>(targetObject).ID;
+                        objectIDLookup.TryGetValue(objectName, out var id);
                         trait.SetField(fieldName, id);
                     }
                 }
@@ -203,11 +153,18 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                     if (value is UnityObject && !unityObject)
                         continue;
 
-                    trait.SetField(fieldName, value);
+                    if (value != null)
+                    {
+                        trait.SetField(fieldName, value);
+                    }
+                    else
+                    {
+                        trait.SetField(fieldName, field.DefaultValue?.GetValue(fieldType));
+                    }
                 }
             }
-
             return trait;
         }
     }
 }
+#endif

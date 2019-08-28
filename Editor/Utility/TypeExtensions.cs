@@ -22,7 +22,12 @@ namespace UnityEditor.AI.Planner.Utility
         {
             ReflectionUtils.ForEachType(t =>
             {
-                if (type.IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract && (predicate == null || predicate(t)))
+                if (t.IsInterface || t.IsAbstract)
+                    return;
+
+                if (type.IsGenericType && t.GetGenericInterfaces(type, null))
+                    list.Add(t);
+                else if (type.IsAssignableFrom(t) && (predicate == null || predicate(t)))
                     list.Add(t);
             });
         }
@@ -46,17 +51,23 @@ namespace UnityEditor.AI.Planner.Utility
         /// <param name="type">The type whose interfaces will be searched</param>
         /// <param name="genericInterface">The generic interface used to match implemented interfaces</param>
         /// <param name="interfaces">The list to which generic interfaces will be appended</param>
-        public static void GetGenericInterfaces(this Type type, Type genericInterface, List<Type> interfaces)
+        public static bool GetGenericInterfaces(this Type type, Type genericInterface, List<Type> interfaces)
         {
+            var found = false;
             foreach (var typeInterface in type.GetInterfaces())
             {
                 if (typeInterface.IsGenericType)
                 {
                     var genericType = typeInterface.GetGenericTypeDefinition();
                     if (genericType == genericInterface)
-                        interfaces.Add(typeInterface);
+                    {
+                        interfaces?.Add(typeInterface);
+                        found = true;
+                    }
                 }
             }
+
+            return found;
         }
 
         /// <summary>

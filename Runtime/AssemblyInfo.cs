@@ -4,3 +4,4 @@
 [assembly: InternalsVisibleTo("Unity.AI.Planner.Editor.Tests")]
 [assembly: InternalsVisibleTo("Unity.AI.Planner.Editor")]
 [assembly: InternalsVisibleTo("AI.Planner.Domains")]
+[assembly: InternalsVisibleTo("AI.Planner.Actions")]

@@ -1,0 +1,45 @@
+using Unity.AI.Planner;
+using Unity.Collections;
+
+namespace {{ namespace }}
+{
+    public struct {{name}} : ITerminationEvaluator<StateData>
+    {
+        public bool IsTerminal(StateData state)
+        {
+            {{- for p in parameter_list }}
+            var {{ p.name }}Objects = new NativeList<(DomainObject, int)>(2, Allocator.Temp);
+            state.GetDomainObjects({{ p.name }}Objects{{ for r in p.required_traits -}}, typeof({{ r }}){{ end }}{{ for e in p.prohibited_traits -}}, ComponentType.Exclude<{{ p }}>() {{ end }});
+            {{- end }}
+
+            {{- for t in criteria_traits }}
+            var {{ t }}Buffer = state.{{ t }}Buffer;
+            {{- end }}
+
+            {{- for p in parameter_list }}
+            for (int i{{ for.index }} = 0; i{{ for.index }} < {{ p.name }}Objects.Length; i{{ for.index }}++)
+            {
+                var ({{ p.name }}Object, {{ p.name }}Index) = {{ p.name }}Objects[i{{ for.index }}];
+
+                {{ if for.index == parameter_list.size - 1 }}
+
+                {{- for c in criteria_list }}
+                    if ({{ c.operand_a }} {{ c.operator }} {{ c.operand_b }})
+                        return true;
+                {{- end }}
+
+                {{- end }}
+            {{- end }}
+
+            {{- for p in parameter_list }}
+            }
+        {{- end }}
+
+        {{- for p in parameter_list }}
+            {{ p.name }}Objects.Dispose();
+        {{- end }}
+
+            return false;
+        }
+    }
+}

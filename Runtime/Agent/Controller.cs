@@ -1,57 +1,52 @@
 ﻿using System;
-using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Entities;
+using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Unity.AI.Planner.Agent
 {
-    /// <summary>
-    /// The control mechanism responsible for executing actions from the plan, monitoring progress of the operational
-    /// actions, and updating the progress of the plan
-    /// </summary>
-    /// <typeparam name="TAgent">The type of agent for which the controller acts</typeparam>
-    public class Controller<TAgent>
+    class Controller<TAgent, TStateKey, TActionKey, TStateData, TStateDataContext, TStateManager, TPlan>
+        where TStateKey : struct, IEquatable<TStateKey>, IStateKey
+        where TStateData : struct
+        where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
+        where TStateManager : JobComponentSystem, IStateManager<TStateKey, TStateData, TStateDataContext>
+        where TActionKey : struct, IEquatable<TActionKey>, IActionKey
+        where TPlan : IPlan<TStateKey, TActionKey>
     {
-        /// <summary>
-        /// Entity corresponding to the current state
-        /// </summary>
-        public Entity CurrentStateEntity { get; protected set; }
+        public TStateKey CurrentStateKey { get; private set; }
+        public TActionKey CurrentAction { get; private set; }
+        public IOperationalAction<TAgent, TStateData, TActionKey> CurrentOperationalAction { get; private set; }
+        public TStateManager StateManager { get; }
 
-        /// <summary>
-        /// The operational action currently executing
-        /// </summary>
-        public IOperationalAction<TAgent> CurrentOperationalAction { get; private set; }
-
-        IPolicyGraph m_Plan;
+        TPlan m_Plan;
         TAgent m_Agent;
-        Dictionary<string, IOperationalAction<TAgent>> m_ActionMapping;
-        Func<IPolicyGraph, bool> m_CheckPlan;
-        ActionContext m_CurrentAction;
+        TStateData m_CurrentStateData => StateManager.GetStateData(CurrentStateKey, true);
+        Func<TActionKey, IOperationalAction<TAgent, TStateData, TActionKey>> m_GetOperationalAction;
+        Func<bool> m_CheckPlan;
 
-        /// <summary>
-        /// Initializes the controller
-        /// </summary>
-        /// <param name="plan">Plan for the controller to update and execute</param>
-        /// <param name="stateEntity">Entity corresponding to the current state</param>
-        /// <param name="agent">Agent controlled</param>
-        /// <param name="checkPlan">A function to check if the plan is ready before the each action is taken</param>
-        public Controller(IPolicyGraph plan, Entity stateEntity, TAgent agent,
-            Dictionary<string, IOperationalAction<TAgent>> actionMapping, Func<IPolicyGraph, bool> checkPlan = null)
+        public Controller(TPlan plan, TStateKey currentStateKey, TAgent agent, TStateManager stateManager,
+            Func<TActionKey, IOperationalAction<TAgent, TStateData, TActionKey>> getOperationalAction, Func<bool> checkPlan = null)
         {
             m_Plan = plan;
-            CurrentStateEntity = stateEntity;
+            CurrentStateKey = currentStateKey;
             m_Agent = agent;
-            m_ActionMapping = actionMapping;
-            m_CheckPlan = checkPlan;
+            StateManager = stateManager;
 
-            CurrentOperationalAction = NOOPAction<TAgent>.Instance;
+            m_GetOperationalAction = getOperationalAction;
+            m_CheckPlan = checkPlan ?? ( () => true );
+
+            CurrentOperationalAction = NOOPAction<TAgent, TStateData, TActionKey>.Instance;
         }
 
-        /// <summary>
-        /// Updates the controller, advances the plan or continues execution of an operational action
-        /// </summary>
+        ~Controller()
+        {
+            m_Plan.Dispose();
+        }
+
         public void Update()
         {
-            if (m_CurrentAction.Equals(default))
+            if (CurrentAction.Equals(default))
             {
                 if (ReadyToAct())
                     AdvancePlan();
@@ -59,68 +54,57 @@ namespace Unity.AI.Planner.Agent
                 return;
             }
 
-            switch (CurrentOperationalAction.Status(CurrentStateEntity, m_CurrentAction, m_Agent))
+            switch (CurrentOperationalAction.Status(m_CurrentStateData, CurrentAction, m_Agent))
             {
                 case OperationalActionStatus.InProgress:
-                    CurrentOperationalAction.ContinueExecution(CurrentStateEntity, m_CurrentAction, m_Agent);
+                    CurrentOperationalAction.ContinueExecution(m_CurrentStateData, CurrentAction, m_Agent);
                     return;
 
                 case OperationalActionStatus.NoLongerValid:
-#if PLANNER_DEBUG
-                    UnityEngine.Debug.Log($"Replan: Terminating {m_CurrentAction}");
-#endif
-                    RecomputePlan();
+                    UpdatePlanToCurrentState();
                     return;
 
                 case OperationalActionStatus.Completed:
-                    CompleteAction();
+                    CurrentOperationalAction.EndExecution(m_CurrentStateData, CurrentAction, m_Agent);
+                    UpdatePlanToCurrentState();
                     return;
             }
+        }
+
+        public TStateData GetCurrentState(bool readWrite = false)
+        {
+            return StateManager.GetStateData(CurrentStateKey, readWrite);
         }
 
         bool ReadyToAct()
         {
             // Can be called before planner has had a chance to set up an initial policy
-            if (m_Plan == null || m_Plan.NextAction.Equals(default))
-            {
-                // Give a chance for the planner to update if the current state changed
-                RecomputePlan();
-
-                return false;
-            }
-
-            return m_CheckPlan == null || m_CheckPlan(m_Plan);
+            return m_Plan.GetOptimalAction(m_Plan.RootStateKey, out _) && m_CheckPlan();
         }
 
         void AdvancePlan()
         {
             // Grab the next action from the policy.
-            m_CurrentAction = m_Plan.NextAction;
-            CurrentOperationalAction = m_ActionMapping[m_CurrentAction.Name];
+            m_Plan.GetOptimalAction(m_Plan.RootStateKey, out var currentAction);
+            CurrentOperationalAction = m_GetOperationalAction(currentAction);
+            CurrentAction = currentAction;
 
-            CurrentOperationalAction.BeginExecution(CurrentStateEntity, m_CurrentAction, m_Agent);
+            CurrentOperationalAction.BeginExecution(m_CurrentStateData, currentAction, m_Agent);
         }
 
-        void RecomputePlan()
-        {
-            // Reset the planner state and compute a new plan.
-            m_CurrentAction = default;
-            CurrentOperationalAction = NOOPAction<TAgent>.Instance;
-            m_Plan.Reset(CurrentStateEntity);
-        }
-
-        /// <summary>
-        /// Forces the end of the current operational action. Updates the plan to the controller's current state.
-        /// </summary>
         public void CompleteAction()
         {
             // End current domain action
-            CurrentOperationalAction.EndExecution(CurrentStateEntity, m_CurrentAction, m_Agent);
-            m_CurrentAction = default;
-            CurrentOperationalAction = NOOPAction<TAgent>.Instance;
+            CurrentOperationalAction.EndExecution(m_CurrentStateData, CurrentAction, m_Agent);
+            UpdatePlanToCurrentState();
+        }
 
-            // Update plan
-            m_Plan.UpdatePlan(CurrentStateEntity);
+        void UpdatePlanToCurrentState()
+        {
+            CurrentAction = default;
+            CurrentOperationalAction = NOOPAction<TAgent, TStateData, TActionKey>.Instance;
+
+            m_Plan.UpdatePlan(CurrentStateKey);
         }
     }
 }

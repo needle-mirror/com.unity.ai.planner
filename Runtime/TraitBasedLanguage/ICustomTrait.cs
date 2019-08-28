@@ -13,7 +13,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// Interface marking a trait as a custom implementation
     /// </summary>
     /// <typeparam name="T">Trait type</typeparam>
-    public interface ICustomTrait<T> : ICustomTrait, ITrait<T>
+    public interface ICustomTrait<T> : ICustomTrait
     {
     }
 }
