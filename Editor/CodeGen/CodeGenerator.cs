@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Unity.AI.Planner;
 using Unity.AI.Planner.Utility;
-using UnityEditor;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
@@ -47,7 +47,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             return m_GeneratedFilePaths;
         }
 
-        internal List<string> GenerateActions(string outputPath, string rootFolder = null)
+        internal List<string> GeneratePlans(string outputPath, string rootFolder = null)
         {
             m_GeneratedFilePaths.Clear();
             DomainAssetDatabase.Refresh();
@@ -55,25 +55,27 @@ namespace UnityEditor.AI.Planner.CodeGen
             var actionsNamespace = TypeResolver.ActionsNamespace;
 
             var anyEnums = DomainAssetDatabase.EnumDefinitions.Any();
-            foreach (var agent in DomainAssetDatabase.AgentDefinitions)
+            foreach (var plan in DomainAssetDatabase.PlanDefinitions)
             {
-                if (rootFolder == null || !AssetDatabase.GetAssetPath(agent).StartsWith(rootFolder))
+                if (rootFolder == null || !AssetDatabase.GetAssetPath(plan).StartsWith(rootFolder))
                     continue;
 
-                foreach (var action in agent.ActionDefinitions)
+                foreach (var action in plan.ActionDefinitions)
                 {
                     if (action != null)
-                        GenerateAction(action, agent.Name, TypeResolver.DomainsNamespace, actionsNamespace, outputPath, anyEnums);
+                        GenerateAction(action, plan.Name, TypeResolver.DomainsNamespace, actionsNamespace, outputPath, anyEnums);
                 }
 
-                GenerateActionScheduler(agent, agent.Name, TypeResolver.ActionsNamespace, outputPath);
+                GenerateActionScheduler(plan, plan.Name, TypeResolver.ActionsNamespace, outputPath);
+
+                GeneratePlanner(plan, plan.Name, TypeResolver.ActionsNamespace, outputPath, anyEnums);
             }
             GenerateConditionalAssembly(actionsNamespace, "PLANNER_ACTIONS_GENERATED", outputPath);
 
             return m_GeneratedFilePaths;
         }
 
-        private void GenerateTrait(TraitDefinition trait, string domainNamespace, string outputPath, bool includeEnums = false)
+        void GenerateTrait(TraitDefinition trait, string domainNamespace, string outputPath, bool includeEnums = false)
         {
             var fields = trait.Fields.Select(p => new
             {
@@ -92,7 +94,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             SaveToFile($"{outputPath}/{domainNamespace}/Traits/{trait.Name}.cs", result);
         }
 
-        private void GenerateEnum(EnumDefinition @enum, string domainNamespace, string outputPath)
+        void GenerateEnum(EnumDefinition @enum, string domainNamespace, string outputPath)
         {
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateEnum, new
             {
@@ -104,26 +106,24 @@ namespace UnityEditor.AI.Planner.CodeGen
             SaveToFile($"{outputPath}/{domainNamespace}/Traits/{@enum.Name}.cs", result);
         }
 
-        private void GeneratePlanningDomain(string domainNamespace, string outputPath)
+        void GeneratePlanningDomain(string domainNamespace, string outputPath)
         {
             var traits = DomainAssetDatabase.TraitDefinitions.Select(p => new
             {
-                name = p.Name
+                name = p.Name,
+                relations = p.Fields.Where(f => f.Type.EndsWith("ObjectId")).Select(f => new { name = f.Name })
             });
 
-            var terminations = new List<string>();
             foreach (var termination in DomainAssetDatabase.StateTerminationDefinitions)
             {
                 GenerateTermination(termination, TypeResolver.DomainsNamespace, outputPath);
-                terminations.Add(termination.Name);
             }
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateDomain, new
             {
                 domain_namespace = domainNamespace,
                 trait_list = traits,
-                num_traits = traits.Count(),
-                terminations = terminations
+                num_traits = traits.Count()
             });
 
             SaveToFile($"{outputPath}/{domainNamespace}/PlanningDomainData.cs", result);
@@ -133,41 +133,53 @@ namespace UnityEditor.AI.Planner.CodeGen
         {
             var terminationName = termination.Name;
 
-            var objectParameters = termination.ObjectParameters;
-            var parameters = new
+            var parameters = termination.Parameters.Select(p => new
             {
-                name = objectParameters.Name,
-                required_traits = objectParameters.RequiredTraits,
-                prohibited_traits = objectParameters.ProhibitedTraits,
-            };
+                Name = p.Name,
+                required_traits = p.RequiredTraits,
+                prohibited_traits = p.ProhibitedTraits,
+            });
 
             var terminationCriteria = termination.Criteria;
-            var criteriaTraits = terminationCriteria.Select(p => GetOperandTrait(p.OperandA))
-                .Where(a => a != null)
-                .Concat(terminationCriteria.Select(p => GetOperandTrait(p.OperandB)).Where(a => a != null))
+            var criteriaTraits = terminationCriteria.Where(c => c.OperandA.Trait != null).Select(c => c.OperandA.Trait.Name)
+                .Concat(terminationCriteria.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.Name))
                 .Distinct();
 
-            var parameterNames = new List<string>();
-            parameterNames.Add(objectParameters.Name);
+            var parameterNames = parameters.Select(p => p.Name).ToList();
             var criteria = termination.Criteria.Select(p => new
             {
                 @operator = p.Operator,
                 operand_a = GetPreconditionOperandString(p.OperandA, parameterNames),
                 operand_b = GetPreconditionOperandString(p.OperandB, parameterNames),
+                loop_index = Mathf.Max(parameterNames.FindIndex(name => name == p.OperandA.Parameter)
+                    , parameterNames.FindIndex(name => name == p.OperandB.Parameter))
+            });
+
+            var customRewards = termination.CustomRewards.Select(c => new
+            {
+                @operator = c.Operator,
+                typename = TypeResolver.GetType(c.Typename).FullName,
+                parameters = c.Parameters.Select((p, index) => new
+                {
+                    index = parameterNames.IndexOf(p),
+                    type = TypeResolver.GetType(c.Typename).GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
+                })
             });
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateTermination, new
             {
                 @namespace = domainNamespace,
                 name = terminationName,
-                parameter_list = new[] { parameters },
+                parameter_list = parameters,
                 criteria_traits = criteriaTraits.ToArray(),
                 criteria_list = criteria.ToArray(),
+                reward_value = termination.TerminalReward,
+                custom_rewards =  customRewards,
             });
             SaveToFile($"{outputPath}/{domainNamespace}/{terminationName}.cs", result);
         }
 
-        private void GenerateActionScheduler(PlanningDomainDefinition definition, string planningNamespace, string domainNamespace, string outputPath)
+        void GenerateActionScheduler(PlanDefinition definition, string planningNamespace, string domainNamespace, string outputPath)
         {
             int maxArgs = 0;
             foreach (var action in definition.ActionDefinitions)
@@ -188,7 +200,42 @@ namespace UnityEditor.AI.Planner.CodeGen
             SaveToFile($"{outputPath}/{domainNamespace}/{planningNamespace}/ActionScheduler.cs", result);
         }
 
-        private void GenerateAction(ActionDefinition action, string agentName, string domainNamespace, string actionNamespace, string outputPath, bool includeEnums = false)
+        void GeneratePlanner(PlanDefinition definition, string planningNamespace, string domainNamespace, string outputPath, bool includeEnums = false)
+        {
+            var heuristicTypeName = "DefaultHeuristic";
+            if (!string.IsNullOrEmpty(definition.CustomHeuristic))
+            {
+                List<Type> heuristicTypes = new List<Type>();
+                typeof(ICustomHeuristic<>).GetImplementationsOfInterface(heuristicTypes);
+
+                var type = heuristicTypes.FirstOrDefault(h => h.Name == definition.CustomHeuristic);
+                if (type != null)
+                    heuristicTypeName = type.FullName;
+            }
+
+            var defaultHeuristic = new
+            {
+                lower = definition.DefaultHeuristicLower,
+                avg = definition.DefaultHeuristicAverage,
+                upper = definition.DefaultHeuristicUpper,
+            };
+
+            var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplatePlanExecutor, new
+            {
+                plan_name = definition.Name,
+                class_namespace = $"{domainNamespace}.{planningNamespace}",
+                actions = definition.ActionDefinitions,
+                traits = definition.GetTraitsUsed(),
+                heuristic = heuristicTypeName,
+                default_heuristic = defaultHeuristic,
+                terminations = definition.StateTerminationDefinitions.Where(t => t != null).Select(t => t.name),
+                include_enums = includeEnums,
+            });
+
+            SaveToFile($"{outputPath}/{domainNamespace}/{planningNamespace}/{definition.name}Executor.cs", result);
+        }
+
+        void GenerateAction(ActionDefinition action, string planName, string domainNamespace, string actionNamespace, string outputPath, bool includeEnums = false)
         {
             var parameters = action.Parameters.Select(p => new
             {
@@ -198,26 +245,22 @@ namespace UnityEditor.AI.Planner.CodeGen
             });
 
             var parameterNames = parameters.Select(p => p.Name).ToList();
-            var preconditions = action.Preconditions.Select(p => new
+            var traitPreconditionList = action.Preconditions.Where(p => !p.Operator.Contains('.'));
+            var preconditions = traitPreconditionList.Select(p => new
             {
                 Operator = p.Operator,
                 operand_a = GetPreconditionOperandString(p.OperandA, parameterNames),
                 operand_b = GetPreconditionOperandString(p.OperandB, parameterNames),
-                loop_index = Mathf.Max(parameterNames.FindIndex(name => name == GetOperandParam(p.OperandA, parameterNames))
-                    , parameterNames.FindIndex(name => name == GetOperandParam(p.OperandB, parameterNames)))
+                loop_index = Mathf.Max(parameterNames.FindIndex(name => name == p.OperandA.Parameter)
+                    , parameterNames.FindIndex(name => name == p.OperandB.Parameter))
             });
 
-            var preconditionTraits = action.Preconditions.Select(p => GetOperandTrait(p.OperandA))
-                .Where(a => a != null)
-                .Concat(action.Preconditions.Select(p => GetOperandTrait(p.OperandB)).Where(a => a != null))
+            var preconditionTraits = traitPreconditionList.Where(c => c.OperandA.Trait != null).Select(c => c.OperandA.Trait.Name)
+                .Concat(traitPreconditionList.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.Name))
                 .Distinct();
 
-            var objectEffects = action.Effects.Select(p => new
-            {
-                Operator = p.Operator,
-                operand_a = GetEffectOperandString(action, p.OperandA, parameterNames),
-                operand_b = GetEffectOperandString(action, p.OperandB, parameterNames),
-            });
+            var customPreconditionList = action.Preconditions.Where(p => p.Operator.Contains('.'));
+            var customPreconditions = customPreconditionList.Select(p => p.Operator.Substring(p.Operator.IndexOf('.') + 1));
 
             var createdObjects = action.CreatedObjects.Select(c => new
             {
@@ -226,20 +269,25 @@ namespace UnityEditor.AI.Planner.CodeGen
                 prohibited_traits = c.ProhibitedTraits.Select(t => t.Name)
             });
 
-            var effectTraits = action.Effects.Select(p => GetOperandTrait(p.OperandA))
-                .Where(a => a != null)
-                .Concat(action.Effects.Select(p => GetOperandTrait(p.OperandB)).Where(a => a != null))
-                .Distinct();
+            var requiredObjectBuffers = new HashSet<string>();
+            var requiredTraitBuffers = new HashSet<string>();
 
-            var effectParams = action.Effects.Select(p => GetOperandParam(p.OperandA, parameterNames))
-                .Where(a => a != null && !action.CreatedObjects.Any(c => c.Name == a))
-                .Concat(action.Effects.Select(p => GetOperandParam(p.OperandB, parameterNames))
-                    .Where(a => a != null && !action.CreatedObjects.Any(c => c.Name == a)))
-                .Distinct();
+            var objectModifiers = action.ObjectModifiers.Select(p => BuildModifierLines(action, p.Operator, p.OperandA, p.OperandB, ref requiredObjectBuffers, ref requiredTraitBuffers));
+
+            var customRewards = action.CustomRewards.Select(c => new
+            {
+                @operator = c.Operator,
+                typename = TypeResolver.GetType(c.Typename).FullName,
+                parameters = c.Parameters.Select((p, index) => new
+                {
+                    index = parameterNames.IndexOf(p),
+                    type = TypeResolver.GetType(c.Typename).GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
+                })
+            });
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateAction, new
             {
-                agent_name = agentName,
+                plan_name = planName,
                 action_name = action.Name,
                 action_namespace = actionNamespace,
                 domain_namespace = domainNamespace,
@@ -248,18 +296,131 @@ namespace UnityEditor.AI.Planner.CodeGen
                 precondition_traits = preconditionTraits.ToList(),
                 created_objects = createdObjects.ToArray(),
                 created_object_names = createdObjects.Select(c => c.name),
-                object_effect_list = objectEffects.ToList(),
-                object_effect_traits = effectTraits.ToList(),
-                object_effect_params = effectParams.ToList(),
+                object_modifiers = objectModifiers.ToList(),
                 reward_value = action.Reward,
-                custom_effect = action.CustomEffect,
-                custom_reward = action.CustomReward,
-                custom_precondition = action.CustomPrecondition,
+                custom_preconditions = customPreconditions,
+                custom_rewards =  customRewards,
                 include_enums = includeEnums,
                 removed_objects = action.RemovedObjects,
+                required_object_buffers = requiredObjectBuffers.ToList(),
+                required_trait_buffers = requiredTraitBuffers.ToList(),
             });
 
-            SaveToFile($"{outputPath}/{actionNamespace}/{agentName}/{action.Name}.cs", result);
+            SaveToFile($"{outputPath}/{actionNamespace}/{planName}/{action.Name}.cs", result);
+        }
+
+        public string[] BuildModifierLines(ActionDefinition action, string @operator, OperandValue operandA, OperandValue operandB, ref HashSet<string> requiredObjectBuffers, ref HashSet<string> requiredTraitBuffers)
+        {
+            const string prefixNew = "new";
+            const string prefixOriginal = "original";
+
+            List<string> modifierLines = new List<string>();
+
+            string operatorType = @operator.Split('.')[0];
+            switch (operatorType)
+            {
+                case Operation.CustomOperator:
+                {
+                    var customClass = @operator.Split('.')[1];
+
+                    modifierLines.Add($"new {customClass}().ApplyCustomActionEffectsToState(originalState, action, newState);");
+                }
+                    break;
+                case Operation.AddTraitOperator:
+                {
+                    if ((string.IsNullOrEmpty(operandA.Parameter) || operandB.Trait == null))
+                    {
+                        throw new ArgumentException("Invalid operands for an Add trait operator");
+                    }
+                    var parameter = operandA.Parameter;
+                    var trait = operandB.Trait.Name;
+
+                    requiredObjectBuffers.Add(parameter);
+
+                    modifierLines.Add($"newState.SetTraitOnObject<{trait}>(default({trait}), ref original{parameter}Object);");
+                }
+                    break;
+                case Operation.RemoveTraitOperator:
+                {
+                    if ((string.IsNullOrEmpty(operandA.Parameter) || operandB.Trait == null))
+                    {
+                        throw new ArgumentException("Invalid operands for a Remove trait operator");
+                    }
+                    var parameter = operandA.Parameter;
+                    var trait = operandB.Trait.Name;
+
+                    requiredObjectBuffers.Add(parameter);
+
+                    modifierLines.Add($"newState.RemoveTraitOnObject<{trait}>(ref original{parameter}Object);");
+                }
+                    break;
+                default:
+                {
+                    if (string.IsNullOrEmpty(operandA.Parameter) || operandA.Trait == null)
+                    {
+                        throw new ArgumentException("Invalid operands for a trait modifier");
+                    }
+
+                    var parameterNames = action.Parameters.Select(p => p.Name).ToList();
+
+                    var paramA = operandA.Parameter;
+                    var traitA = operandA.Trait.Name;
+                    var fieldA = operandA.TraitFieldName;
+
+                    requiredTraitBuffers.Add(traitA);
+
+                    bool originalObject = parameterNames.Contains(paramA);
+                    var objectAPrefix = originalObject ? prefixOriginal : prefixNew;
+
+                    if (originalObject)
+                    {
+                        requiredObjectBuffers.Add(paramA);
+                    }
+
+                    modifierLines.Add($"var @{traitA} = new{traitA}Buffer[{objectAPrefix}{paramA}Object.{traitA}Index];");
+
+                    if (operandB.Trait == null)
+                    {
+                        if (operandB.Enum != null)
+                        {
+                            modifierLines.Add($"@{traitA}.@{fieldA} {@operator} {operandB.Enum.Name}.{operandB.Value};");
+                        }
+                        else if (parameterNames.Contains(operandB.Parameter))
+                        {
+                            requiredObjectBuffers.Add(operandB.Parameter);
+                            modifierLines.Add($"@{traitA}.@{fieldA} {@operator} originalState.GetTraitBasedObjectId(original{operandB.Parameter}Object);");
+                        }
+                        else if (action.CreatedObjects.Any(c => c.Name == operandB.Parameter))
+                        {
+                            modifierLines.Add($"@{traitA}.@{fieldA} {@operator} new{operandB.Parameter}ObjectId;");
+                        }
+                        else
+                        {
+                            modifierLines.Add($"@{traitA}.@{fieldA} {@operator} {operandB.Value};");
+                        }
+                    }
+                    else
+                    {
+                        string traitB = operandB.Trait.Name;
+                        string fieldB = operandB.TraitFieldName;
+
+                        requiredTraitBuffers.Add(traitB);
+
+                        var objectBPrefix = parameterNames.Contains(operandB.Parameter) ? prefixOriginal : prefixNew;
+                        if (objectBPrefix == prefixOriginal)
+                        {
+                            requiredObjectBuffers.Add(operandB.Parameter);
+                        }
+
+                        modifierLines.Add($"@{traitA}.{fieldA} {@operator} new{traitB}Buffer[{objectBPrefix}{operandB.Parameter}Object.{traitB}Index].{fieldB};");
+                    }
+
+                    modifierLines.Add($"new{traitA}Buffer[{objectAPrefix}{paramA}Object.{traitA}Index] = @{traitA};");
+                }
+                    break;
+            }
+
+            return modifierLines.ToArray();
         }
 
         void GenerateConditionalAssembly(string domainNamespace, string define, string outputPath)
@@ -273,7 +434,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             SaveToFile($"{outputPath}/{domainNamespace}/ConditionalAssembly.cs", result);
         }
 
-        private void SaveToFile(string filePath, string text)
+        void SaveToFile(string filePath, string text)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(filePath));
 
@@ -283,98 +444,27 @@ namespace UnityEditor.AI.Planner.CodeGen
             m_GeneratedFilePaths.Add(filePath);
         }
 
-        string GetPreconditionOperandString(IEnumerable<string> operand, List<string> parameterNames)
+        string GetPreconditionOperandString(OperandValue operand, List<string> parameterNames)
         {
-            var operandString = string.Empty;
-            var i = 0;
-            foreach (var e in operand)
+            if (operand.Trait == null)
             {
-                if (i == 0)
+                if (operand.Enum != null)
                 {
-                    operandString = e;
+                    return $"{operand.Enum.Name}.{operand.Value}";
                 }
-                else
+                else if (parameterNames.Contains(operand.Parameter))
                 {
-                    var split = e.Split('.');
-                    var traitType = split[0];
-
-                    if (i == 1)
-                    {
-                        var parameterName = operandString;
-                        operandString = $"{traitType}Buffer[{parameterName}Object.{traitType}Index].{split[1]}";
-                    }
-                    else
-                    {
-                        var additionalProperties = $".{split[1]}";
-                        operandString += additionalProperties;
-                    }
+                    return $"stateData.GetTraitBasedObjectId({operand.Parameter}Index)";
                 }
 
-                i++;
+                return operand.Value;
             }
 
-            if (parameterNames.Contains(operandString))
-                operandString = $"stateData.GetDomainObjectID({operandString}Index)";
+            var precondition =  $"{operand.Trait.Name}Buffer[{operand.Parameter}Object.{operand.Trait.Name}Index]";
+            if (!string.IsNullOrEmpty(operand.TraitFieldName))
+                precondition +=  $".{operand.TraitFieldName}";
 
-            return operandString;
-        }
-
-        object GetEffectOperandString(ActionDefinition action, IEnumerable<string> operand, List<string> parameterNames)
-        {
-            var operandList = operand.ToList();
-            var parameterName = operandList[0];
-
-            if (operandList.Count <= 1)
-            {
-                if (parameterNames.Contains(parameterName))
-                    parameterName = $"originalState.GetDomainObjectID(original{parameterName}Object)";
-                else if (action.CreatedObjects.Any(c => c.Name == parameterName))
-                    parameterName = $"new{parameterName}ObjectID";
-
-                return new
-                {
-                    trait = string.Empty,
-                    parameter = parameterName,
-                    field = string.Empty
-                };
-            }
-
-            var traitDataSplit = operandList[1].Split('.');
-
-            return new
-            {
-                trait = traitDataSplit[0],
-                parameter = parameterName,
-                field = traitDataSplit[1]
-            };
-        }
-
-        string GetOperandTrait(IEnumerable<string> operand)
-        {
-            var i = 0;
-            foreach (var e in operand)
-            {
-                if (i != 0)
-                {
-                    var split = e.Split('.');
-                    return split[0];
-                }
-
-                i++;
-            }
-            return null;
-        }
-
-        string GetOperandParam(IEnumerable<string> operand, List<string> parameterNames)
-        {
-            var operandList = operand.ToList();
-
-            if (operandList.Count <= 1)
-            {
-                return parameterNames.Contains(operandList[0]) ? operandList[0] : string.Empty;
-            }
-
-            return operandList[0];
+            return precondition;
         }
     }
 }

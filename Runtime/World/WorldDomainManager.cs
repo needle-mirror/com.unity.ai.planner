@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
@@ -10,48 +11,39 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         /// <summary>
         /// The current singleton instance of <see cref="WorldDomainManager"/>.
         /// </summary>
-        public static WorldDomainManager Instance
-        {
-            get
-            {
-                if (s_Instance == null)
-                    s_Instance = new WorldDomainManager();
+        public static WorldDomainManager Instance => s_Instance ?? (s_Instance = new WorldDomainManager());
 
-                return s_Instance;
-            }
-        }
-
-        List<IDomainObjectProvider> m_ObjectsProvider;
+        List<ITraitBasedObjectData> m_TraitBasedObjects;
 
         WorldDomainManager()
         {
-            m_ObjectsProvider = new List<IDomainObjectProvider>();
+            m_TraitBasedObjects = new List<ITraitBasedObjectData>();
         }
 
-        internal IEnumerable<IDomainObjectData> GetDomainObjects(GameObject agentObject, DomainObjectQuery objectQuery = null)
+        internal IEnumerable<ITraitBasedObjectData> GetTraitBasedObjects(GameObject controllerObject, TraitBasedObjectQuery objectQuery = null)
         {
             if (objectQuery == null)
             {
-                return m_ObjectsProvider.SelectMany((o) => o.DomainObjects);
+                return m_TraitBasedObjects;
             }
 
-            var objectList = new List<IDomainObjectData>();
-            foreach (var provider in m_ObjectsProvider)
+            var objectList = new List<ITraitBasedObjectData>();
+            foreach (var traitBasedObjectData in m_TraitBasedObjects)
             {
-                objectQuery.AddValidObjects(provider, agentObject, ref objectList);
+                objectQuery.AddValidObjects(traitBasedObjectData, controllerObject, ref objectList);
             }
 
             return objectList;
         }
 
-        public void Register(IDomainObjectProvider provider)
+        public void Register(ITraitBasedObjectData objectData)
         {
-            m_ObjectsProvider.Add(provider);
+            m_TraitBasedObjects.Add(objectData);
         }
 
-        public void Unregister(IDomainObjectProvider provider)
+        public void Unregister(ITraitBasedObjectData objectData)
         {
-            m_ObjectsProvider.Remove(provider);
+            m_TraitBasedObjects.Remove(objectData);
         }
     }
 }

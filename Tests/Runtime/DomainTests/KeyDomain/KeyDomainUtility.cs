@@ -1,21 +1,22 @@
 ﻿using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.Collections;
 using Unity.Entities;
 
 namespace KeyDomain
 {
     static class KeyDomainUtility
     {
-        public static DomainObject Agent;
-        public static DomainObject BlackKey;
-        public static DomainObject WhiteKey;
-        public static DomainObject StartRoom;
-        public static DomainObject FirstRoom;
+        public static TraitBasedObject Agent;
+        public static TraitBasedObject BlackKey;
+        public static TraitBasedObject WhiteKey;
+        public static TraitBasedObject StartRoom;
+        public static TraitBasedObject FirstRoom;
 
-        public static ObjectID AgentID;
-        public static ObjectID BlackKeyID;
-        public static ObjectID WhiteKeyID;
-        public static ObjectID StartRoomID;
-        public static ObjectID FirstRoomID;
+        public static ObjectId AgentId;
+        public static ObjectId BlackKeyId;
+        public static ObjectId WhiteKeyId;
+        public static ObjectId StartRoomId;
+        public static ObjectId FirstRoomId;
 
         public static ComponentType[] RoomArchetype;
 
@@ -25,69 +26,78 @@ namespace KeyDomain
 
         public static void Initialize(World world)
         {
+            RoomArchetype = new ComponentType[]{ typeof(Lockable), typeof(Colored), typeof(TraitBasedObjectId) };
+
             s_StateManager = world.GetOrCreateSystem<StateManager>();
-
-            RoomArchetype = new ComponentType[]{ typeof(Lockable), typeof(Colored), typeof(DomainObjectID) };
-
             var stateData = s_StateManager.CreateStateData();
 
-            (StartRoom, StartRoomID) = CreateRoom(stateData, ColorValue.Black, false);
-            (FirstRoom, FirstRoomID) = CreateRoom(stateData, ColorValue.White);
-            (BlackKey, BlackKeyID) = CreateKey(stateData, ColorValue.Black);
-            (WhiteKey, WhiteKeyID) = CreateKey(stateData, ColorValue.White);
-            (Agent, AgentID) = CreateAgent(stateData, BlackKeyID, StartRoomID);
+            (BlackKey, BlackKeyId) = CreateKey(stateData, ColorValue.Black);
+            (WhiteKey, WhiteKeyId) = CreateKey(stateData, ColorValue.White);
+            (StartRoom, StartRoomId) = CreateRoom(stateData, ColorValue.Black, false);
+            (FirstRoom, FirstRoomId) = CreateRoom(stateData, ColorValue.White);
+            (Agent, AgentId) = CreateAgent(stateData, BlackKeyId, StartRoomId);
 
             InitialStateKey = s_StateManager.GetStateDataKey(stateData);
         }
 
-        public static (DomainObject, ObjectID) CreateRoom(StateData testState, ColorValue color, bool locked = true)
+        public static (TraitBasedObject, ObjectId) CreateRoom(StateData testState, ColorValue color, bool locked = true)
         {
-            var (room, roomID) = testState.AddDomainObject(new ComponentType[] { typeof(Lockable), typeof(Colored) });
-            var lockables = testState.LockableBuffer;
-            var coloreds = testState.ColoredBuffer;
-
-            lockables[room.LockableIndex] = new Lockable { Locked = locked };
-            coloreds[room.ColoredIndex] = new Colored{ Color = color };
-
-            return (room, roomID.ID);
-        }
-
-        public static (DomainObject, ObjectID) CreateKey(StateData testState, ColorValue color)
-        {
-            var (key, keyID) = testState.AddDomainObject(new ComponentType[] { typeof(Carriable), typeof(Colored) });
-
-            var carriables = testState.CarriableBuffer;
-            carriables[key.CarriableIndex] = new Carriable { Carrier = ObjectID.None };
-
-            var coloreds = testState.ColoredBuffer;
-            coloreds[key.ColoredIndex] = new Colored { Color = color };
-
-            return (key, keyID.ID);
-        }
-
-        public static (DomainObject, ObjectID) CreateAgent(StateData testState, ObjectID keyID, ObjectID roomID)
-        {
-            var (agent, agentID) = testState.AddDomainObject(new ComponentType[] { typeof(Carrier), typeof(Localized) });
-            var carriers = testState.CarrierBuffer;
-            var localizeds = testState.LocalizedBuffer;
-
-            var domainObjects = testState.DomainObjects;
-
-            carriers[agent.CarrierIndex] = new Carrier { CarriedObject = keyID };
-            localizeds[agent.LocalizedIndex] = new Localized { Location =  roomID};
-
-            var carriables = testState.CarriableBuffer;
-
-            var objectIDs = testState.DomainObjectIDs;
-            for (int i = 0; i < objectIDs.Length; i++)
+            using (var roomType =  new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = typeof(Lockable),  [1] = typeof(Colored) })
             {
-                if (objectIDs[i].ID == keyID)
-                {
-                    carriables[domainObjects[i].CarriableIndex] = new Carriable {Carrier = agentID.ID};
-                }
-            }
+                testState.AddObject(roomType, out var room, out var roomId);
 
-            return (agent, agentID.ID);
+                var lockables = testState.LockableBuffer;
+                var coloreds = testState.ColoredBuffer;
+
+                lockables[room.LockableIndex] = new Lockable {Locked = locked};
+                coloreds[room.ColoredIndex] = new Colored {Color = color};
+
+                return (room, roomId.Id);
+            }
+        }
+
+        public static (TraitBasedObject, ObjectId) CreateKey(StateData testState, ColorValue color)
+        {
+            using (var keyType = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = typeof(Carriable), [1] = typeof(Colored) })
+            {
+                testState.AddObject(keyType, out var key, out var keyId);
+
+                var carriables = testState.CarriableBuffer;
+                carriables[key.CarriableIndex] = new Carriable {Carrier = ObjectId.None};
+
+                var coloreds = testState.ColoredBuffer;
+                coloreds[key.ColoredIndex] = new Colored {Color = color};
+
+                return (key, keyId.Id);
+            }
+        }
+
+        public static (TraitBasedObject, ObjectId) CreateAgent(StateData testState, ObjectId keyId, ObjectId roomId)
+        {
+            using (var agentType = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = typeof(Carrier), [1] = typeof(Localized) })
+            {
+                testState.AddObject(agentType, out var agent, out var agentId);
+                var carriers = testState.CarrierBuffer;
+                var localizeds = testState.LocalizedBuffer;
+
+                var traitBasedObjects = testState.TraitBasedObjects;
+
+                carriers[agent.CarrierIndex] = new Carrier {CarriedObject = keyId};
+                localizeds[agent.LocalizedIndex] = new Localized {Location = roomId};
+
+                var carriables = testState.CarriableBuffer;
+
+                var objectIds = testState.TraitBasedObjectIds;
+                for (int i = 0; i < objectIds.Length; i++)
+                {
+                    if (objectIds[i].Id == keyId)
+                    {
+                        carriables[traitBasedObjects[i].CarriableIndex] = new Carriable {Carrier = agentId.Id};
+                    }
+                }
+
+                return (agent, agentId.Id);
+            }
         }
     }
 }

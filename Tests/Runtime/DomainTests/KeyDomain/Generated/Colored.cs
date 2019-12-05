@@ -6,9 +6,18 @@ namespace KeyDomain
     [Serializable]
     internal struct Colored : ITrait, IEquatable<Colored>
     {
-        public const bool IsZeroSized = false;
-
         public ColorValue Color;
+
+        public object GetField(string fieldName)
+        {
+            switch (fieldName)
+            {
+                case nameof(Color):
+                    return Color;
+            }
+
+            return null;
+        }
 
         public void SetField(string fieldName, object value)
         {
@@ -18,6 +27,11 @@ namespace KeyDomain
                     Color = (ColorValue)Enum.ToObject(typeof(ColorValue), value);
                     break;
             }
+        }
+
+        public bool AttributesEqual(Colored other)
+        {
+            return Color == other.Color;
         }
 
         public bool Equals(Colored other)

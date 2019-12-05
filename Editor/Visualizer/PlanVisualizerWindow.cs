@@ -1,26 +1,18 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using GraphVisualizer;
 using Unity.AI.Planner;
-using Unity.AI.Planner.Agent;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
-using Unity.AI.Planner.Jobs;
-using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {
     class PlanVisualizerWindow : EditorWindow, IHasCustomMenu
     {
-        List<Type> m_AgentTypes;
-
         IGraphRenderer m_Renderer;
         IGraphLayout m_Layout;
 
         [NonSerialized]
-        IPlanInternal m_Plan;
+        IPlanExecutionInfo m_PlanExecutionInfo;
         IPlanVisualizer m_Visualizer;
         IVisualizerNode m_RootNodeOverride;
 
@@ -41,17 +33,6 @@ namespace UnityEditor.AI.Planner.Visualizer
             m_GraphSettings.aspectRatio = k_DefaultAspectRatio;
             m_GraphSettings.showLegend = false;
             m_GraphSettings.showInspector = false;
-
-            m_AgentTypes = new List<Type>();
-            ReflectionUtils.ForEachType(t =>
-            {
-                var baseType = t.BaseType;
-                if (!t.IsAbstract && baseType != null && baseType.IsGenericType
-                    && baseType.GetGenericTypeDefinition() == typeof(BaseAgent<,,,,,,,,,>))
-                {
-                    m_AgentTypes.Add(t);
-                }
-            });
         }
 
         [MenuItem("Window/AI/Plan Visualizer")]
@@ -86,17 +67,11 @@ namespace UnityEditor.AI.Planner.Visualizer
             SelectPlan();
         }
 
-        GameObject FindBaseAgentObject()
+        GameObject FindPlannerObject()
         {
-            foreach (var agentType in m_AgentTypes)
-            {
-                var agent = (MonoBehaviour)FindObjectOfType(agentType);
-                return agent != null ? agent.gameObject : null;
-            }
-
-            return null;
+            var planner = (MonoBehaviour)FindObjectOfType(typeof(UnityEngine.AI.Planner.Controller.DecisionController));
+            return planner != null ? planner.gameObject : null;
         }
-
 
         void SelectPlan()
         {
@@ -105,60 +80,55 @@ namespace UnityEditor.AI.Planner.Visualizer
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 if (!activeGameObject)
-                    activeGameObject = FindBaseAgentObject();
+                    activeGameObject = FindPlannerObject();
 
                 if (activeGameObject)
                 {
                     if (!GetPlan(activeGameObject, out var plan))
                     {
-                        activeGameObject = FindBaseAgentObject();
+                        activeGameObject = FindPlannerObject();
                         GetPlan(activeGameObject, out plan);
                     }
 
                     if (plan != null)
                     {
-                        m_Plan = plan;
-                        InitializePlanVisualizer(m_Plan);
+                        m_PlanExecutionInfo = plan;
+                        InitializePlanVisualizer(m_PlanExecutionInfo);
                     }
                 }
             }
             else
             {
                 m_Visualizer = null;
-                m_Plan = null;
+                m_PlanExecutionInfo = null;
             }
         }
 
-        void InitializePlanVisualizer(IPlanInternal plan)
+        void InitializePlanVisualizer(IPlanExecutionInfo plan)
         {
             m_Visualizer = new PlanVisualizer(plan);
         }
 
-        static bool GetPlan(GameObject go, out IPlanInternal plan)
+        static bool GetPlan(GameObject go, out IPlanExecutionInfo plan)
         {
             plan = null;
 
             if (go == null)
                 return false;
 
-            var components = go.GetComponents<MonoBehaviour>();
-            foreach (var component in components)
+            var planners = go.GetComponents<UnityEngine.AI.Planner.Controller.DecisionController>();
+            foreach (var planner in planners)
             {
-                if (!component.enabled)
+                if (!planner.enabled || planner.planExecutor == null)
                     continue;
 
-                var componentType = component.GetType();
-                var baseType = componentType.BaseType; // BaseAgent
-                if (baseType != null)
+                var fields = planner.planExecutor.GetType().BaseType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var field in fields)
                 {
-                    var fields = baseType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    foreach (var field in fields)
+                    if (plan == null && typeof(IPlanExecutionInfo).IsAssignableFrom(field.FieldType))
                     {
-                        if (plan == null && typeof(IPlanInternal).IsAssignableFrom(field.FieldType))
-                        {
-                            plan = (IPlanInternal)field.GetValue(component);
-                            return true;
-                        }
+                        plan = (IPlanExecutionInfo)field.GetValue(planner.planExecutor);
+                        return true;
                     }
                 }
             }
@@ -204,7 +174,7 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         void Update()
         {
-            if (EditorApplication.isPlaying && m_Plan == null)
+            if (EditorApplication.isPlaying && m_PlanExecutionInfo == null)
                 SelectPlan();
 
             // If in Play mode, refresh the plan each update.
@@ -261,7 +231,7 @@ namespace UnityEditor.AI.Planner.Visualizer
                                 m_RootNodeOverride = null;
                         }
 
-                        renderer.Reset();
+                        renderer.ResetSelection();
                     }
 
                     m_GraphSettings.showInspector = vn != null;
@@ -278,20 +248,21 @@ namespace UnityEditor.AI.Planner.Visualizer
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             GUILayout.Label("Max Depth:");
-            m_MaxDepth = EditorGUILayout.IntSlider(m_MaxDepth, 1, 4);
+            m_MaxDepth = EditorGUILayout.IntSlider(m_MaxDepth, 1, 6);
             EditorGUILayout.Space();
             GUILayout.Label("Show Top Actions:");
             m_MaxChildrenNodes = EditorGUILayout.IntSlider(m_MaxChildrenNodes, 1, 16);
             GUILayout.FlexibleSpace();
-            if (m_Plan != null)
+            if (m_PlanExecutionInfo != null)
             {
                 EditorGUILayout.Space();
-                GUILayout.Label($"Max Plan Depth: {m_Plan.MaxHorizonFromRoot}");
+                GUILayout.Label($"Max Plan Depth: {m_PlanExecutionInfo.MaxHorizonFromRoot}");
+                GUILayout.Label($"Plan Size: {m_PlanExecutionInfo.Size}");
             }
 
             EditorGUILayout.EndHorizontal();
 
-            if (m_Visualizer == null && m_Plan == null)
+            if (m_Visualizer == null && m_PlanExecutionInfo == null)
             {
                 // Early out if there are no graphs.
                 if (!EditorApplication.isPlaying)
@@ -300,19 +271,13 @@ namespace UnityEditor.AI.Planner.Visualizer
                     return;
                 }
 
-                ShowMessage("Select an agent that has an AI controller");
+                ShowMessage("Select an GameObject that has a Planner component");
             }
         }
 
         public void AddItemsToMenu(GenericMenu menu)
         {
-            menu.AddItem(new GUIContent("Legend"), m_GraphSettings.showLegend, ToggleLegend);
             menu.AddItem(new GUIContent("Inspector"), m_GraphSettings.showInspector, ToggleInspector);
-        }
-
-        void ToggleLegend()
-        {
-            m_GraphSettings.showLegend = !m_GraphSettings.showLegend;
         }
 
         void ToggleInspector()

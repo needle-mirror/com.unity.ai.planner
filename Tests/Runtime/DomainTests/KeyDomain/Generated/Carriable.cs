@@ -6,18 +6,32 @@ namespace KeyDomain
     [Serializable]
     internal struct Carriable : ITrait, IEquatable<Carriable>
     {
-        public const bool IsZeroSized = false;
+        public ObjectId Carrier;
 
-        public Unity.AI.Planner.DomainLanguage.TraitBased.ObjectID Carrier;
+        public object GetField(string fieldName)
+        {
+            switch (fieldName)
+            {
+                case nameof(Carrier):
+                    return Carrier;;
+            }
+
+            return null;
+        }
 
         public void SetField(string fieldName, object value)
         {
             switch (fieldName)
             {
                 case nameof(Carrier):
-                    Carrier = (Unity.AI.Planner.DomainLanguage.TraitBased.ObjectID)value;
+                    Carrier = (ObjectId)value;
                     break;
             }
+        }
+
+        public bool AttributesEqual(Carriable other)
+        {
+            return true;
         }
 
         public bool Equals(Carriable other)

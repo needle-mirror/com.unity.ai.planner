@@ -9,7 +9,7 @@ using AI.Planner.Domains;
 using {{ domain_namespace }}.Enums;
 {{- end }}
 
-namespace {{ action_namespace }}.{{ agent_name }}
+namespace {{ action_namespace }}.{{ plan_name }}
 {
     struct {{ action_name }} : IJobParallelForDefer
     {
@@ -24,12 +24,8 @@ namespace {{ action_namespace }}.{{ agent_name }}
                                                         {{- for e in p.prohibited_traits }} ComponentType.Exclude<{{ e }}>(),{{ end }}};
         {{- end }}
 
-        {{- for c in created_objects }}
-        static readonly ComponentType[] s_{{ c.name }}Types = { {{- for r in c.required_traits -}} ComponentType.ReadWrite<{{ r }}>(),{{ end }}};
-        {{- end }}
-
         [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
-        [ReadOnly] StateDataContext m_StateDataContext;
+        StateDataContext m_StateDataContext;
 
         internal {{ action_name }}(NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
         {
@@ -37,11 +33,21 @@ namespace {{ action_namespace }}.{{ agent_name }}
             m_StateDataContext = stateDataContext;
         }
 
+        public static int GetIndexForParameterName(string parameterName)
+        {
+            {{ for p in parameter_list }}
+            if (string.Equals(parameterName, "{{ p.name }}", StringComparison.OrdinalIgnoreCase))
+                 return k_{{ p.name }}Index;
+            {{- end }}
+
+            return -1;
+        }
+
         void GenerateArgumentPermutations(StateData stateData, NativeList<ActionKey> argumentPermutations)
         {
             {{- for p in parameter_list }}
-            var {{ p.name }}Objects = new NativeList<(DomainObject, int)>(2, Allocator.Temp);
-            stateData.GetDomainObjects({{ p.name }}Objects, s_{{ p.name }}Filter);
+            var {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, s_{{ p.name }}Filter);
             {{- end }}
 
             {{- for p in precondition_traits }}
@@ -50,9 +56,10 @@ namespace {{ action_namespace }}.{{ agent_name }}
 
             {{- for p in parameter_list }}
             {{ param_index = for.index }}
-            for (int i{{ param_index }} = 0; i{{ param_index }} < {{ p.name }}Objects.Length; i{{ param_index }}++)
+            for (int i{{ param_index }} = 0; i{{ param_index }} < {{ p.name }}ObjectIndices.Length; i{{ param_index }}++)
             {
-                var ({{ p.name }}Object, {{ p.name }}Index) = {{ p.name }}Objects[i{{ param_index }}];
+                var {{ p.name }}Index = {{ p.name }}ObjectIndices[i{{ param_index }}];
+                var {{ p.name }}Object = stateData.TraitBasedObjects[{{ p.name }}Index];
 
                 {{- for p in precondition_list }}
                 {{ if param_index == p.loop_index }}
@@ -70,9 +77,11 @@ namespace {{ action_namespace }}.{{ agent_name }}
                                                     };
 
 
-                {{~ if custom_precondition != null && custom_precondition != "" ~}}
-                if (new {{ custom_precondition }}().CheckCustomPrecondition(stateData, actionKey))
+                {{- for customMethod in custom_preconditions }}
+                  if (!new {{ customMethod }}().CheckCustomPrecondition(stateData, actionKey))
+                    continue;
                 {{~ end ~}}
+
                 argumentPermutations.Add(actionKey);
 
             {{- for p in parameter_list }}
@@ -80,75 +89,76 @@ namespace {{ action_namespace }}.{{ agent_name }}
             {{- end }}
 
             {{- for p in parameter_list }}
-                {{ p.name }}Objects.Dispose();
+                {{ p.name }}ObjectIndices.Dispose();
             {{- end }}
         }
 
-        (StateEntityKey, ActionKey, ActionResult, StateEntityKey) ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
+        StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
         {
             var originalState = m_StateDataContext.GetStateData(originalStateEntityKey);
-            var originalStateObjectBuffer = originalState.DomainObjects;
+            var originalStateObjectBuffer = originalState.TraitBasedObjects;
 
-            {{- for p in object_effect_params }}
+            {{- for p in required_object_buffers }}
             {{ if p != "" }}var original{{ p }}Object = originalStateObjectBuffer[action[k_{{ p }}Index]];{{ end }}
             {{- end }}
 
             var newState = m_StateDataContext.CopyStateData(originalState);
 
-            {{- for p in object_effect_traits }}
+            {{- for p in required_trait_buffers }}
             var new{{ p }}Buffer = newState.{{ p }}Buffer;
             {{- end }}
 
             {{- for c in created_objects }}
-            var (new{{ c.name }}Object, new{{ c.name}}ObjectID) = newState.AddDomainObject( s_{{ c.name }}Types);
+            TraitBasedObject new{{ c.name }}Object;
+            TraitBasedObjectId new{{ c.name}}ObjectId;
+            using (var {{ c.name}}Types =  new NativeArray<ComponentType>({{ c.required_traits | array.size }}, Allocator.Temp) { {{- for r in c.required_traits -}} [{{for.index}}] = typeof({{r}}), {{ end }}})
+            {
+                newState.AddObject({{ c.name }}Types, out new{{ c.name }}Object, out new{{ c.name}}ObjectId);
+            }
             {{- end }}
 
-            {{- for e in object_effect_list }}
+            {{- for modifier in object_modifiers }}
             {
-                {{-
-                if array.contains created_object_names e.operand_a.parameter
-                    prefix_a = "new"
-                else
-                    prefix_a = "original"
-                end
-
-                if array.contains created_object_names e.operand_b.parameter
-                    prefix_b = "new"
-                else
-                    prefix_b = "original"
-                end
-                }}
-                var @{{ e.operand_a.trait }} = new{{ e.operand_a.trait }}Buffer[{{prefix_a}}{{ e.operand_a.parameter }}Object.{{ e.operand_a.trait }}Index];
-                {{- if e.operand_b.trait == "" }}
-                @{{ e.operand_a.trait }}.{{ e.operand_a.field }} {{ e.operator }} {{ e.operand_b.parameter }};
-                {{- else }}
-                @{{ e.operand_a.trait }}.{{ e.operand_a.field }} {{ e.operator }} new{{ e.operand_b.trait }}Buffer[{{prefix_b}}{{ e.operand_b.parameter }}Object.{{ e.operand_b.trait }}Index].{{ e.operand_b.field }};
-                {{- end}}
-                new{{ e.operand_a.trait }}Buffer[{{prefix_a}}{{ e.operand_a.parameter }}Object.{{ e.operand_a.trait }}Index] = @{{ e.operand_a.trait }};
+                {{- for m in modifier }}
+                    {{ m }}
+                {{- end }}
             }
             {{- end }}
 
             {{ for d in removed_objects }}
-            newState.RemoveDomainObjectAtIndex(action[k_{{ d }}Index]);
+            newState.RemoveTraitBasedObjectAtIndex(action[k_{{ d }}Index]);
             {{- end }}
 
-            {{~ if custom_effect != null && custom_effect != "" ~}}
-            new {{ custom_effect }}().ApplyCustomActionEffectsToState(originalState, action, newState);
-            {{~ end ~}}
-
             var reward = Reward(originalState, action, newState);
-            var actionResult = new ActionResult { Probability = 1f, TransitionUtilityValue = reward };
+            var StateTransitionInfo = new StateTransitionInfo { Probability = 1f, TransitionUtilityValue = reward };
             var resultingStateKey = m_StateDataContext.GetStateDataKey(newState);
 
-            return (originalStateEntityKey, action, actionResult, resultingStateKey);
+            return new StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>(originalStateEntityKey, action, resultingStateKey, StateTransitionInfo);
         }
 
         float Reward(StateData originalState, ActionKey action, StateData newState)
         {
             var reward = {{ reward_value }}f;
-            {{~ if custom_reward != null && custom_reward != "" ~}}
-            new {{ custom_reward }}().SetCustomReward(originalState, action, newState, ref reward);
-            {{~ end ~}}
+
+            {{- for r in custom_rewards }}
+            {
+                {{- if r.parameters.empty? }}
+                {{- $args = "originalState, action, newState" }}
+                {{- else }}
+                {{- $args = "" }}
+                {{- end }}
+
+                {{- for p in r.parameters }}
+                var param{{for.index}} = originalState.GetTraitOnObjectAtIndex<{{ p.type }}>(action[{{ p.index }}]);
+                {{- $args = $args + "param" + for.index }}
+                {{- if for.index != for.length - 1 }}
+                    {{- $args = $args + ", " }}
+                {{- end }}
+                {{- end }}
+                reward {{ r.operator }} new {{ r.typename }}().RewardModifier( {{ $args }});
+            }
+            {{- end }}
+
             return reward;
         }
 
@@ -187,7 +197,7 @@ namespace {{ action_namespace }}.{{ agent_name }}
 
     public struct {{ action_name }}FixupReference : IBufferElementData
     {
-        public (StateEntityKey, ActionKey, ActionResult, StateEntityKey) TransitionInfo;
+        public StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> TransitionInfo;
     }
 }
 

@@ -12,6 +12,8 @@ namespace UnityEditor.AI.Planner.CodeGen
 {
     class DomainAssemblyBuilder
     {
+        const string k_BuildMenuTitle = "AI/Planner/Build assemblies";
+
         const string k_DomainsAssemblyName = "AI.Planner.Domains.dll";
         const string k_ActionsAssemblyName = "AI.Planner.Actions.dll";
 
@@ -31,7 +33,9 @@ namespace UnityEditor.AI.Planner.CodeGen
 
         static void OnPlayModeStateChanged(PlayModeStateChange playMode)
         {
-            if (playMode == PlayModeStateChange.ExitingEditMode)
+            if (AIPlannerPreferences.GetOrCreatePreferences().AutoCompile
+                && playMode == PlayModeStateChange.ExitingEditMode
+                && !Directory.Exists(DomainAssemblyBuilderDebug.k_GeneratedPath))
             {
                 var lastBuildTime = File.GetLastWriteTimeUtc(k_DomainsAssemblyProjectPath);
 
@@ -41,7 +45,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     nameof(EnumDefinition),
                     nameof(ActionDefinition),
                     nameof(StateTerminationDefinition),
-                    nameof(AgentDefinition),
+                    nameof(PlanDefinition),
                 };
 
                 var filter = string.Join(" ", assetTypes.Select(t => $"t:{t}"));
@@ -60,7 +64,13 @@ namespace UnityEditor.AI.Planner.CodeGen
             }
         }
 
-        [MenuItem("AI/Build Assemblies")]
+        [MenuItem(k_BuildMenuTitle, true)]
+        public static bool BuildMenuValidate()
+        {
+            return !EditorApplication.isCompiling;
+        }
+
+        [MenuItem(k_BuildMenuTitle)]
         public static void BuildDomainAssemblies()
         {
             var codeGenerator = new CodeGenerator();
@@ -93,12 +103,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 }
             }
 
-            paths = codeGenerator.GenerateActions(k_OutputPath, "Assets/").ToList();
-
-            var actionsAssemblyBuilt = BuildAssembly(paths.ToArray(), k_OutputActionsAssembly,
-                new[] { k_ActionsAssemblyProjectPath }, additionalReferences.ToArray());
-
-            if (domainAssemblyBuilt && actionsAssemblyBuilt)
+            if (domainAssemblyBuilt)
             {
                 if (Directory.Exists($"{k_PlannerProjectPath}Generated/"))
                 {
@@ -106,10 +111,25 @@ namespace UnityEditor.AI.Planner.CodeGen
                     AssetDatabase.Refresh();
                 }
 
+                if (!Directory.Exists(k_PlannerProjectPath))
+                    Directory.CreateDirectory(k_PlannerProjectPath);
+
                 File.Copy(k_OutputDomainsAssembly, k_DomainsAssemblyProjectPath, true);
-                File.Copy(k_OutputActionsAssembly, k_ActionsAssemblyProjectPath, true);
                 AssetDatabase.ImportAsset(k_DomainsAssemblyProjectPath);
-                AssetDatabase.ImportAsset(k_ActionsAssemblyProjectPath);
+
+                paths = codeGenerator.GeneratePlans(k_OutputPath, "Assets/").ToList();
+
+                var actionsAssemblyBuilt = BuildAssembly(paths.ToArray(), k_OutputActionsAssembly,
+                    new[] { k_ActionsAssemblyProjectPath }, additionalReferences.ToArray());
+
+                if (actionsAssemblyBuilt)
+                {
+                    if (!Directory.Exists(k_PlannerProjectPath))
+                        Directory.CreateDirectory(k_PlannerProjectPath);
+
+                    File.Copy(k_OutputActionsAssembly, k_ActionsAssemblyProjectPath, true);
+                    AssetDatabase.ImportAsset(k_ActionsAssemblyProjectPath);
+                }
             }
         }
 

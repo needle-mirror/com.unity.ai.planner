@@ -7,10 +7,18 @@ namespace KeyDomain
     [Serializable]
     internal struct End : ITrait, IEquatable<End>
     {
-        public const bool IsZeroSized = true;
+        public object GetField(string fieldName)
+        {
+            return null;
+        }
 
         public void SetField(string fieldName, object value)
         {
+        }
+
+        public bool AttributesEqual(End other)
+        {
+            return true;
         }
 
         public bool Equals(End other)

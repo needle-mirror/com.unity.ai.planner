@@ -1,6 +1,5 @@
 using System;
 using Unity.Entities;
-using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 {{- if include_enums }}
 using {{ namespace }}.Enums;
@@ -11,7 +10,9 @@ namespace {{ namespace }}
     [Serializable]
     public struct {{ name }} : ITrait, IEquatable<{{ name }}>
     {
-        public const bool IsZeroSized = {{ fields.empty? }};
+        {{- for field in fields }}
+        public const string Field{{ field.field_name }} = "{{ field.field_name }}";
+        {{- end }}
 
         {{- for field in fields }}
         public {{ field.field_type }} {{ field.field_name }};
@@ -31,7 +32,43 @@ namespace {{ namespace }}
                 {{- end }}
                     break;
             {{- end }}
+                default:
+                    throw new ArgumentException($"Field \"{fieldName}\" does not exist on trait {{ name }}.");
             }
+        {{- end }}
+        }
+
+        public object GetField(string fieldName)
+        {
+        {{- if !fields.empty? }}
+            switch (fieldName)
+            {
+            {{- for field in fields }}
+                case nameof({{ field.field_name }}):
+                    return {{ field.field_name }};
+            {{- end }}
+                default:
+                    throw new ArgumentException($"Field \"{fieldName}\" does not exist on trait {{ name }}.");
+            }
+        {{- else }}
+            throw new ArgumentException("No fields exist on trait {{ name }}.");
+        {{- end }}
+        }
+
+        public bool AttributesEqual({{name}} other)
+        {
+        {{- if fields.empty? }}
+            return true;
+        {{- else }}
+        {{ for field in fields }}
+            {{- if for.index == 0 }}    return true{{ else }} {{ end }}
+            {{- if field.field_type | string.contains "ObjectId" }}
+            {{- else if field.field_type | string.contains "NativeString" }}
+                    && {{ field.field_name }}.Equals(other.{{ field.field_name }})
+            {{- else }}
+                    && {{ field.field_name }} == other.{{ field.field_name }}
+            {{- end }}
+            {{- end }};
         {{- end }}
         }
 

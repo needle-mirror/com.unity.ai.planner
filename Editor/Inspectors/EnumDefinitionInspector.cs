@@ -1,5 +1,4 @@
 using UnityEditor.AI.Planner.Utility;
-using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
@@ -28,7 +27,7 @@ namespace UnityEditor.AI.Planner.Editors
             base.OnInspectorGUI();
         }
 
-        private void DrawEnumListElement(Rect rect, int index, bool isActive, bool isFocused)
+        void DrawEnumListElement(Rect rect, int index, bool isActive, bool isFocused)
         {
             const int indexRectWidth = 20;
 
@@ -39,7 +38,7 @@ namespace UnityEditor.AI.Planner.Editors
 
             var indexRect = rect;
             indexRect.width = indexRectWidth;
-            EditorGUI.LabelField(indexRect, index.ToString(), EditorStyleHelper.SmallIndex);
+            EditorGUI.LabelField(indexRect, index.ToString(), EditorStyleHelper.smallIndex);
 
             rect.y += EditorGUIUtility.standardVerticalSpacing;
             rect.x += indexRectWidth + 2;

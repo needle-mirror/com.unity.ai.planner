@@ -3,7 +3,6 @@ using System.Linq;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.AI.Planner.Utility;
 using UnityEditor.AI.Planner.Utility;
-using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
@@ -23,7 +22,7 @@ namespace UnityEditor.AI.Planner.Editors
                 "String/64",
                 "String/512",
                 "String/4096",
-                "DomainObject",
+                "TraitBasedObject",
                 "Custom..."
             },
             new[]
@@ -34,7 +33,7 @@ namespace UnityEditor.AI.Planner.Editors
                 "Unity.Entities.NativeString64",
                 "Unity.Entities.NativeString512",
                 "Unity.Entities.NativeString4096",
-                typeof(DomainObjectID).FullName,
+                typeof(TraitBasedObjectId).FullName,
                 "Custom..."
             }
         };
@@ -78,7 +77,7 @@ namespace UnityEditor.AI.Planner.Editors
             base.OnInspectorGUI();
         }
 
-        private static bool IsTraitUsed(TraitDefinition trait)
+        static bool IsTraitUsed(TraitDefinition trait)
         {
             var used = false;
             foreach (var action in DomainAssetDatabase.ActionDefinitions)
@@ -99,19 +98,22 @@ namespace UnityEditor.AI.Planner.Editors
 
             foreach (var termination in DomainAssetDatabase.StateTerminationDefinitions)
             {
-                if (!termination.ObjectParameters.RequiredTraits.Contains(trait) &&
-                    !termination.ObjectParameters.ProhibitedTraits.Contains(trait)) continue;
+                var usedByAction = termination.Parameters.Any(param =>
+                    param.RequiredTraits.Contains(trait) || param.ProhibitedTraits.Contains(trait));
 
-                var rect = EditorGUILayout.GetControlRect();
-                EditorGUI.ObjectField(rect, termination, typeof(StateTerminationDefinition), false);
+                if (usedByAction)
+                {
+                    var rect = EditorGUILayout.GetControlRect();
+                    EditorGUI.ObjectField(rect, termination, typeof(StateTerminationDefinition), false);
 
-                used = true;
+                    used = true;
+                }
             }
 
             return used;
         }
 
-        private void DrawFieldListElement(Rect rect, int index, bool isActive, bool isFocused)
+        void DrawFieldListElement(Rect rect, int index, bool isActive, bool isFocused)
         {
             var list = m_FieldList.serializedProperty;
             var field = list.GetArrayElementAtIndex(index);
@@ -142,13 +144,13 @@ namespace UnityEditor.AI.Planner.Editors
                 if (typeProperty.stringValue == " ")
                 {
                     typeProperty.stringValue = EditorGUI.TextField(rect, "Type", typeProperty.stringValue);
-                    EditorGUI.TextField(rect, " ", "Custom...", EditorStyleHelper.ExampleLabel);
+                    EditorGUI.TextField(rect, " ", "Custom...", EditorStyleHelper.italicGrayLabel);
                 }
                 else
                 {
                     fieldType = TypeResolver.GetType(typeProperty.stringValue);
                     typeProperty.stringValue = EditorGUI.TextField(rect, "Type", typeProperty.stringValue, fieldType == null
-                        ? EditorStyleHelper.ErrorTextField
+                        ? EditorStyleHelper.errorTextField
                         : EditorStyles.textField).Trim();
                 }
             }
@@ -165,7 +167,7 @@ namespace UnityEditor.AI.Planner.Editors
                 var valueProperty = FieldValueDrawer.GetSerializedProperty(field.FindPropertyRelative("m_DefaultValue"), fieldType);
                 if (valueProperty == null)
                 {
-                    EditorGUI.LabelField(rect, "Default", "-", EditorStyleHelper.ExampleLabel);
+                    EditorGUI.LabelField(rect, "Default", "-", EditorStyleHelper.italicGrayLabel);
                     return;
                 }
 

@@ -1,3 +1,4 @@
+
 namespace {{ namespace }}.Enums
 {
     public enum {{ name }}

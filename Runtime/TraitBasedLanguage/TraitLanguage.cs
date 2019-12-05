@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using Unity.Collections;
 using Unity.Entities;
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
@@ -12,60 +13,60 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <summary>
     /// A unique identifier assigned to each domain object within a state
     /// </summary>
-    public struct ObjectID : IEquatable<ObjectID>
+    public struct ObjectId : IEquatable<ObjectId>
     {
         /// <summary>
-        /// ID Value
+        /// Id Value
         /// </summary>
         public int Value;
 
         /// <summary>
-        /// The reserved ObjectID value specifying a reference to no domain object
+        /// The reserved ObjectId value specifying a reference to no domain object
         /// </summary>
-        public static ObjectID None = new ObjectID { Value = 0 };
+        public static ObjectId None = new ObjectId { Value = 0 };
 
-        static int s_ObjectIDs = 1; // 0 is the same as default (uninitialized)
+        static int s_ObjectIds = 1; // 0 is the same as default (uninitialized)
 
         /// <summary>
-        /// Provides a new domain object with an unassigned ID
+        /// Provides a new domain object with an unassigned Id
         /// </summary>
-        /// <returns>Returns a new, unassigned ID</returns>
-        public static ObjectID GetNext()
+        /// <returns>Returns a new, unassigned Id</returns>
+        public static ObjectId GetNext()
         {
-            Interlocked.Increment(ref s_ObjectIDs);
-            return new ObjectID { Value = s_ObjectIDs };
+            Interlocked.Increment(ref s_ObjectIds);
+            return new ObjectId { Value = s_ObjectIds };
         }
 
         /// <summary>
-        /// Compares two given ObjectIDs
+        /// Compares two given ObjectIds
         /// </summary>
-        /// <param name="x">An ObjectID</param>
-        /// <param name="y">An ObjectID</param>
-        /// <returns>Returns if two DomainObjectIDs are equal</returns>
-        public static bool operator ==(ObjectID x, ObjectID y) => x.Value == y.Value;
+        /// <param name="x">An ObjectId</param>
+        /// <param name="y">An ObjectId</param>
+        /// <returns>Returns if two TraitBasedObjectIds are equal</returns>
+        public static bool operator ==(ObjectId x, ObjectId y) => x.Value == y.Value;
 
         /// <summary>
-        /// Compares two given ObjectIDs
+        /// Compares two given ObjectIds
         /// </summary>
-        /// <param name="x">An ObjectID</param>
-        /// <param name="y">An ObjectID</param>
-        /// <returns>Returns if two DomainObjectIDs are not equal</returns>
-        public static bool operator !=(ObjectID x, ObjectID y) => x.Value != y.Value;
+        /// <param name="x">An ObjectId</param>
+        /// <param name="y">An ObjectId</param>
+        /// <returns>Returns if two TraitBasedObjectIds are not equal</returns>
+        public static bool operator !=(ObjectId x, ObjectId y) => x.Value != y.Value;
 
         /// <summary>
-        /// Compares an ObjectID to another ObjectID
+        /// Compares an ObjectId to another ObjectId
         /// </summary>
-        /// <param name="other">ObjectID for comparison</param>
-        /// <returns>Returns true if the ObjectIDs are equal</returns>
-        public bool Equals(ObjectID other) => Value == other.Value;
+        /// <param name="other">ObjectId for comparison</param>
+        /// <returns>Returns true if the ObjectIds are equal</returns>
+        public bool Equals(ObjectId other) => Value == other.Value;
 
 
         /// <summary>
         /// Test for equality
         /// </summary>
-        /// <param name="obj">Other ObjectID</param>
+        /// <param name="obj">Other ObjectId</param>
         /// <returns>Result of equality test</returns>
-        public override bool Equals(object obj) => !(obj is null) && obj is ObjectID other && Equals(other);
+        public override bool Equals(object obj) => !(obj is null) && obj is ObjectId other && Equals(other);
 
         /// <summary>
         /// Get the hash code
@@ -74,9 +75,9 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         public override int GetHashCode() => Value;
 
         /// <summary>
-        /// Returns a string that represents the ObjectID
+        /// Returns a string that represents the ObjectId
         /// </summary>
-        /// <returns>A string that represents the ObjectID</returns>
+        /// <returns>A string that represents the ObjectId</returns>
         public override string ToString()
         {
             return Equals(None) ? "None" : $"<< {Value} >>";
@@ -86,22 +87,27 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <summary>
     /// The trait denoting that an entity represents a domain object
     /// </summary>
-    public struct DomainObjectID : ITrait, IEquatable<DomainObjectID>
+    public struct TraitBasedObjectId : ITrait, IEquatable<TraitBasedObjectId>
     {
+        /// <summary>
+        /// Default TraitBasedObjectId representing no Domain Object
+        /// </summary>
+        public static TraitBasedObjectId None = new TraitBasedObjectId { Id = ObjectId.None };
+
         /// <summary>
         /// Test for equality
         /// </summary>
-        /// <param name="obj">Other DomainObjectID</param>
+        /// <param name="obj">Other TraitBasedObjectId</param>
         /// <returns>Result of equality test</returns>
         public override bool Equals(object obj)
         {
-            return obj is DomainObjectID other && Equals(other);
+            return obj is TraitBasedObjectId other && Equals(other);
         }
 
         /// <summary>
-        /// A unique ObjectID assigned to the domain object
+        /// A unique ObjectId assigned to the trait-based object
         /// </summary>
-        public ObjectID ID;
+        public ObjectId Id;
 
 #if DEBUG
         public NativeString64 Name;
@@ -110,28 +116,28 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <summary>
         /// Test for equality
         /// </summary>
-        /// <param name="other">Other DomainObjectID</param>
+        /// <param name="other">Other TraitBasedObjectId</param>
         /// <returns>Result of equality test</returns>
-        public bool Equals(DomainObjectID other) => ID.Equals(other.ID);
+        public bool Equals(TraitBasedObjectId other) => Id.Equals(other.Id);
 
         /// <summary>
-        /// Compares two given DomainObjectIDs
+        /// Compares two given TraitBasedObjectIds
         /// </summary>
-        /// <param name="x">A DomainObjectID</param>
-        /// <param name="y">A DomainObjectID</param>
-        /// <returns>Returns if two DomainObjectIDs are equal</returns>
-        public static bool operator ==(DomainObjectID x, DomainObjectID y)
+        /// <param name="x">A TraitBasedObjectId</param>
+        /// <param name="y">A TraitBasedObjectId</param>
+        /// <returns>Returns if two TraitBasedObjectIds are equal</returns>
+        public static bool operator ==(TraitBasedObjectId x, TraitBasedObjectId y)
         {
             return x.Equals(y);
         }
 
         /// <summary>
-        /// Compares two given DomainObjectIDs
+        /// Compares two given TraitBasedObjectIds
         /// </summary>
-        /// <param name="x">A DomainObjectID</param>
-        /// <param name="y">A DomainObjectID</param>
-        /// <returns>Returns if two DomainObjectIDs are not equal</returns>
-        public static bool operator !=(DomainObjectID x, DomainObjectID y)
+        /// <param name="x">A TraitBasedObjectId</param>
+        /// <param name="y">A TraitBasedObjectId</param>
+        /// <returns>Returns if two TraitBasedObjectIds are not equal</returns>
+        public static bool operator !=(TraitBasedObjectId x, TraitBasedObjectId y)
         {
             return !x.Equals(y);
         }
@@ -140,15 +146,31 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// Get the hash code
         /// </summary>
         /// <returns>Hash code</returns>
-        public override int GetHashCode() => ID.GetHashCode();
+        public override int GetHashCode() => Id.GetHashCode();
 
         /// <summary>
-        /// Provides a new DomainObjectTrait with a unique DomainObjectID
+        /// Provides a new TraitBasedObjectId with a unique ObjectId
         /// </summary>
-        /// <returns>Returns a new DomainObjectTrait with an new unique DomainObjectID</returns>
-        public static DomainObjectID GetNext()
+        /// <returns>Returns a new TraitBasedObjectId with a new unique ObjectId</returns>
+        public static TraitBasedObjectId GetNext()
         {
-            return new DomainObjectID { ID = ObjectID.GetNext() };
+            return new TraitBasedObjectId { Id = ObjectId.GetNext() };
+        }
+
+        /// <summary>
+        /// Get the value of a field
+        /// </summary>
+        /// <param name="fieldName">Name of field</param>
+        /// <returns>Value</returns>
+        public object GetField(string fieldName)
+        {
+            switch (fieldName)
+            {
+                case nameof(Id):
+                    return Id;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -160,22 +182,22 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         {
             switch (fieldName)
             {
-                case nameof(ID):
-                    ID = (ObjectID)value;
+                case nameof(Id):
+                    Id = (ObjectId)value;
                     break;
             }
         }
 
         /// <summary>
-        /// Returns a string that represents the DomainObjectID
+        /// Returns a string that represents the TraitBasedObjectId
         /// </summary>
-        /// <returns>A string that represents the DomainObjectID</returns>
+        /// <returns>A string that represents the TraitBasedObjectId</returns>
         public override string ToString()
         {
 #if DEBUG
-            return $"Domain Object: {Name} ({ID})";
+            return $"Domain Object: {Name} ({Id})";
 #else
-            return $"Domain Object: {ID}";
+            return $"Domain Object: {Id}";
 #endif
         }
     }

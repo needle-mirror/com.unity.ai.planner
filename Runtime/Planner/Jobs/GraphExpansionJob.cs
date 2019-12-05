@@ -1,22 +1,28 @@
 ﻿using System;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 
 namespace Unity.AI.Planner.Jobs
 {
+    [BurstCompile]
     struct PrepareForExpansionJob<TStateKey, TActionKey> : IJob
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
     {
-        public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, ActionResult> PolicyGraph { get; set; }
+        public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph { get; set; }
+        public NativeMultiHashMap<int, TStateKey> BinnedStateKeys;
 
-        public NativeQueue<(TStateKey, TActionKey, ActionResult, TStateKey)> InputStateExpansionInfo { get; set; }
-        public NativeList<(TStateKey, TActionKey, ActionResult, TStateKey)> OutputStateExpansionInfo { get; set; }
+        public NativeQueue<StateTransitionInfoPair<TStateKey, TActionKey, StateTransitionInfo>> InputStateExpansionInfo { get; set; }
+        public NativeList<StateTransitionInfoPair<TStateKey, TActionKey, StateTransitionInfo>> OutputStateExpansionInfo { get; set; }
 
         public void Execute()
         {
-            var maximumCapacityNeeded = InputStateExpansionInfo.Count;
-            PolicyGraph.ExpandBy(maximumCapacityNeeded, maximumCapacityNeeded);
+            var capacityNeeded = InputStateExpansionInfo.Count;
+            PolicyGraph.ExpandBy(capacityNeeded, capacityNeeded);
+
+            if (BinnedStateKeys.Length + capacityNeeded > BinnedStateKeys.Capacity)
+                BinnedStateKeys.Capacity = Math.Max(BinnedStateKeys.Length + capacityNeeded, BinnedStateKeys.Capacity * 2);
 
             while (InputStateExpansionInfo.TryDequeue(out var item))
             {
@@ -31,62 +37,80 @@ namespace Unity.AI.Planner.Jobs
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
         where TActionKey : struct, IEquatable<TActionKey>
     {
-        [ReadOnly] public NativeArray<(TStateKey, TActionKey, ActionResult, TStateKey)> NewStateTransitionInfo;
-        [ReadOnly] public NativeArray<TStateKey> ExistingStateKeys;
+        [ReadOnly] public NativeArray<StateTransitionInfoPair<TStateKey, TActionKey, StateTransitionInfo>> NewStateTransitionInfoPairs;
+        [ReadOnly] public NativeMultiHashMap<int, TStateKey> BinnedStateKeys;
 
         public TStateDataContext StateDataContext;
+
         public NativeQueue<TStateKey>.ParallelWriter NewStates;
-        public NativeMultiHashMap<TStateKey, (TStateKey, TActionKey)>.ParallelWriter StateActionLookup;
-        public NativeHashMap<(TStateKey, TActionKey), ActionInfo>.ParallelWriter ActionInfoLookup;
-        public NativeMultiHashMap<(TStateKey, TActionKey), TStateKey>.ParallelWriter ActionToStateLookup;
-        public NativeMultiHashMap<TStateKey, TStateKey>.ParallelWriter PredecessorGraph;
-        public NativeHashMap<(TStateKey, TActionKey, TStateKey), ActionResult>.ParallelWriter ActionResultLookup;
         public NativeQueue<TStateKey>.ParallelWriter StatesToDestroy;
+
+        public NativeMultiHashMap<TStateKey, TActionKey>.ParallelWriter ActionLookup;
+        public NativeMultiHashMap<StateActionPair<TStateKey, TActionKey>, TStateKey>.ParallelWriter ResultingStateLookup;
+        public NativeMultiHashMap<TStateKey, TStateKey>.ParallelWriter PredecessorGraph;
+
+        public NativeHashMap<StateActionPair<TStateKey, TActionKey>, ActionInfo>.ParallelWriter ActionInfoLookup;
+        public NativeHashMap<StateTransition<TStateKey, TActionKey>, StateTransitionInfo>.ParallelWriter StateTransitionInfoLookup;
 
         public void Execute(int index)
         {
-            var (precedingStateKey, actionKey, actionResult, stateKey) = NewStateTransitionInfo[index];
+            var stateTransitionInfoPair = NewStateTransitionInfoPairs[index];
+            var stateTransition = stateTransitionInfoPair.StateTransition;
+            var stateTransitionInfo = stateTransitionInfoPair.StateTransitionInfo;
+
+            var precedingStateKey = stateTransition.PredecessorStateKey;
+            var actionKey = stateTransition.ActionKey;
+            var stateKey = stateTransition.SuccessorStateKey;
+            var stateHashCode = stateKey.GetHashCode();
+
             var stateData = StateDataContext.GetStateData(stateKey);
 
             // Iterate over all potential matches. If any match -> existing; otherwise -> new.
-            foreach (var otherStateKey in ExistingStateKeys)
+            TStateKey otherStateKey;
+            if (BinnedStateKeys.TryGetFirstValue(stateHashCode, out otherStateKey, out var iterator))
             {
-                if (otherStateKey.GetHashCode() == stateKey.GetHashCode()
-                    && StateDataContext.Equals(StateDataContext.GetStateData(otherStateKey), stateData))
+                do
                 {
-                    WriteEdgeToState(precedingStateKey, actionKey, actionResult, otherStateKey);
-                    StatesToDestroy.Enqueue(stateKey);
-                    return;
-                }
+                    if (stateKey.GetHashCode() == otherStateKey.GetHashCode())
+                    {
+                        if (StateDataContext.Equals(stateData, StateDataContext.GetStateData(otherStateKey)))
+                        {
+                            WriteEdgeToState(precedingStateKey, actionKey, stateTransitionInfo, otherStateKey);
+                            StatesToDestroy.Enqueue(stateKey);
+                            return;
+                        }
+                    }
+                } while (BinnedStateKeys.TryGetNextValue(out otherStateKey, ref iterator));
             }
 
-            for (var i = 0; i < NewStateTransitionInfo.Length; i++)
+            for (var i = 0; i < NewStateTransitionInfoPairs.Length; i++)
             {
-                var resultingStateKey = NewStateTransitionInfo[i].Item4;
+                otherStateKey = NewStateTransitionInfoPairs[i].StateTransition.SuccessorStateKey;
 
-                if (resultingStateKey.GetHashCode() == stateKey.GetHashCode()
-                    && StateDataContext.Equals(StateDataContext.GetStateData(resultingStateKey), stateData))
+                if (stateKey.GetHashCode() == otherStateKey.GetHashCode())
                 {
-                    WriteEdgeToState(precedingStateKey, actionKey, actionResult, resultingStateKey);
+                    if (StateDataContext.Equals(stateData, StateDataContext.GetStateData(otherStateKey)))
+                    {
+                        WriteEdgeToState(precedingStateKey, actionKey, stateTransitionInfo, otherStateKey);
 
-                    if (i == index) // Matched to self -> output for heuristic evaluation
-                        NewStates.Enqueue(stateKey);
-                    else
-                        StatesToDestroy.Enqueue(stateKey);
+                        if (i == index) // Matched to self -> output for heuristic evaluation
+                            NewStates.Enqueue(stateKey);
+                        else
+                            StatesToDestroy.Enqueue(stateKey);
 
-                    return;
+                        return;
+                    }
                 }
             }
-
-            throw new Exception("State not matched during lookup.");
         }
 
-        void WriteEdgeToState(TStateKey precedingStateKey, TActionKey actionKey, ActionResult actionResult, TStateKey resultingStateKey)
+        void WriteEdgeToState(TStateKey precedingStateKey, TActionKey actionKey, StateTransitionInfo stateTransitionInfo, TStateKey resultingStateKey)
         {
-            StateActionLookup.Add(precedingStateKey, (precedingStateKey, actionKey));
-            ActionInfoLookup.TryAdd((precedingStateKey, actionKey), new ActionInfo { VisitCount = 1 });
-            ActionToStateLookup.Add((precedingStateKey, actionKey), resultingStateKey);
-            ActionResultLookup.TryAdd((precedingStateKey, actionKey, resultingStateKey), actionResult);
+            var stateActionPair = new StateActionPair<TStateKey, TActionKey>(precedingStateKey, actionKey);
+            ActionLookup.Add(precedingStateKey, actionKey);
+            ActionInfoLookup.TryAdd(stateActionPair, default);
+            ResultingStateLookup.Add(stateActionPair, resultingStateKey);
+            StateTransitionInfoLookup.TryAdd(new StateTransition<TStateKey, TActionKey>(stateActionPair, resultingStateKey), stateTransitionInfo);
             PredecessorGraph.Add(resultingStateKey, precedingStateKey);
         }
     }

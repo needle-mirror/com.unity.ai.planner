@@ -1,4 +1,3 @@
-
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,15 +11,23 @@ namespace UnityEditor.AI.Planner.CodeGen
     /// </summary>
     static class DomainAssemblyBuilderDebug
     {
+        const string k_DebugBuildMenuTitle = "AI/Planner/Build as files in project (Debug)";
+
+        internal static readonly string k_GeneratedPath = $"{DomainAssemblyBuilder.k_PlannerProjectPath}Generated/";
         static readonly string k_AdditionalReferences = "ADDITIONAL_REFERENCES";
         static string s_DomainsAssemblyDefinitionContent = $"{{\"name\": \"{TypeResolver.DomainsNamespace}\", \"references\": [\"{TypeResolver.PlannerAssemblyName}\",\"Unity.Entities\",\"Unity.Jobs\",\"Unity.Collections\", \"Unity.FullDotNet\"]}}";
         static string s_ActionsAssemblyDefinitionContent = $"{{\"name\": \"{TypeResolver.ActionsNamespace}\", \"references\": [\"{TypeResolver.PlannerAssemblyName}\",\"Unity.Entities\",\"Unity.Jobs\",\"Unity.Collections\", \"Unity.FullDotNet\", \"{TypeResolver.DomainsNamespace}\"{k_AdditionalReferences}]}}";
 
-        [MenuItem("AI/Build and copy files (Debug)")]
+        [MenuItem(k_DebugBuildMenuTitle, true)]
+        public static bool BuildMenuValidate()
+        {
+            return !EditorApplication.isCompiling;
+        }
+
+        [MenuItem(k_DebugBuildMenuTitle)]
         public static void BuildDomain()
         {
             var codeGenerator = new CodeGenerator();
-            var generatedPath = $"{DomainAssemblyBuilder.k_PlannerProjectPath}Generated/";
 
             var domainsNamespace = TypeResolver.DomainsNamespace;
             var domainsAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == domainsNamespace);
@@ -30,7 +37,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             DomainAssemblyBuilder.BuildAssembly(paths.ToArray(), DomainAssemblyBuilder.k_OutputDomainsAssembly,
                 domainsAssembly != null ? new [] { domainsAssembly.outputPath } : null);
 
-            var generatedDomainsPath = $"{generatedPath}{domainsNamespace}";
+            var generatedDomainsPath = $"{k_GeneratedPath}{domainsNamespace}";
             if (Directory.Exists(generatedDomainsPath))
                 Directory.Delete(generatedDomainsPath, true);
             Directory.CreateDirectory(generatedDomainsPath);
@@ -43,7 +50,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     newFilePath = newFilePath.Remove(0, DomainAssemblyBuilder.k_OutputPath.Length - 1);
                 }
 
-                newFilePath = $"{generatedPath}{newFilePath}";
+                newFilePath = $"{k_GeneratedPath}{newFilePath}";
 
                 Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
                 File.Copy(file, newFilePath, true);
@@ -53,7 +60,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             // Now build actions DLL, which will depend on domain DLL
             var actionsNamespace = TypeResolver.ActionsNamespace;
-            paths = codeGenerator.GenerateActions(DomainAssemblyBuilder.k_OutputPath, "Assets/").ToList();
+            paths = codeGenerator.GeneratePlans(DomainAssemblyBuilder.k_OutputPath, "Assets/").ToList();
 
             var dependentAssemblies = new List<string>();
             var additionalReferences = new List<string>();
@@ -77,7 +84,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             DomainAssemblyBuilder.BuildAssembly(paths.ToArray(), DomainAssemblyBuilder.k_OutputActionsAssembly,
                 additionalReferences: additionalReferences.ToArray());
 
-            var generatedActionsPath = $"{generatedPath}{actionsNamespace}";
+            var generatedActionsPath = $"{k_GeneratedPath}{actionsNamespace}";
             if (Directory.Exists(generatedActionsPath))
                 Directory.Delete(generatedActionsPath, true);
             Directory.CreateDirectory(generatedActionsPath);
@@ -90,7 +97,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     newFilePath = newFilePath.Remove(0, DomainAssemblyBuilder.k_OutputPath.Length - 1);
                 }
 
-                newFilePath = $"{generatedPath}{newFilePath}";
+                newFilePath = $"{k_GeneratedPath}{newFilePath}";
 
                 Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
                 File.Copy(file, newFilePath, true);

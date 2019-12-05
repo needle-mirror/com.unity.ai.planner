@@ -10,7 +10,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <typeparam name="TStateData">StateData type</typeparam>
     /// <typeparam name="TStateDataContext">StateDataContext type</typeparam>
     public interface ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext> : IStateManager<TStateKey, TStateData, TStateDataContext>
-        where TObject : struct, IDomainObject
+        where TObject : struct, ITraitBasedObject
         where TStateKey : struct, IEquatable<TStateKey>, IStateKey
         where TStateData : struct, ITraitBasedStateData<TObject>
         where TStateDataContext : struct, ITraitBasedStateDataContext<TObject, TStateKey, TStateData>

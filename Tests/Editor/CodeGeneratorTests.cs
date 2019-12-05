@@ -1,4 +1,4 @@
-﻿using System.Data;
+﻿using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using UnityEditor.AI.Planner.CodeGen;
@@ -18,7 +18,8 @@ namespace UnityEditor.AI.Planner.Tests
         protected TraitDefinition m_TraitDefinition;
         protected EnumDefinition m_EnumDefinition;
         protected ActionDefinition m_ActionDefinition;
-        protected AgentDefinition m_AgentDefinition;
+        protected PlanDefinition m_PlanDefinition;
+        protected StateTerminationDefinition m_StateTerminationDefinition;
 
         protected CodeGenerator m_CodeGenerator = new CodeGenerator();
 
@@ -45,6 +46,20 @@ namespace UnityEditor.AI.Planner.Tests
             };
             SaveAsset(m_EnumDefinition, $"{k_EnumAssetsPath}EnumA.asset");
 
+            m_StateTerminationDefinition = ScriptableObject.CreateInstance<StateTerminationDefinition>();
+            m_StateTerminationDefinition.Parameters = new[]
+            {
+                new ParameterDefinition()
+                {
+                    Name = "ParameterA",
+                    RequiredTraits = new []
+                    {
+                        m_TraitDefinition
+                    }
+                }
+            };
+            SaveAsset(m_StateTerminationDefinition, $"{k_AssetsPath}TerminationA.asset");
+
             m_ActionDefinition = ScriptableObject.CreateInstance<ActionDefinition>();
             m_ActionDefinition.Parameters = new[]
             {
@@ -57,17 +72,20 @@ namespace UnityEditor.AI.Planner.Tests
                     }
                 }
             };
+            m_ActionDefinition.CustomRewards = new List<CustomRewardData>();
             SaveAsset(m_ActionDefinition, $"{k_AssetsPath}ActionA.asset");
 
-            m_AgentDefinition = ScriptableObject.CreateInstance<AgentDefinition>();
-            m_AgentDefinition.ActionDefinitions = new[]
+            m_PlanDefinition = ScriptableObject.CreateInstance<PlanDefinition>();
+            m_PlanDefinition.ActionDefinitions = new[]
             {
                 m_ActionDefinition
             };
-            SaveAsset(m_AgentDefinition, $"{k_AssetsPath}AgentA.asset");
+            m_PlanDefinition.StateTerminationDefinitions = new List<StateTerminationDefinition>();
+
+            SaveAsset(m_PlanDefinition, $"{k_AssetsPath}PlanA.asset");
         }
 
-        private void SaveAsset(Object asset, string path)
+        void SaveAsset(Object asset, string path)
         {
             Debug.Log(path);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -108,15 +126,23 @@ namespace UnityEditor.AI.Planner.Tests
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/Traits/EnumA.cs"));
         }
 
+
+        [Test]
+        public void StateTerminationIsGenerated()
+        {
+            m_CodeGenerator.GenerateDomain(k_OutputPath, k_AssetsPath);
+            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/TerminationA.cs"));
+        }
+
         [Test]
         public void PlanningDataAreGenerated()
         {
             m_CodeGenerator.GenerateDomain(k_OutputPath, k_AssetsPath);
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/PlanningDomainData.cs"));
 
-            m_CodeGenerator.GenerateActions(k_OutputPath, k_AssetsPath);
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/AgentA/ActionScheduler.cs"));
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/AgentA/ActionA.cs"));
+            m_CodeGenerator.GeneratePlans(k_OutputPath, k_AssetsPath);
+            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/PlanA/ActionScheduler.cs"));
+            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/PlanA/ActionA.cs"));
         }
 
         [Test]
@@ -125,7 +151,7 @@ namespace UnityEditor.AI.Planner.Tests
             var paths = m_CodeGenerator.GenerateDomain(k_OutputPath, k_AssetsPath);
             var domainAssemblyPath = $"{k_OutputPath}AI.Planner.Domains.dll";
             Assert.IsTrue(DomainAssemblyBuilder.BuildAssembly(paths.ToArray(), domainAssemblyPath));
-            paths = m_CodeGenerator.GenerateActions(k_OutputPath, k_AssetsPath);
+            paths = m_CodeGenerator.GeneratePlans(k_OutputPath, k_AssetsPath);
             Assert.IsTrue(DomainAssemblyBuilder.BuildAssembly(paths.ToArray(), $"{k_OutputPath}AI.Planner.Actions.dll",
                 additionalReferences: new [] { domainAssemblyPath }));
         }

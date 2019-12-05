@@ -6,7 +6,8 @@
         "Unity.Mathematics",
         "Unity.Jobs",
         "Unity.FullDotNet",
-        "Unity.Tiny.Debugging"
+        "Unity.Tiny.Debugging",
+        "Unity.Burst"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 386d82e94550a468eaa58a90b7dfff99
+guid: 4613b39c22d89764d836808dd98f9c65
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
@@ -16,15 +16,17 @@ MonoImporter:
       type: 3}
   - m_ImageProhibitedTraitMore: {fileID: 2800000, guid: 7f832578100f94c42bb38a32e9dc0d9b,
       type: 3}
-  - m_TemplateAction: {fileID: 4900000, guid: bb7963eb31de842ada852ad3d46fdf29, type: 3}
-  - m_TemplateActionScheduler: {fileID: 4900000, guid: f9f7d079587235a4fbec21268834168d,
+  - m_TemplateAction: {fileID: 4900000, guid: be856d9a6578ead449421bf757269fd6, type: 3}
+  - m_TemplateActionScheduler: {fileID: 4900000, guid: 5ba0b0a94e5371d468e82f478b480d3a,
       type: 3}
-  - m_TemplateDomain: {fileID: 4900000, guid: 3ca977c8d237644e29fdd926ca266d44, type: 3}
-  - m_TemplateEnum: {fileID: 4900000, guid: 000c16408e03249d19c040b494c9d2dd, type: 3}
-  - m_TemplateTermination: {fileID: 4900000, guid: c88644c95abe05d40818d5a79278d2ae,
+  - m_TemplateDomain: {fileID: 4900000, guid: c4a40c415c32a464ea4174e5cacfef02, type: 3}
+  - m_TemplateEnum: {fileID: 4900000, guid: b32b099a77c32674280102548f8c0dc4, type: 3}
+  - m_TemplateTermination: {fileID: 4900000, guid: 9dff2e41acf2e1949b87e4013ebfbf28,
       type: 3}
-  - m_TemplateTrait: {fileID: 4900000, guid: b7b927abe80824d2a9ecc8d3f68ba37b, type: 3}
-  - m_TemplateConditionalAssembly: {fileID: 4900000, guid: 58457d66bf1484f9aadea3b9d6eb1dda,
+  - m_TemplateTrait: {fileID: 4900000, guid: ea72ba89ab2c80241a8a4e9d390f99b7, type: 3}
+  - m_TemplateConditionalAssembly: {fileID: 4900000, guid: 8bde2b5f76fb4a84ea9cbde1d7dac735,
+      type: 3}
+  - m_TemplatePlanExecutor: {fileID: 4900000, guid: c0815597e284fbc4faa054f4b8273a9a,
       type: 3}
   executionOrder: 0
   icon: {instanceID: 0}

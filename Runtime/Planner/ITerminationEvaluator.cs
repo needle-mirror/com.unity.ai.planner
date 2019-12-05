@@ -12,7 +12,8 @@
         /// Evaluate whether a state is terminal
         /// </summary>
         /// <param name="stateData">State to evaluation termination criteria</param>
+        /// <param name="terminalReward">The reward for satisfying the termination criteria</param>
         /// <returns>Whether the state is terminal or not</returns>
-        bool IsTerminal(TStateData stateData);
+        bool IsTerminal(TStateData stateData, out float terminalReward);
     }
 }

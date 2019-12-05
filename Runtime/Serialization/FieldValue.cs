@@ -1,10 +1,11 @@
 #if !UNITY_DOTSPLAYER
+using Unity.AI.Planner.DomainLanguage.TraitBased;
 using System;
 
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
     [Serializable]
-    internal class FieldValue
+    class FieldValue
     {
         public string Name
         {
@@ -60,6 +61,16 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         [SerializeField]
         Object m_ObjectValue;
 
+        public FieldValue(string name, FieldValue value)
+        {
+            m_Name = name;
+            m_BoolValue = value.BoolValue;
+            m_FloatValue = value.FloatValue;
+            m_IntValue = value.IntValue;
+            m_StringValue = value.StringValue;
+            m_ObjectValue = value.ObjectValue;
+        }
+
         public object GetValue(Type fieldType)
         {
             if (fieldType == typeof(bool))
@@ -72,6 +83,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 return StringValue;
             if (fieldType.IsEnum)
                 return IntValue;
+            if (typeof(TraitBasedObjectId).IsAssignableFrom(fieldType))
+                return StringValue;
 
             return ObjectValue;
         }

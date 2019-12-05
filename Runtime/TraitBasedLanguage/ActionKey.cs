@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Text;
 
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
@@ -233,6 +234,19 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
                 hashCode = (hashCode * 397) ^ m_Length;
                 return hashCode;
             }
+        }
+
+        /// <summary>
+        /// Returns a string that represents the ActionKey
+        /// </summary>
+        /// <returns>A string that represents the ActionKey</returns>
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.Append(ActionGuid.ToString());
+            for (int i = 0; i < Length; i++)
+                sb.Append($" {this[i]}");
+            return sb.ToString();
         }
     }
 }

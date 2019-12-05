@@ -1,17 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using Unity.AI.Planner.Utility;
+using UnityEngine;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using UnityObject = UnityEngine.Object;
 
 namespace UnityEditor.AI.Planner.Utility
 {
     static class DomainAssetDatabase
     {
+        static string s_BuiltinModulePath = $"com.unity.ai.planner{Path.DirectorySeparatorChar}Runtime{Path.DirectorySeparatorChar}Modules{Path.DirectorySeparatorChar}";
+
         static IEnumerable<TraitDefinition> s_TraitDefinitions = null;
         static IEnumerable<ActionDefinition> s_ActionDefinitions = null;
         static IEnumerable<EnumDefinition> s_EnumDefinitions = null;
-        static IEnumerable<AgentDefinition> s_AgentDefinitions = null;
+        static IEnumerable<PlanDefinition> s_PlanDefinitions = null;
         static IEnumerable<StateTerminationDefinition> s_StateTerminationDefinitions = null;
+
+        static string s_LastPathUsedForNewAsset;
 
         public static IEnumerable<TraitDefinition> TraitDefinitions
         {
@@ -65,16 +73,16 @@ namespace UnityEditor.AI.Planner.Utility
             }
         }
 
-        public static IEnumerable<AgentDefinition> AgentDefinitions
+        public static IEnumerable<PlanDefinition> PlanDefinitions
         {
             get
             {
-                if (s_AgentDefinitions == null)
+                if (s_PlanDefinitions == null)
                 {
-                    UpdateAgentDefinitions();
+                    UpdatePlanDefinitions();
                 }
 
-                return s_AgentDefinitions;
+                return s_PlanDefinitions;
             }
         }
 
@@ -83,38 +91,94 @@ namespace UnityEditor.AI.Planner.Utility
             UpdateEnumDefinitions();
             UpdateTraitDefinitions();
             UpdateActionDefinitions();
-            UpdateAgentDefinitions();
+            UpdatePlanDefinitions();
             UpdateTerminationDefinitions();
         }
 
-        private static void UpdateEnumDefinitions()
+        internal static UnityObject CreateNewPlannerAsset<T>(string assetName) where T : ScriptableObject
+        {
+            var defaultDirectory = $"{Application.dataPath}/AI.Planner";
+
+            var directoryPath = Path.GetDirectoryName(s_LastPathUsedForNewAsset);
+            if (directoryPath != null && Directory.Exists(directoryPath))
+            {
+                defaultDirectory = directoryPath;
+            }
+            var assetPath = EditorUtility.SaveFilePanelInProject($"{assetName} Definition", $"New {assetName}", "asset", $"Create a new {assetName} Definition", defaultDirectory);
+
+            // If user canceled or save path is invalid return
+            if (assetPath == "")
+                return null;
+
+            var asset = ScriptableObject.CreateInstance<T>();
+            AssetDatabase.CreateAsset(asset, AssetDatabase.GenerateUniqueAssetPath(assetPath));
+            AssetDatabase.SaveAssets();
+
+            Refresh();
+
+            s_LastPathUsedForNewAsset = assetPath;
+            return asset;
+        }
+
+        static void UpdateEnumDefinitions()
         {
             s_EnumDefinitions = AssetDatabase.FindAssets($"t: {nameof(EnumDefinition)}").Select(guid =>
                 AssetDatabase.LoadAssetAtPath<EnumDefinition>(AssetDatabase.GUIDToAssetPath(guid)));
         }
 
-        private static void UpdateActionDefinitions()
+        static void UpdateActionDefinitions()
         {
             s_ActionDefinitions = AssetDatabase.FindAssets($"t: {nameof(ActionDefinition)}").Select(guid =>
                 AssetDatabase.LoadAssetAtPath<ActionDefinition>(AssetDatabase.GUIDToAssetPath(guid)));
         }
 
-        private static void UpdateTraitDefinitions()
+        static void UpdateTraitDefinitions()
         {
             s_TraitDefinitions = AssetDatabase.FindAssets($"t: {nameof(TraitDefinition)}").Select(guid =>
                 AssetDatabase.LoadAssetAtPath<TraitDefinition>(AssetDatabase.GUIDToAssetPath(guid)));
         }
 
-        private static void UpdateAgentDefinitions()
+        static void UpdatePlanDefinitions()
         {
-            s_AgentDefinitions = AssetDatabase.FindAssets($"t: {nameof(AgentDefinition)}").Select(guid =>
-                AssetDatabase.LoadAssetAtPath<AgentDefinition>(AssetDatabase.GUIDToAssetPath(guid)));
+            s_PlanDefinitions = AssetDatabase.FindAssets($"t: {nameof(PlanDefinition)}").Select(guid =>
+                AssetDatabase.LoadAssetAtPath<PlanDefinition>(AssetDatabase.GUIDToAssetPath(guid)));
         }
 
-        private static void UpdateTerminationDefinitions()
+        static void UpdateTerminationDefinitions()
         {
             s_StateTerminationDefinitions = AssetDatabase.FindAssets($"t: {nameof(StateTerminationDefinition)}").Select(guid =>
                 AssetDatabase.LoadAssetAtPath<StateTerminationDefinition>(AssetDatabase.GUIDToAssetPath(guid)));
+        }
+
+        public static string GetBuiltinModuleName(UnityEngine.Object obj)
+        {
+            var assetPath = AssetDatabase.GetAssetPath(obj);
+            if (string.IsNullOrEmpty(assetPath))
+                return null;
+
+            var directoryName = Path.GetDirectoryName(assetPath);
+            if (directoryName != null && directoryName.Contains(s_BuiltinModulePath))
+            {
+                var index = directoryName.LastIndexOf(Path.DirectorySeparatorChar) + 1;
+                return directoryName.Substring(index);
+            }
+
+            return null;
+        }
+
+        public static string GetBuiltinModuleName(string @namespace)
+        {
+            if (@namespace == null)
+            {
+                return null;
+            }
+
+            if (!@namespace.StartsWith(TypeResolver.PlannerAssemblyName))
+            {
+                return null;
+            }
+
+            return @namespace.Substring(TypeResolver.PlannerAssemblyName.Length + 1);
         }
     }
 }

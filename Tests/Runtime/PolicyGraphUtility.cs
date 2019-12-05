@@ -10,6 +10,8 @@ namespace Unity.AI.Planner.Tests.Performance
     {
         internal static int GetTotalNodeCountForTreeDepth(int subNodesPerNode, int depth)
         {
+            if (subNodesPerNode == 1)
+                return depth;
             // https://stackoverflow.com/questions/515214/total-number-of-nodes-in-a-tree-data-structure
             return (int)(Math.Pow(subNodesPerNode, depth) - 1) / (subNodesPerNode - 1);
         }
@@ -18,7 +20,7 @@ namespace Unity.AI.Planner.Tests.Performance
         /// Will build a tree with N subnodes per node = actionsPerState * resultsPerAction;
         /// A depth of 1 will result in a single root node
         /// </summary>
-        internal static PolicyGraph<int, StateInfo, int, ActionInfo, ActionResult> BuildTree(int actionsPerState = 2, int resultsPerAction = 2, int depth = 10)
+        internal static PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> BuildTree(int actionsPerState = 2, int resultsPerAction = 2, int depth = 10)
         {
             Debug.Assert(depth > 0);
 
@@ -28,7 +30,7 @@ namespace Unity.AI.Planner.Tests.Performance
             var subNodesPerNode = actionsPerState * resultsPerAction;
             int totalStates = GetTotalNodeCountForTreeDepth(subNodesPerNode, depth);
 
-            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, ActionResult>(totalStates, totalStates);
+            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(totalStates, totalStates);
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var queue = new NativeQueue<int>(Allocator.TempJob);
 
@@ -66,12 +68,12 @@ namespace Unity.AI.Planner.Tests.Performance
             return policyGraph;
         }
 
-        internal static PolicyGraph<int, StateInfo, int, ActionInfo, ActionResult> BuildLattice(int midLatticeDepth = 10)
+        internal static PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> BuildLattice(int midLatticeDepth = 10)
         {
             int nextStateIndex = 0;
             int totalStates = (int)Math.Pow(2, midLatticeDepth) * 2;
 
-            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, ActionResult>(totalStates, totalStates);
+            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(totalStates, totalStates);
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var queue = new NativeQueue<int>(Allocator.TempJob);
 
@@ -132,26 +134,26 @@ namespace Unity.AI.Planner.Tests.Performance
             return policyGraph;
         }
 
-        internal static void AddSelfCycles(PolicyGraph<int, StateInfo, int, ActionInfo, ActionResult> policyGraph, int actionKey = -1)
+        internal static void AddSelfCycles(PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> policyGraph, int actionKey = -1)
         {
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var stateInfoLookup = policyGraph.StateInfoLookup;
             var stateKeyArray = stateInfoLookup.GetKeyArray(Allocator.TempJob);
             foreach (var stateKey in stateKeyArray)
             {
-                if (policyGraph.StateActionLookup.TryGetFirstValue(stateKey, out _, out _))
+                if (policyGraph.ActionLookup.TryGetFirstValue(stateKey, out _, out _))
                     builder.WithState(stateKey).AddAction(actionKey).AddResultingState(stateKey);
             }
         }
 
-        internal static void AddRootCycles(PolicyGraph<int, StateInfo, int, ActionInfo, ActionResult> policyGraph, int rootKey, int actionKey = -2)
+        internal static void AddRootCycles(PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> policyGraph, int rootKey, int actionKey = -2)
         {
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var stateInfoLookup = policyGraph.StateInfoLookup;
             var stateKeyArray = stateInfoLookup.GetKeyArray(Allocator.TempJob);
             foreach (var stateKey in stateKeyArray)
             {
-                if (policyGraph.StateActionLookup.TryGetFirstValue(stateKey, out _, out _))
+                if (policyGraph.ActionLookup.TryGetFirstValue(stateKey, out _, out _))
                     builder.WithState(stateKey).AddAction(actionKey).AddResultingState(rootKey);
             }
         }

@@ -1,0 +1,129 @@
+using System;
+using System.Linq;
+using AI.Planner.Domains;
+using Unity.AI.Planner;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
+using UnityEngine.AI.Planner.Controller;
+using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+
+namespace {{ class_namespace }}
+{
+    public struct DefaultHeuristic : IHeuristic<StateData>
+    {
+        public BoundedValue Evaluate(StateData state)
+        {
+            return new BoundedValue({{ default_heuristic.lower }}, {{ default_heuristic.avg }}, {{ default_heuristic.upper }});
+        }
+    }
+
+    public struct TerminationEvaluator : ITerminationEvaluator<StateData>
+    {
+        public bool IsTerminal(StateData state, out float terminalReward)
+        {
+            terminalReward = 0f;
+            {{- if terminations.empty? }}
+            return false;
+            {{- else }}
+            var terminal = false;
+            {{ for termination in terminations }}
+            var {{ termination }}Instance = new {{termination}}();
+            if ({{ termination }}Instance.IsTerminal(state))
+            {
+                terminal = true;
+                terminalReward += {{ termination }}Instance.TerminalReward(state);
+            }
+            {{- end }}
+            return terminal;
+            {{- end }}
+        }
+    }
+
+    class {{ plan_name }}Executor : BasePlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ heuristic }}, TerminationEvaluator, StateManager, ActionKey>
+    {
+        public override void Act(DecisionController controller)
+        {
+            var actionKey = GetBestAction();
+            var stateData = m_StateManager.GetStateData(CurrentStateKey, false);
+            var actionName = string.Empty;
+
+            switch (actionKey.ActionGuid)
+            {
+            {{- for action in actions }}
+                case var actionGuid when actionGuid == {{action.name}}.ActionGuid:
+                    actionName = nameof({{action.name}});
+                    break;
+            {{- end}}
+            }
+
+            var executeInfos = controller.GetExecutionInfo(actionName);
+            if (executeInfos == null)
+                return;
+
+            var argumentMapping = executeInfos.GetArgumentValues();
+            var arguments = new object[argumentMapping.Count()];
+            var i = 0;
+            foreach (var argument in argumentMapping)
+            {
+                var split = argument.Split('.');
+
+                int parameterIndex = -1;
+                var traitBasedObjectName = split[0];
+                switch (actionName)
+                {
+                {{- for action in actions }}
+                    case nameof({{action.name}}):
+                        parameterIndex = {{action.name}}.GetIndexForParameterName(traitBasedObjectName);
+                        break;
+                {{- end}}
+                }
+
+                var traitBasedObjectIndex = actionKey[parameterIndex];
+                if (split.Length > 1)
+                {
+                    switch (split[1])
+                    {
+                {{- for trait in traits }}
+                        case nameof({{trait.name}}):
+                            var trait{{trait.name}} = stateData.GetTraitOnObjectAtIndex<{{ trait.name }}>(traitBasedObjectIndex);
+                            arguments[i] = split.Length == 3 ? trait{{trait.name}}.GetField(split[2]) : trait{{trait.name}};
+                            break;
+                {{- end}}
+                    }
+                }
+                else
+                {
+                    var planStateId = stateData.GetTraitBasedObjectId(traitBasedObjectIndex);
+                    ITraitBasedObjectData dataSource;
+                    if (m_PlanStateToGameStateIdLookup.TryGetValue(planStateId.Id, out var gameStateId))
+                        dataSource = m_DomainData.GetDataSource(new TraitBasedObjectId { Id = gameStateId });
+                    else
+                        dataSource = m_DomainData.GetDataSource(planStateId);
+
+                    Type expectedType = executeInfos.GetParameterType(i);
+                    if (typeof(ITraitBasedObjectData).IsAssignableFrom(expectedType))
+                    {
+                        arguments[i] = dataSource;
+                    }
+                    else
+                    {
+                        arguments[i] = null;
+                        var obj = dataSource.ParentObject;
+                        if (obj != null && obj is UnityEngine.GameObject gameObject)
+                        {
+                            if (expectedType == typeof(UnityEngine.GameObject))
+                                arguments[i] = gameObject;
+
+                            if (typeof(UnityEngine.Component).IsAssignableFrom(expectedType))
+                                arguments[i] = gameObject == null ? null : gameObject.GetComponent(expectedType);
+                        }
+                    }
+                }
+
+                i++;
+            }
+
+            CurrentActionKey = actionKey;
+            controller.StartAction(executeInfos, arguments);
+        }
+    }
+}

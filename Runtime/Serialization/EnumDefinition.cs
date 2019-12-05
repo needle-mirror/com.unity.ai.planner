@@ -7,7 +7,8 @@ using Unity.AI.Planner.Utility;
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
     [Serializable]
-    [CreateAssetMenu(fileName = "New Enum", menuName = "AI/Planner/Enum Definition")]
+    [HelpURL(Help.BaseURL + "/manual/DomainDefinition.html")]
+    [CreateAssetMenu(fileName = "New Enum", menuName = "AI/Trait/Enum Definition")]
     class EnumDefinition : ScriptableObject
     {
         public string Name => TypeResolver.ToTypeNameCase(name);

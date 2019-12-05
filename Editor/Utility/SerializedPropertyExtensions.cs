@@ -10,16 +10,11 @@ namespace UnityEditor.AI.Planner.Utility
 {
     static class SerializedPropertyExtensions
     {
-        public static void ForEachArrayElement(this SerializedProperty property, Action<SerializedProperty> callback,
-            bool showSizeField = false)
+        public static void ForEachArrayElement(this SerializedProperty property, Action<SerializedProperty> callback)
         {
             property = property.Copy();
             var endProperty = property.GetEndProperty();
             property.NextVisible(true); // Enter into the collection
-
-            if (showSizeField)
-                EditorGUILayout.PropertyField(property);
-
             property.NextVisible(false); // Step past the size field
 
             while (!SerializedProperty.EqualContents(property, endProperty))
@@ -31,20 +26,39 @@ namespace UnityEditor.AI.Planner.Utility
             }
         }
 
-        public static void DrawArrayProperty(this SerializedProperty property, bool showSizeField = true)
+        public static SerializedProperty FindPropertyInArray(this SerializedProperty property, Predicate<SerializedProperty> match)
         {
-            EditorGUILayout.PropertyField(property);
+            property = property.Copy();
+            var endProperty = property.GetEndProperty();
+            property.NextVisible(true); // Enter into the collection
+            property.NextVisible(false); // Step past the size field
 
-            if (!property.isExpanded)
-                return;
-
-            using (new EditorGUI.IndentLevelScope())
+            while (!SerializedProperty.EqualContents(property, endProperty))
             {
-                property.ForEachArrayElement(domainObjectData =>
-                {
-                    EditorGUILayout.PropertyField(domainObjectData, true);
-                }, showSizeField);
+                if (match(property))
+                    return property;
+
+                if (!property.NextVisible(false))
+                    break;
             }
+            return null;
+        }
+
+        public static SerializedProperty InsertArrayElement(this SerializedProperty property)
+        {
+            property.arraySize++;
+            return property.GetArrayElementAtIndex(property.arraySize - 1);
+        }
+
+        public static void ForceDeleteArrayElementAtIndex(this SerializedProperty property, int index)
+        {
+            // Element is not removed if the array element contains an object reference
+            if (property.GetArrayElementAtIndex(index).objectReferenceValue != null)
+            {
+                property.DeleteArrayElementAtIndex(index);
+            }
+
+            property.DeleteArrayElementAtIndex(index);
         }
 
         public static T FindObjectOfType<T>(this SerializedProperty property) where T : UnityObject

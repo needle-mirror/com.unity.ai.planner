@@ -4,9 +4,8 @@ using Unity.AI.Planner.Jobs;
 using Unity.AI.Planner.Tests.Unit;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Mathematics;
 using Unity.PerformanceTesting;
-using UnityEngine;
-
 
 namespace Unity.AI.Planner.Tests.Unit
 {
@@ -15,17 +14,21 @@ namespace Unity.AI.Planner.Tests.Unit
     {
         internal struct StateValueAsHeuristicValue : IHeuristic<int>
         {
-            public float Evaluate(int stateData) => stateData;
+            public BoundedValue Evaluate(int stateData) => new float3(stateData, stateData, stateData);
         }
 
         struct EvensTerminalStateEvaluator : ITerminationEvaluator<int>
         {
-            public bool IsTerminal(int stateData) => stateData % 2 == 0;
+            public bool IsTerminal(int stateData, out float terminalReward)
+            {
+                terminalReward = stateData;
+                return stateData % 2 == 0;
+            }
         }
 
         struct ExceptionHeuristic : IHeuristic<int>
         {
-            public float Evaluate(int stateData)
+            public BoundedValue Evaluate(int stateData)
             {
                 throw new Exception("Should not be thrown.");
             }
@@ -33,8 +36,9 @@ namespace Unity.AI.Planner.Tests.Unit
 
         struct ExceptionTerminationEvaluator : ITerminationEvaluator<int>
         {
-            public bool IsTerminal(int stateData)
+            public bool IsTerminal(int stateData, out float terminalReward)
             {
+                terminalReward = 0f;
                 throw new Exception("Should not be thrown.");
             }
         }
@@ -44,20 +48,21 @@ namespace Unity.AI.Planner.Tests.Unit
         {
             var states = new NativeList<int>(0, Allocator.TempJob);
             var stateInfoLookup = new NativeHashMap<int, StateInfo>(0, Allocator.TempJob);
+            var binnedStateKeys = new NativeMultiHashMap<int, int>(1, Allocator.TempJob);
 
             var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, ExceptionHeuristic, ExceptionTerminationEvaluator>()
             {
-                Heuristic = new ExceptionHeuristic(),
-                TerminationEvaluator = new ExceptionTerminationEvaluator(),
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),
                 States = states.AsDeferredJobArray(),
+                BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
             };
 
             Assert.DoesNotThrow(() => heuristicJob.Schedule(states, default).Complete());
 
             states.Dispose();
             stateInfoLookup.Dispose();
+            binnedStateKeys.Dispose();
         }
 
         [Test]
@@ -66,19 +71,19 @@ namespace Unity.AI.Planner.Tests.Unit
             const int kStateCount = 10;
             var states = new NativeList<int>(kStateCount, Allocator.TempJob);
             var stateInfoLookup = new NativeHashMap<int, StateInfo>(kStateCount, Allocator.TempJob);
+            var binnedStateKeys = new NativeMultiHashMap<int, int>(kStateCount, Allocator.TempJob);
 
             for (int i = 0; i < kStateCount; i++)
             {
                 states.Add(i);
             }
 
-            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, StateValueAsHeuristicValue, DefaultTerminalStateEvaluator>()
+            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, StateValueAsHeuristicValue, DefaultTerminalStateEvaluator>
             {
-                Heuristic = new StateValueAsHeuristicValue(),
-                TerminationEvaluator = new DefaultTerminalStateEvaluator(),
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),
                 States = states.AsDeferredJobArray(),
+                BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
             };
             heuristicJob.Schedule(states, default).Complete();
 
@@ -86,11 +91,12 @@ namespace Unity.AI.Planner.Tests.Unit
             {
                 stateInfoLookup.TryGetValue(i, out var stateInfo);
 
-                Assert.AreEqual(i, stateInfo.PolicyValue);
+                Assert.AreEqual(new BoundedValue(i, i, i), stateInfo.PolicyValue);
             }
 
             states.Dispose();
             stateInfoLookup.Dispose();
+            binnedStateKeys.Dispose();
         }
 
         [Test]
@@ -99,19 +105,19 @@ namespace Unity.AI.Planner.Tests.Unit
             const int kStateCount = 10;
             var states = new NativeList<int>(kStateCount, Allocator.TempJob);
             var stateInfoLookup = new NativeHashMap<int, StateInfo>(kStateCount, Allocator.TempJob);
+            var binnedStateKeys = new NativeMultiHashMap<int, int>(kStateCount, Allocator.TempJob);
 
             for (int i = 0; i < kStateCount; i++)
             {
                 states.Add(i);
             }
 
-            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, DefaultHeuristic, EvensTerminalStateEvaluator>()
+            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, DefaultHeuristic, EvensTerminalStateEvaluator>
             {
-                Heuristic = new DefaultHeuristic(),
-                TerminationEvaluator = new EvensTerminalStateEvaluator(),
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),
                 States = states.AsDeferredJobArray(),
+                BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
             };
             heuristicJob.Schedule(states, default).Complete();
 
@@ -119,11 +125,12 @@ namespace Unity.AI.Planner.Tests.Unit
             {
                 stateInfoLookup.TryGetValue(i, out var stateInfo);
 
-                Assert.AreEqual(i % 2 == 0, stateInfo.Complete);
+                Assert.AreEqual(i % 2 == 0, stateInfo.SubgraphComplete);
             }
 
             states.Dispose();
             stateInfoLookup.Dispose();
+            binnedStateKeys.Dispose();
         }
     }
 }
@@ -141,23 +148,25 @@ namespace Unity.AI.Planner.Tests.Performance
 
             NativeList<int> states = default;
             NativeHashMap<int, StateInfo> stateInfoLookup = default;
+            NativeMultiHashMap<int, int> binnedStateKeys = default;
 
             Measure.Method(() =>
             {
                 var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext,
-                    NewStateEvaluationJobTests.StateValueAsHeuristicValue, DefaultTerminalStateEvaluator>()
+                    NewStateEvaluationJobTests.StateValueAsHeuristicValue, DefaultTerminalStateEvaluator>
                 {
-                    Heuristic = new NewStateEvaluationJobTests.StateValueAsHeuristicValue(),
-                    TerminationEvaluator = new DefaultTerminalStateEvaluator(),
                     StateDataContext = new TestStateDataContext(),
-                    StateInfoLookup = stateInfoLookup.AsParallelWriter(),
                     States = states.AsDeferredJobArray(),
+
+                    StateInfoLookup = stateInfoLookup.AsParallelWriter(),
+                    BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
                 };
                 heuristicJob.Schedule(states, default).Complete();
             }).SetUp(() =>
             {
                 states = new NativeList<int>(kStateCount, Allocator.TempJob);
                 stateInfoLookup = new NativeHashMap<int, StateInfo>(kStateCount, Allocator.TempJob);
+                binnedStateKeys = new NativeMultiHashMap<int, int>(kStateCount, Allocator.TempJob);
 
                 for (int i = 0; i < kStateCount; i++)
                 {
@@ -167,6 +176,7 @@ namespace Unity.AI.Planner.Tests.Performance
             {
                 states.Dispose();
                 stateInfoLookup.Dispose();
+                binnedStateKeys.Dispose();
             }).WarmupCount(1).MeasurementCount(30).IterationsPerMeasurement(1).Run();
         }
     }

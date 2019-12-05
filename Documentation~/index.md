@@ -1,6 +1,6 @@
 # About AI Planner
 
-Use the AI Planner package to create agents that generate and execute plans. For example, use AI Planner to create an NPC, generate storylines, or validate game/simulation mechanics. The AI Planner package also includes authoring tools and a plan visualizer.
+The AI Planner package can generate optimal plans for use in agent AI, storyline generation/management, game/simulation validation, tutorial creation, automated testing, and many more. A generic planner framework, authoring tools, and a plan visualizer are provided in the package.
 
 
 # Installing AI Planner
@@ -9,17 +9,18 @@ To install this package, follow the instructions in the [Package Manager documen
 
 
 # Using AI Planner
-To create an AI agent with the AI Planner, see the following guides:
+To create an AI agent using the AI Planner, see the following guides:
 * [Defining the domain](DomainDefinition.md)
 * [Defining actions](ActionDefinition.md)
 * [Defining termination conditions](TerminationDefinition.md)
+* [Creating a plan definition](PlanDefinition.md)
 * [Configuring the scene](ConfigureScene.md)
-* [Creating an AI agent](AgentDefinition.md)
-* [Executing plans through operational actions](OperationalActions.md)
 
 During execution, it is also useful to view an agent's plan through the [plan visualizer](PlanVisualizer.md).
 
-For a complete sample project, see: [Otto](https://github.com/Unity-Technologies/otto) 
+If you need to extend the planner for your particular domain, then please take a look at [this guide](CustomPlannerExtensions.md) or one of the samples.
+
+For sample projects, see: [AI Planner Samples](https://github.com/Unity-Technologies/ai-planner-samples) 
 
 
 ## Talks
@@ -34,7 +35,7 @@ For a complete sample project, see: [Otto](https://github.com/Unity-Technologies
 ## Requirements
 
 This version of AI Planner is compatible with the following versions of the Unity Editor:
-* 2019.2  
+* 2019.3
 
 
 ## Package contents
@@ -43,19 +44,18 @@ The following table indicates the runtime folders that will be of interest to yo
 
 |Location|Description|
 |---|---|
-|`Runtime/Agent`|Contains classes and interfaces for the agent and operational actions.|
+|`Runtime/Controller`|Contains classes and interfaces for generating and executing plans.|
+|`Runtime/Modules`|Contains traits, actions, custom modifiers, and sample callback scripts for built-in functionality.|
 |`Runtime/Planner`|Contains the planning system.|
 |`Runtime/Serialization`|Contains serialized data definitions.|
 |`Runtime/TraitBasedLanguage`|Contains state and action representations used by the planner.|
 |`Runtime/Utility`|Contains utility classes for the package.|
 |`Runtime/World`|Contains utility classes for monitoring game objects.|
 
-## Known issues
-* Prolonged usage of the planner can cause large allocations of native memory. 
-
 ## Document revision history
  
 |Date|Reason|
 |---|---|
+|Dec 02, 2019|Document updated. Matches preview package version 0.2.0.|
 |Aug 28, 2019|Document updated. Matches preview package version 0.1.0.|
 |Mar 18, 2019|Document created. Matches preview package version 0.0.1.|

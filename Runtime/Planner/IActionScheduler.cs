@@ -13,14 +13,14 @@ namespace Unity.AI.Planner.Jobs
     /// <typeparam name="TStateDataContext">StateDataContext type</typeparam>
     /// <typeparam name="TStateManager">StateManager type</typeparam>
     /// <typeparam name="TActionKey">ActionKey type</typeparam>
-    /// <typeparam name="TActionResult">ActionResult type</typeparam>
-    public interface IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey, TActionResult>
+    /// <typeparam name="TStateTransitionInfo">StateTransitionInfo type</typeparam>
+    public interface IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey, TStateTransitionInfo>
         where TStateKey : struct, IEquatable<TStateKey>
         where TStateData : struct
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
         where TStateManager : IStateManager<TStateKey, TStateData, TStateDataContext>
         where TActionKey : struct, IEquatable<TActionKey>
-        where TActionResult : struct
+        where TStateTransitionInfo : struct
     {
         /// <summary>
         /// Input to action scheduler: List of states to expand via scheduled actions
@@ -34,7 +34,7 @@ namespace Unity.AI.Planner.Jobs
         /// <summary>
         /// Output from action scheduler: List of newly created states w/ info
         /// </summary>
-        NativeQueue<(TStateKey, TActionKey, TActionResult, TStateKey)> CreatedStateInfo { set; }
+        NativeQueue<StateTransitionInfoPair<TStateKey, TActionKey, StateTransitionInfo>> CreatedStateInfo { set; }
 
         /// <summary>
         /// Schedule job actions for delayed execution

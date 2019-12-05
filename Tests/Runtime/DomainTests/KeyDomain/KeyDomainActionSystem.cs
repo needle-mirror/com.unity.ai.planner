@@ -8,10 +8,10 @@ using Unity.Jobs;
 
 namespace KeyDomain
 {
-    using StateTransitionInfo = ValueTuple<StateEntityKey, ActionKey, ActionResult, StateEntityKey>;
+    using StateTransitionInfo = StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>;
 
     internal class ActionScheduler :
-        ITraitBasedActionScheduler<DomainObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey, ActionResult>,
+        ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey, Unity.AI.Planner.StateTransitionInfo>,
         IGetActionName
     {
         // Input
@@ -72,7 +72,7 @@ namespace KeyDomain
             {
                 var MoveActionRefs = entityManager.GetBuffer<MoveAction.FixupReference>(UnexpandedStates[i].Entity);
                 for (int j = 0; j < MoveActionRefs.Length; j++)
-                    CreatedStateInfo.Enqueue(MoveActionRefs[j].TransitionInfo);
+                    CreatedStateInfo.Enqueue(MoveActionRefs[j].StateTransitionInfoPair);
             }
 
             PickupKeyActionECB.Playback(entityManager);
@@ -80,7 +80,7 @@ namespace KeyDomain
             {
                 var PickupKeyActionRefs = entityManager.GetBuffer<MoveAction.FixupReference>(UnexpandedStates[i].Entity);
                 for (int j = 0; j < PickupKeyActionRefs.Length; j++)
-                    CreatedStateInfo.Enqueue(PickupKeyActionRefs[j].TransitionInfo);
+                    CreatedStateInfo.Enqueue(PickupKeyActionRefs[j].StateTransitionInfoPair);
             }
 
             UnlockRoomActionECB.Playback(entityManager);
@@ -88,7 +88,7 @@ namespace KeyDomain
             {
                 var UnlockRoomActionRefs = entityManager.GetBuffer<MoveAction.FixupReference>(UnexpandedStates[i].Entity);
                 for (int j = 0; j < UnlockRoomActionRefs.Length; j++)
-                    CreatedStateInfo.Enqueue(UnlockRoomActionRefs[j].TransitionInfo);
+                    CreatedStateInfo.Enqueue(UnlockRoomActionRefs[j].StateTransitionInfoPair);
             }
 
             allActionJobs.Dispose();

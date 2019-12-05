@@ -22,7 +22,7 @@ namespace KeyDomain
 
 
         [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
-        [ReadOnly] StateDataContext m_StateDataContext;
+        StateDataContext m_StateDataContext;
 
         internal PickupKeyAction(NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
         {
@@ -32,35 +32,38 @@ namespace KeyDomain
 
         void GenerateArgumentPermutations(StateData stateData, NativeList<ActionKey> argumentPermutations)
         {
-            var agentObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(agentObjects, s_AgentFilter);
-            var keyObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(keyObjects, s_KeyFilter);
-            var roomObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(roomObjects, s_RoomFilter);
+            var agentObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(agentObjects, s_AgentFilter);
+            var keyObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(keyObjects, s_KeyFilter);
+            var roomObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(roomObjects, s_RoomFilter);
 
             if (roomObjects.Length <= 0)
                 return;
 
-            var domainObjectIDs = stateData.DomainObjectIDs;
+            var traitBasedObjectIds = stateData.TraitBasedObjectIds;
             var carriableBuffer = stateData.CarriableBuffer;
             var carrierBuffer = stateData.CarrierBuffer;
             var localizedBuffer = stateData.LocalizedBuffer;
 
-            var firstRoom = domainObjectIDs[roomObjects[0].Item2].ID;
+            var firstRoom = traitBasedObjectIds[roomObjects[0]].Id;
             var agentKeyIndex = -1;
 
             for (var i = 0; i < keyObjects.Length; i++)
             {
-                var (keyObject, keyIndex) = keyObjects[i];
+                var keyIndex = keyObjects[i];
+                var keyObject = stateData.TraitBasedObjects[keyIndex];
 
-                if (carriableBuffer[keyObject.CarriableIndex].Carrier != ObjectID.None)
+                if (carriableBuffer[keyObject.CarriableIndex].Carrier != ObjectId.None)
                     continue;
 
                 for (var j = 0; j < agentObjects.Length; j++)
                 {
-                    var (agentObject, _) = agentObjects[j];
-                    if (carrierBuffer[agentObject.CarrierIndex].CarriedObject == domainObjectIDs[keyIndex].ID)
+                    var agentIndex = agentObjects[j];
+                    var agentObject = stateData.TraitBasedObjects[agentIndex];
+
+                    if (carrierBuffer[agentObject.CarrierIndex].CarriedObject == traitBasedObjectIds[keyIndex].Id)
                     {
                         agentKeyIndex = keyIndex;
                         break;
@@ -74,16 +77,18 @@ namespace KeyDomain
             // Get argument permutation and check preconditions
             for (var i = 0; i < keyObjects.Length; i++)
             {
-                var (keyObject, keyIndex) = keyObjects[i];
+                var keyIndex = keyObjects[i];
+                var keyObject = stateData.TraitBasedObjects[keyIndex];
 
-                if (carriableBuffer[keyObject.CarriableIndex].Carrier != ObjectID.None)
+                if (carriableBuffer[keyObject.CarriableIndex].Carrier != ObjectId.None)
                     continue;
 
                 for (var j = 0; j < agentObjects.Length; j++)
                 {
-                    var (agentObject, agentIndex) = agentObjects[j];
+                    var agentIndex = agentObjects[j];
+                    var agentObject = stateData.TraitBasedObjects[agentIndex];
 
-                    if (carrierBuffer[agentObject.CarrierIndex].CarriedObject == domainObjectIDs[keyIndex].ID)
+                    if (carrierBuffer[agentObject.CarrierIndex].CarriedObject == traitBasedObjectIds[keyIndex].Id)
                         continue;
 
                     if (localizedBuffer[agentObject.LocalizedIndex].Location != firstRoom)
@@ -104,13 +109,13 @@ namespace KeyDomain
             roomObjects.Dispose();
         }
 
-        (StateEntityKey, ActionKey, ActionResult, StateEntityKey) ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
+        (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
         {
             var originalState = m_StateDataContext.GetStateData(originalStateEntityKey);
-            var originalStateObjectBuffer = originalState.DomainObjects;
+            var originalStateObjectBuffer = originalState.TraitBasedObjects;
             var newState = m_StateDataContext.CopyStateData(originalState);
 
-            var originalObjectIDs = originalState.DomainObjectIDs;
+            var originalObjectIds = originalState.TraitBasedObjectIds;
 
             // Action effects
             var oldKeyIndex = action[k_KeyIndex];
@@ -120,24 +125,24 @@ namespace KeyDomain
 
             {
                 if (oldKeyIndex >= 0)
-                    newCarriableBuffer[oldKeyIndex] = new Carriable() {Carrier = ObjectID.None};
+                    newCarriableBuffer[oldKeyIndex] = new Carriable() {Carrier = ObjectId.None};
             }
 
             {
                 newCarriableBuffer[originalStateObjectBuffer[action[k_KeyIndex]].CarriableIndex] =
-                    new Carriable() {Carrier = originalObjectIDs[action[k_AgentIndex]].ID};
+                    new Carriable() {Carrier = originalObjectIds[action[k_AgentIndex]].Id};
             }
 
             {
                 newCarrierBuffer[originalStateObjectBuffer[action[k_AgentIndex]].CarrierIndex] =
-                    new Carrier() {CarriedObject = originalObjectIDs[action[k_KeyIndex]].ID};
+                    new Carrier() {CarriedObject = originalObjectIds[action[k_KeyIndex]].Id};
             }
 
             var reward = Reward(originalState, action, newState);
-            var actionResult = new ActionResult { Probability = 1f, TransitionUtilityValue = reward };
+            var StateTransitionInfo = new StateTransitionInfo { Probability = 1f, TransitionUtilityValue = reward };
             var resultingStateKey = m_StateDataContext.GetStateDataKey(newState);
 
-            return (originalStateEntityKey, action, actionResult, resultingStateKey);
+            return (originalStateEntityKey, action, StateTransitionInfo, resultingStateKey);
         }
 
         float Reward(StateData originalState, ActionKey action, StateData newState)
@@ -172,7 +177,7 @@ namespace KeyDomain
 
         public struct FixupReference : IBufferElementData
         {
-            public (StateEntityKey, ActionKey, ActionResult, StateEntityKey) TransitionInfo;
+            public (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) TransitionInfo;
         }
     }
 }

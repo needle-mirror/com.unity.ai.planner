@@ -26,7 +26,7 @@ namespace UnityEditor.AI.Planner.Editors
                 case TypeCode.String:
                     return property.FindPropertyRelative("m_StringValue");
                 case TypeCode.Object:
-                    return (allowObject)?property.FindPropertyRelative(typeof(DomainObjectID).IsAssignableFrom(fieldType) ? "m_StringValue" : "m_ObjectValue"):null;
+                    return (allowObject)?property.FindPropertyRelative(typeof(TraitBasedObjectId).IsAssignableFrom(fieldType) ? "m_StringValue" : "m_ObjectValue"):null;
             }
 
             return allowObject?property.FindPropertyRelative("m_ObjectValue"):null;
@@ -45,7 +45,7 @@ namespace UnityEditor.AI.Planner.Editors
             }
             else
             {
-                if (valueProperty.name == "m_ObjectValue")
+                if (valueProperty.name == "m_ObjectValue" && !typeof(TraitBasedObjectId).IsAssignableFrom(fieldType))
                     EditorGUILayout.ObjectField(valueProperty, fieldType, new GUIContent(fieldLabel));
                 else
                     EditorGUILayout.PropertyField(valueProperty, new GUIContent(fieldLabel));

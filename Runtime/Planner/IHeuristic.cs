@@ -12,6 +12,15 @@
         /// </summary>
         /// <param name="stateData">State to evaluate</param>
         /// <returns>Value estimate of the state</returns>
-        float Evaluate(TStateData stateData);
+        BoundedValue Evaluate(TStateData stateData);
+    }
+
+    /// <summary>
+    /// A specialized interface of <see cref="IHeuristic{TStateData}"/> that must be derived from to create a custom heuristic
+    /// </summary>
+    /// <typeparam name="TStateData">State to evaluate</typeparam>
+    public interface ICustomHeuristic<TStateData> : IHeuristic<TStateData>
+        where TStateData : struct
+    {
     }
 }

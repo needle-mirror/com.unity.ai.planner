@@ -7,16 +7,16 @@ namespace Unity.AI.Planner
 {
     static class PolicyGraphExtensions
     {
-        public static NativeHashMap<TStateKey, int> GetExpandedDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TActionResult>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TActionResult> policyGraph, TStateKey rootKey)
+        public static NativeHashMap<TStateKey, int> GetExpandedDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> policyGraph, TStateKey rootKey)
             where TStateKey : struct, IEquatable<TStateKey>
-            where TStateInfo : struct
+            where TStateInfo : struct, IStateInfo
             where TActionKey : struct, IEquatable<TActionKey>
-            where TActionInfo : struct
-            where TActionResult : struct
+            where TActionInfo : struct, IActionInfo
+            where TStateTransitionInfo : struct
         {
             var depthMap = new NativeHashMap<TStateKey, int>(policyGraph.StateInfoLookup.Length, Allocator.Persistent);
 
-            var stateActionLookup = policyGraph.StateActionLookup;
+            var actionLookup = policyGraph.ActionLookup;
             var resultingStateLookup = policyGraph.ResultingStateLookup;
             var queue = new NativeQueue<(TStateKey, int)>(Allocator.TempJob);
 
@@ -28,16 +28,17 @@ namespace Unity.AI.Planner
                 (var stateKey, int horizon) = stateHorizonPair;
                 var nextHorizon = horizon + 1;
 
-                if (stateActionLookup.TryGetFirstValue(stateKey, out var stateActionPair, out var iterator))
+                if (actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator))
                 {
                     do
                     {
+                        var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                         if (resultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingStateKey, out var resultIterator))
                         {
                             do
                             {
                                 // Skip unexpanded states
-                                if (!stateActionLookup.TryGetFirstValue(resultingStateKey, out _, out _))
+                                if (!actionLookup.TryGetFirstValue(resultingStateKey, out _, out _))
                                     continue;
 
                                 // first add will be most shallow due to BFS
@@ -47,7 +48,7 @@ namespace Unity.AI.Planner
                             } while (resultingStateLookup.TryGetNextValue(out resultingStateKey, ref resultIterator));
                         }
 
-                    } while (stateActionLookup.TryGetNextValue(out stateActionPair, ref iterator));
+                    } while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
                 }
             }
 
@@ -56,18 +57,18 @@ namespace Unity.AI.Planner
             return depthMap;
         }
 
-        public static NativeHashMap<TStateKey, int> GetReachableDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TActionResult>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TActionResult> policyGraph, TStateKey rootKey)
+        public static NativeHashMap<TStateKey, int> GetReachableDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> policyGraph, TStateKey rootKey, Allocator allocator = Allocator.Persistent)
             where TStateKey : struct, IEquatable<TStateKey>
-            where TStateInfo : struct
+            where TStateInfo : struct, IStateInfo
             where TActionKey : struct, IEquatable<TActionKey>
-            where TActionInfo : struct
-            where TActionResult : struct
+            where TActionInfo : struct, IActionInfo
+            where TStateTransitionInfo : struct
         {
-            var depthMap = new NativeHashMap<TStateKey, int>(policyGraph.StateInfoLookup.Length, Allocator.Persistent);
+            var depthMap = new NativeHashMap<TStateKey, int>(policyGraph.StateInfoLookup.Length, allocator);
 
-            var stateActionLookup = policyGraph.StateActionLookup;
+            var actionLookup = policyGraph.ActionLookup;
             var resultingStateLookup = policyGraph.ResultingStateLookup;
-            var queue = new NativeQueue<(TStateKey, int)>(Allocator.TempJob);
+            var queue = new NativeQueue<(TStateKey, int)>(Allocator.Temp);
 
             depthMap.TryAdd(rootKey, 0);
             queue.Enqueue((rootKey, 0));
@@ -77,10 +78,11 @@ namespace Unity.AI.Planner
                 (var stateKey, int horizon) = stateHorizonPair;
                 var nextHorizon = horizon + 1;
 
-                if (stateActionLookup.TryGetFirstValue(stateKey, out var stateActionPair, out var iterator))
+                if (actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator))
                 {
                     do
                     {
+                        var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                         if (resultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingStateKey, out var resultIterator))
                         {
                             do
@@ -92,7 +94,7 @@ namespace Unity.AI.Planner
                             } while (resultingStateLookup.TryGetNextValue(out resultingStateKey, ref resultIterator));
                         }
 
-                    } while (stateActionLookup.TryGetNextValue(out stateActionPair, ref iterator));
+                    } while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
                 }
             }
 
@@ -103,12 +105,12 @@ namespace Unity.AI.Planner
 
 
 #if !UNITY_DOTSPLAYER
-        public static void LogStructuralInfo<TStateKey, TStateInfo, TActionKey, TActionInfo, TActionResult>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TActionResult> policyGraph)
+        public static void LogStructuralInfo<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> policyGraph)
             where TStateKey : struct, IEquatable<TStateKey>, IComparable<TStateKey>
-            where TStateInfo : struct
+            where TStateInfo : struct, IStateInfo
             where TActionKey : struct, IEquatable<TActionKey>
-            where TActionInfo : struct
-            where TActionResult : struct
+            where TActionInfo : struct, IActionInfo
+            where TStateTransitionInfo : struct
         {
             Debug.Log($"States: {policyGraph.StateInfoLookup.Length}");
 
@@ -116,12 +118,12 @@ namespace Unity.AI.Planner
             Debug.Log($"States with Predecessors: {uniquePredecessorCount}");
             predecessorKeyArray.Dispose();
 
-            var (stateActionKeyArray, uniqueStateActionCount) = policyGraph.StateActionLookup.GetUniqueKeyArray(Allocator.TempJob);
+            var (stateActionKeyArray, uniqueStateActionCount) = policyGraph.ActionLookup.GetUniqueKeyArray(Allocator.TempJob);
             Debug.Log($"States with Successors: {uniqueStateActionCount}");
             stateActionKeyArray.Dispose();
 
             Debug.Log($"Actions: {policyGraph.ActionInfoLookup.Length}");
-            Debug.Log($"Action Results: {policyGraph.ActionResultLookup.Length}");
+            Debug.Log($"Action Results: {policyGraph.StateTransitionInfoLookup.Length}");
         }
 #endif
     }

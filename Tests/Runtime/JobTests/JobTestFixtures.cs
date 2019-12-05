@@ -1,11 +1,9 @@
-﻿using System;
-using KeyDomain;
-using Unity.AI.Planner.Jobs;
+﻿using Unity.AI.Planner.Jobs;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
-using UnityEngine;
-
+using Unity.Mathematics;
 
 namespace Unity.AI.Planner.Tests
 {
@@ -51,21 +49,22 @@ namespace Unity.AI.Planner.Tests
         public int GetHashCode(int stateData) => stateData;
     }
 
-    class ActionScheduler : IActionScheduler<int, int, TestStateDataContext, TestStateManager, int, ActionResult>
+    class CountToActionScheduler : IActionScheduler<int, int, TestStateDataContext, TestStateManager, int, StateTransitionInfo>
     {
         // Input
         public NativeList<int> UnexpandedStates { get; set; }
         public TestStateManager StateManager { get; set; }
 
         // Output
-        public NativeQueue<(int, int, ActionResult, int)> CreatedStateInfo { get; set; }
+        public NativeQueue<StateTransitionInfoPair<int, int, StateTransitionInfo>> CreatedStateInfo { get; set; }
 
+        [BurstCompile]
         struct Add : IJobParallelForDefer
         {
             public TestStateDataContext StateDataContext { get; set; }
 
             [field:ReadOnly] public NativeArray<int> UnexpandedStates { get; set; }
-            [field:NativeDisableContainerSafetyRestriction] public NativeQueue<(int, int, ActionResult, int)>.ParallelWriter CreatedStateInfo { get; set; }
+            [field:NativeDisableContainerSafetyRestriction] public NativeQueue<StateTransitionInfoPair<int, int, StateTransitionInfo>>.ParallelWriter CreatedStateInfo { get; set; }
 
             public int ValueToAdd;
 
@@ -83,7 +82,7 @@ namespace Unity.AI.Planner.Tests
                 var reward = ValueToAdd;
 
                 // Register action. Output transition info (state, action, result, resulting state key).
-                CreatedStateInfo.Enqueue((stateKey, ValueToAdd, new ActionResult{ Probability = 1f, TransitionUtilityValue = reward }, newStateKey));
+                CreatedStateInfo.Enqueue(new StateTransitionInfoPair<int, int, StateTransitionInfo>(stateKey, ValueToAdd, newStateKey, new StateTransitionInfo{ Probability = 1f, TransitionUtilityValue = reward }));
             }
         }
 
@@ -155,24 +154,33 @@ namespace Unity.AI.Planner.Tests
     {
         public int Goal;
 
-        public float Evaluate(int stateData) => stateData >= Goal ? 0 : Goal - stateData;
+        public BoundedValue Evaluate(int stateData)
+            => stateData >= Goal ?
+                new float3(0,0,0) : new float3(0, 0, Goal - stateData);
     }
 
     struct CountToTerminationEvaluator : ITerminationEvaluator<int>
     {
         public int Goal;
 
-        public bool IsTerminal(int stateData) => stateData >= Goal;
+        public bool IsTerminal(int stateData, out float terminalReward)
+        {
+            terminalReward = stateData == Goal ? 0 : -100;
+            return stateData >= Goal;
+        }
     }
 
     struct DefaultHeuristic : IHeuristic<int>
     {
-        public float Evaluate(int stateData) => 0f;
+        public BoundedValue Evaluate(int stateData) => default;
     }
 
     struct DefaultTerminalStateEvaluator : ITerminationEvaluator<int>
     {
-        public bool IsTerminal(int stateData) => false;
+        public bool IsTerminal(int stateData, out float terminalReward)
+        {
+            terminalReward = 0f;
+            return false;
+        }
     }
-
 }

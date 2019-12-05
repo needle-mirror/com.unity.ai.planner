@@ -12,10 +12,8 @@ using {{ domain_namespace }}.{{ actionNamespace }};
 
 namespace {{ domain_namespace }}
 {
-    using StateTransitionInfo = ValueTuple<StateEntityKey, ActionKey, ActionResult, StateEntityKey>;
-
     public class ActionScheduler :
-        ITraitBasedActionScheduler<DomainObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey, ActionResult>,
+        ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey, StateTransitionInfo>,
         IGetActionName
     {
         // Input
@@ -23,7 +21,7 @@ namespace {{ domain_namespace }}
         public StateManager StateManager { get; set; }
 
         // Output
-        public NativeQueue<StateTransitionInfo> CreatedStateInfo { get; set; }
+        public NativeQueue<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> CreatedStateInfo { get; set; }
 
         public Guid[] ActionGuids => s_ActionGuids;
 

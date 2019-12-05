@@ -6,8 +6,21 @@ using UnityEngine;
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
     [Serializable]
-    internal class TraitDefinitionField
+    class TraitDefinitionField
     {
+        internal enum FieldRestriction
+        {
+            None,
+            NotInitializable,
+            NotSelectable,
+        }
+
+        internal int UniqueId
+        {
+            get => m_UniqueId;
+            set => m_UniqueId = value;
+        }
+
         public string Name
         {
             get => m_Name;
@@ -26,10 +39,10 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             set => m_DefaultValue = value;
         }
 
-        internal bool HiddenField
+        internal FieldRestriction Restriction
         {
-            get => m_HiddenField;
-            set => m_HiddenField = value;
+            get => m_Restriction;
+            set => m_Restriction = value;
         }
 
         public Type FieldType
@@ -49,6 +62,9 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         }
 
         [SerializeField]
+        int m_UniqueId;
+
+        [SerializeField]
         string m_Name;
 
         [SerializeField]
@@ -58,7 +74,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         FieldValue m_DefaultValue;
 
         [SerializeField]
-        bool m_HiddenField;
+        FieldRestriction m_Restriction;
 
         Type m_FieldType;
     }

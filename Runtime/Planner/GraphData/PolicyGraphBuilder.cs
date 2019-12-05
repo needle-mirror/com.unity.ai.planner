@@ -1,6 +1,6 @@
 ﻿using System;
 using Unity.Collections;
-using UnityEngine;
+using Unity.Mathematics;
 
 
 namespace Unity.AI.Planner
@@ -9,15 +9,14 @@ namespace Unity.AI.Planner
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
     {
-        public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, ActionResult> PolicyGraph { private get; set; }
+        public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph { private get; set; }
 
-        public StateContext AddState(TStateKey stateKey, bool complete = false, float value = 0f, int visitCount = 0)
+        public StateContext AddState(TStateKey stateKey, bool complete = false, float3 value = default, int visitCount = 0)
         {
             //policy graph
             PolicyGraph.StateInfoLookup.TryAdd(stateKey, new StateInfo()
             {
-                Complete = complete,
-                VisitCount = visitCount,
+                SubgraphComplete = complete,
                 PolicyValue = value,
             });
 
@@ -41,14 +40,13 @@ namespace Unity.AI.Planner
             public TStateKey StateKey;
             public PolicyGraphBuilder<TStateKey, TActionKey> Builder { private get; set; }
 
-            public StateContext UpdateInfo(int? visitCount = null, bool? complete = null, float? policyValue = null)
+            public StateContext UpdateInfo(bool? complete = null, float3? policyValue = null)
             {
                 var stateInfoLookup = Builder.PolicyGraph.StateInfoLookup;
                 if (!stateInfoLookup.TryGetValue(StateKey, out var stateInfo))
                     throw new ArgumentException($"State {StateKey} has not been added to the graph. Use AddState before setting state info.");
 
-                stateInfo.VisitCount = visitCount ?? stateInfo.VisitCount;
-                stateInfo.Complete = complete ?? stateInfo.Complete;
+                stateInfo.SubgraphComplete = complete ?? stateInfo.SubgraphComplete;
                 stateInfo.PolicyValue = policyValue ?? stateInfo.PolicyValue;
 
                 stateInfoLookup.Remove(StateKey);
@@ -57,38 +55,38 @@ namespace Unity.AI.Planner
                 return this;
             }
 
-            public ActionContext AddAction(TActionKey actionKey, int visitCount = 1, bool complete = false, float actionValue = 0f)
+            public ActionContext AddAction(TActionKey actionKey, bool complete = false, float3 actionValue = default)
             {
                 var policyGraph = Builder.PolicyGraph;
-                var addedAction = policyGraph.ActionInfoLookup.TryAdd((StateKey, actionKey), new ActionInfo()
+                var addedAction = policyGraph.ActionInfoLookup.TryAdd(new StateActionPair<TStateKey, TActionKey>(StateKey, actionKey), new ActionInfo()
                 {
-                    VisitCount = visitCount,
-                    Complete = complete,
+                    SubgraphComplete = complete,
                     ActionValue = actionValue
                 });
 
                 if (!addedAction)
                     throw new ArgumentException($"Action {actionKey} for state {StateKey} has already been added to the policy graph.");
 
-                var stateActionLookup = policyGraph.StateActionLookup;
-                if (stateActionLookup.TryGetFirstValue(StateKey, out var stateActionPair, out var iterator))
+                var actionLookup = policyGraph.ActionLookup;
+                if (actionLookup.TryGetFirstValue(StateKey, out var otherActionKey, out var iterator))
                 {
                     do
                     {
-                        if (stateActionPair.Item2.Equals(actionKey))
+
+                        if (actionKey.Equals(otherActionKey))
                             throw new ArgumentException($"Action {actionKey} already added to State {StateKey}. Ensure action keys are unique for a state.");
 
-                    } while (stateActionLookup.TryGetNextValue(out stateActionPair, ref iterator));
+                    } while (actionLookup.TryGetNextValue(out otherActionKey, ref iterator));
                 }
 
-                stateActionLookup.Add(StateKey, (StateKey, actionKey));
+                actionLookup.Add(StateKey, actionKey);
 
                 return WithAction(actionKey);
             }
 
             public ActionContext WithAction(TActionKey actionKey)
             {
-                if (!Builder.PolicyGraph.ActionInfoLookup.TryGetValue((StateKey, actionKey), out _))
+                if (!Builder.PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<TStateKey, TActionKey>(StateKey, actionKey), out _))
                     throw new ArgumentException($"Action {actionKey} for state {StateKey} does not exist in policy graph.");
 
                 return new ActionContext()
@@ -106,15 +104,14 @@ namespace Unity.AI.Planner
             public TStateKey StateKey;
             public PolicyGraphBuilder<TStateKey, TActionKey> Builder { private get; set; }
 
-            public ActionContext UpdateInfo(int? visitCount = null, bool? complete = null, float? actionValue = null)
+            public ActionContext UpdateInfo(int? visitCount = null, bool? complete = null, float3? actionValue = null)
             {
                 var actionInfoLookup = Builder.PolicyGraph.ActionInfoLookup;
-                var stateActionPair = (StateKey, ActionKey);
+                var stateActionPair = new StateActionPair<TStateKey, TActionKey>(StateKey, ActionKey);
                 if (!actionInfoLookup.TryGetValue(stateActionPair, out var actionInfo))
                     throw new ArgumentException($"Action {ActionKey} for state {StateKey} does not exist in policy graph.");
 
-                actionInfo.VisitCount = visitCount ?? actionInfo.VisitCount;
-                actionInfo.Complete = complete ?? actionInfo.Complete;
+                actionInfo.SubgraphComplete = complete ?? actionInfo.SubgraphComplete;
                 actionInfo.ActionValue = actionValue ?? actionInfo.ActionValue;
 
                 actionInfoLookup.Remove(stateActionPair);
@@ -123,13 +120,13 @@ namespace Unity.AI.Planner
                 return this;
             }
 
-            public ActionContext AddResultingState(TStateKey resultingStateKey, bool complete = false, float value = 0f,
+            public ActionContext AddResultingState(TStateKey resultingStateKey, bool complete = false, float3 value = default,
                 float probability = 1f, float transitionUtility = 0f)
             {
                 Builder.AddState(resultingStateKey, complete, value);
 
                 var policyGraph = Builder.PolicyGraph;
-                bool addedResult = policyGraph.ActionResultLookup.TryAdd((StateKey, ActionKey, resultingStateKey), new ActionResult
+                bool addedResult = policyGraph.StateTransitionInfoLookup.TryAdd(new StateTransition<TStateKey, TActionKey>(StateKey, ActionKey, resultingStateKey), new StateTransitionInfo
                 {
                     Probability = probability,
                     TransitionUtilityValue = transitionUtility
@@ -140,7 +137,7 @@ namespace Unity.AI.Planner
 
                 var resultingStateLookup = policyGraph.ResultingStateLookup;
 
-                if (resultingStateLookup.TryGetFirstValue((StateKey, ActionKey), out var existingResultingStateKey, out var iterator))
+                if (resultingStateLookup.TryGetFirstValue(new StateActionPair<TStateKey, TActionKey>(StateKey, ActionKey), out var existingResultingStateKey, out var iterator))
                 {
                     do
                     {
@@ -149,7 +146,7 @@ namespace Unity.AI.Planner
                     } while (resultingStateLookup.TryGetNextValue(out existingResultingStateKey, ref iterator));
                 }
 
-                resultingStateLookup.Add((StateKey, ActionKey), resultingStateKey);
+                resultingStateLookup.Add(new StateActionPair<TStateKey, TActionKey>(StateKey, ActionKey), resultingStateKey);
 
                 policyGraph.PredecessorGraph.AddValueIfUnique(resultingStateKey, StateKey);
 

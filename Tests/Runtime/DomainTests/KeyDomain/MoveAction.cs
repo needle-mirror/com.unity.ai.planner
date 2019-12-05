@@ -19,7 +19,7 @@ namespace KeyDomain
         static readonly ComponentType[] s_RoomFilter = {  ComponentType.ReadWrite<Lockable>()  };
 
         [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
-        [ReadOnly] StateDataContext m_StateDataContext;
+        StateDataContext m_StateDataContext;
 
         internal MoveAction(NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
         {
@@ -29,23 +29,25 @@ namespace KeyDomain
 
         void GenerateArgumentPermutations(StateData stateData, NativeList<ActionKey> argumentPermutations)
         {
-            var agentObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(agentObjects, s_AgentFilter);
-            var roomObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(roomObjects, s_RoomFilter);
+            var agentObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(agentObjects, s_AgentFilter);
+            var roomObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(roomObjects, s_RoomFilter);
 
             var localizedBuffer = stateData.LocalizedBuffer;
-            var objectIDs = stateData.DomainObjectIDs;
+            var objectIds = stateData.TraitBasedObjectIds;
 
             // Get argument permutation and check preconditions
             for (var i = 0; i < roomObjects.Length; i++)
             {
-                var (roomObject, roomIndex) = roomObjects[i];
+                var roomIndex = roomObjects[i];
 
                 for (var j = 0; j < agentObjects.Length; j++)
                 {
-                    var (agentObject, agentIndex) = agentObjects[j];
-                    if (localizedBuffer[agentObject.LocalizedIndex].Location == objectIDs[roomIndex].ID)
+                    var agentIndex = agentObjects[j];
+                    var agentObject = stateData.TraitBasedObjects[agentIndex];
+
+                    if (localizedBuffer[agentObject.LocalizedIndex].Location == objectIds[roomIndex].Id)
                         continue;
 
                     argumentPermutations.Add(new ActionKey(k_MaxArguments)
@@ -61,10 +63,10 @@ namespace KeyDomain
             roomObjects.Dispose();
         }
 
-        (StateEntityKey, ActionKey, ActionResult, StateEntityKey) ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
+        StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
         {
             var originalState = m_StateDataContext.GetStateData(originalStateEntityKey);
-            var originalStateObjectBuffer = originalState.DomainObjects;
+            var originalStateObjectBuffer = originalState.TraitBasedObjects;
 
             // effect params
             var originalAgentObject = originalStateObjectBuffer[action[k_AgentIndex]];
@@ -73,21 +75,21 @@ namespace KeyDomain
             var newState = m_StateDataContext.CopyStateData(originalState);
 
             var newLocalizedBuffer = newState.LocalizedBuffer;
-            var newDomainObjectIDsBuffer = newState.DomainObjectIDs;
+            var newTraitBasedObjectIdsBuffer = newState.TraitBasedObjectIds;
 
             // Action effects
             {
                 var @Localized = newLocalizedBuffer[originalAgentObject.LocalizedIndex];
-                var @DomainObjectID = newDomainObjectIDsBuffer[action[k_RoomIndex]];
-                @Localized.Location = @DomainObjectID.ID;
+                var @TraitBasedObjectId = newTraitBasedObjectIdsBuffer[action[k_RoomIndex]];
+                @Localized.Location = @TraitBasedObjectId.Id;
                 newLocalizedBuffer[originalAgentObject.LocalizedIndex] = @Localized;
             }
 
             var reward = Reward(originalState, action, newState);
-            var actionResult = new ActionResult { Probability = 1f, TransitionUtilityValue = reward };
+            var StateTransitionInfo = new StateTransitionInfo { Probability = 1f, TransitionUtilityValue = reward };
             var resultingStateKey = m_StateDataContext.GetStateDataKey(newState);
 
-            return (originalStateEntityKey, action, actionResult, resultingStateKey);
+            return new StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>(originalStateEntityKey, action, resultingStateKey, StateTransitionInfo);
         }
 
         float Reward(StateData originalState, ActionKey action, StateData newState)
@@ -108,7 +110,7 @@ namespace KeyDomain
             var transitionInfo = new NativeArray<FixupReference>(argumentPermutations.Length, Allocator.Temp);
             for (var i = 0; i < argumentPermutations.Length; i++)
             {
-                transitionInfo[i] = new FixupReference { TransitionInfo = ApplyEffects(argumentPermutations[i], stateEntityKey) };
+                transitionInfo[i] = new FixupReference { StateTransitionInfoPair = ApplyEffects(argumentPermutations[i], stateEntityKey) };
             }
 
             // fixups
@@ -122,7 +124,7 @@ namespace KeyDomain
 
         public struct FixupReference : IBufferElementData
         {
-            public (StateEntityKey, ActionKey, ActionResult, StateEntityKey) TransitionInfo;
+            public StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> StateTransitionInfoPair;
         }
     }
 }

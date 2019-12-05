@@ -6,18 +6,32 @@ namespace KeyDomain
     [Serializable]
     internal struct Localized : ITrait, IEquatable<Localized>
     {
-        public const bool IsZeroSized = false;
+        public ObjectId Location;
 
-        public Unity.AI.Planner.DomainLanguage.TraitBased.ObjectID Location;
+        public object GetField(string fieldName)
+        {
+            switch (fieldName)
+            {
+                case nameof(Location):
+                    return Location;
+            }
+
+            return null;
+        }
 
         public void SetField(string fieldName, object value)
         {
             switch (fieldName)
             {
                 case nameof(Location):
-                    Location = (Unity.AI.Planner.DomainLanguage.TraitBased.ObjectID)value;
+                    Location = (ObjectId)value;
                     break;
             }
+        }
+
+        public bool AttributesEqual(Localized other)
+        {
+            return true;
         }
 
         public bool Equals(Localized other)

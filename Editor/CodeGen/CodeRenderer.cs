@@ -1,4 +1,4 @@
-﻿#define DISABLE_CACHE // TODO disabled during development
+﻿//#define DISABLE_TEMPLATE_CACHE
 
 using System;
 using System.Collections.Generic;
@@ -11,17 +11,17 @@ namespace UnityEditor.AI.Planner.CodeGen
     {
         Dictionary<TextAsset, Template> m_TemplateCache = new Dictionary<TextAsset, Template>();
 
-        public string RenderTemplate(TextAsset templateAsset, object templateData)
+        internal string RenderTemplate(TextAsset templateAsset, object templateData)
         {
             var template = GetCachedTemplate(templateAsset);
             return template.Render(templateData);
         }
 
-        private Template GetCachedTemplate(TextAsset templateAsset)
+        Template GetCachedTemplate(TextAsset templateAsset)
         {
             m_TemplateCache.TryGetValue(templateAsset, out var template);
 
-#if !DISABLE_CACHE
+#if !DISABLE_TEMPLATE_CACHE
         if (template != null)
 	        return template;
 #endif

@@ -8,18 +8,28 @@ namespace UnityEditor.AI.Planner.Editors
 {
     class TraitSelectorPopup : PopupWindowContent
     {
-        private SerializedProperty m_Traits;
-        private IEnumerable<TraitDefinition> m_InvalidTraits;
-        private string m_Title;
-        private float m_Height;
+        SerializedProperty m_Property;
+        IEnumerable<TraitDefinition> m_InvalidTraits;
+        string m_Title;
+        float m_Height;
+        List<TraitDefinition> m_TraitsSelected = new List<TraitDefinition>();
 
-        public TraitSelectorPopup(string title, SerializedProperty traits, IEnumerable<TraitDefinition> invalidTraits = null)
+        public TraitSelectorPopup(string title, SerializedProperty property, IEnumerable<TraitDefinition> invalidTraits = null)
         {
-            m_Traits = traits;
+            m_Property = property;
             m_Title = title;
             m_InvalidTraits = invalidTraits;
 
             m_Height = DomainAssetDatabase.TraitDefinitions.Count() * EditorGUIUtility.singleLineHeight + 60;
+
+            m_Property.ForEachArrayElement(t =>
+            {
+                var definition = t.objectReferenceValue as TraitDefinition;
+                if (definition != null && !m_TraitsSelected.Contains(definition))
+                {
+                    m_TraitsSelected.Add(definition);
+                }
+            });
         }
 
         public override Vector2 GetWindowSize()
@@ -29,27 +39,11 @@ namespace UnityEditor.AI.Planner.Editors
 
         public override void OnGUI(Rect rect)
         {
-            m_Traits.serializedObject.Update();
-
             GUILayout.Label(m_Title, EditorStyles.boldLabel);
-
-            var traitsSelected = new Dictionary<TraitDefinition, int>();
-            int index = 0;
-            m_Traits.ForEachArrayElement(t =>
-            {
-                //TODO field values versus traits list ?
-                var definition = t.objectReferenceValue as TraitDefinition;
-                if (definition != null && !traitsSelected.ContainsKey(definition))
-                {
-                    traitsSelected.Add(definition, index);
-                }
-
-                index++;
-            });
 
             foreach (var trait in DomainAssetDatabase.TraitDefinitions)
             {
-                bool selected = traitsSelected.ContainsKey(trait);
+                bool selected = m_TraitsSelected.Contains(trait);
 
                 if (!IsValid(trait))
                 {
@@ -68,30 +62,52 @@ namespace UnityEditor.AI.Planner.Editors
                 {
                     if (selected)
                     {
-                        int removeIndex = traitsSelected[trait];
-
-                        m_Traits.GetArrayElementAtIndex(removeIndex).objectReferenceValue = null;
-                        m_Traits.DeleteArrayElementAtIndex(removeIndex);
+                        m_TraitsSelected.Remove(trait);
                     }
                     else
                     {
-                        m_Traits.InsertArrayElementAtIndex(0);
-                        m_Traits.GetArrayElementAtIndex(0).objectReferenceValue = trait;
+                        m_TraitsSelected.Add(trait);
                     }
 
                 }
             }
-
-            m_Traits.serializedObject.ApplyModifiedProperties();
         }
 
-        private bool IsValid(TraitDefinition trait)
+        bool IsValid(TraitDefinition trait)
         {
             return m_InvalidTraits == null || !m_InvalidTraits.Contains(trait);
         }
+
+        public override void OnClose()
+        {
+            bool modified = m_Property.arraySize != m_TraitsSelected.Count;
+            if (!modified)
+            {
+                for (int i = 0; i < m_Property.arraySize; i++)
+                {
+                    if (m_Property.GetArrayElementAtIndex(i).objectReferenceValue != m_TraitsSelected[i])
+                    {
+                        modified = true;
+                        break;
+                    }
+                }
+            }
+
+            if (modified)
+            {
+                m_Property.ClearArray();
+                m_Property.arraySize = m_TraitsSelected.Count;
+                for (var i = 0; i < m_TraitsSelected.Count; i++)
+                {
+                    m_Property.GetArrayElementAtIndex(i).objectReferenceValue = m_TraitsSelected[i];
+                }
+
+                m_Property.serializedObject.ApplyModifiedProperties();
+            }
+        }
     }
 
-    internal class TraitSelectorDrawer
+    class TraitSelectorDrawer
     {
         public static void DrawSelector(SerializedProperty traits, Rect rect, string title, GUIStyle style, GUIStyle buttonStyle, GUIStyle altButtonStyle, IEnumerable<TraitDefinition> invalidTraits = null)
         {

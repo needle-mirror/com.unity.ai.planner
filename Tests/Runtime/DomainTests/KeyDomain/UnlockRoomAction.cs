@@ -22,7 +22,7 @@ namespace KeyDomain
         static readonly ComponentType[] s_RoomTypes =  {  ComponentType.ReadWrite<Lockable>(), ComponentType.ReadWrite<Colored>(),  };
 
         [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
-        [ReadOnly] StateDataContext m_StateDataContext;
+        StateDataContext m_StateDataContext;
 
         internal UnlockRoomAction(NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
         {
@@ -32,14 +32,15 @@ namespace KeyDomain
 
         void GenerateArgumentPermutations(StateData stateData, NativeList<ActionKey> argumentPermutations)
         {
-            var agentObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(agentObjects, s_AgentFilter);
-            var roomObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(roomObjects, s_RoomFilter);
-            var keyObjects = new NativeList<(DomainObject, int)>(4, Allocator.Temp);
-            stateData.GetDomainObjects(keyObjects, s_KeyFilter);
+            var traitBasedObjects = stateData.TraitBasedObjects;
+            var agentObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(agentObjects, s_AgentFilter);
+            var roomObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(roomObjects, s_RoomFilter);
+            var keyObjects = new NativeList<int>(4, Allocator.Temp);
+            stateData.GetTraitBasedObjectIndices(keyObjects, s_KeyFilter);
 
-            var objectIDs = stateData.DomainObjectIDs;
+            var objectIds = stateData.TraitBasedObjectIds;
             var lockableBuffer = stateData.LockableBuffer;
             var localizedBuffer = stateData.LocalizedBuffer;
             var carrierBuffer = stateData.CarrierBuffer;
@@ -48,23 +49,26 @@ namespace KeyDomain
             // Get argument permutation and check preconditions
             for (var i = 0; i < roomObjects.Length; i++)
             {
-                var (roomObject, roomIndex) = roomObjects[i];
+                var roomIndex = roomObjects[i];
+                var roomObject = traitBasedObjects[roomIndex];
 
                 if (!lockableBuffer[roomObject.LockableIndex].Locked)
                     continue;
 
                 for (var j = 0; j < agentObjects.Length; j++)
                 {
-                    var (agentObject, agentIndex) = agentObjects[j];
+                    var agentIndex = agentObjects[j];
+                    var agentObject = traitBasedObjects[agentIndex];
 
-                    if (localizedBuffer[agentObject.LocalizedIndex].Location != objectIDs[roomIndex].ID)
+                    if (localizedBuffer[agentObject.LocalizedIndex].Location != objectIds[roomIndex].Id)
                         continue;
 
                     for (var k = 0; k < keyObjects.Length; k++)
                     {
-                        var (keyObject, keyIndex) = keyObjects[k];
+                        var keyIndex = keyObjects[k];
+                        var keyObject = traitBasedObjects[keyIndex];
 
-                        if (carrierBuffer[agentObject.CarrierIndex].CarriedObject != objectIDs[keyIndex].ID)
+                        if (carrierBuffer[agentObject.CarrierIndex].CarriedObject != objectIds[keyIndex].Id)
                             continue;
 
                         if (!coloredBuffer[roomObject.ColoredIndex].Color.Equals(coloredBuffer[keyObject.ColoredIndex].Color))
@@ -85,9 +89,9 @@ namespace KeyDomain
             keyObjects.Dispose();
         }
 
-        NativeArray<(StateEntityKey, ActionKey, ActionResult, StateEntityKey)> ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
+        NativeArray<(StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey)> ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
         {
-            var results = new NativeArray<(StateEntityKey, ActionKey, ActionResult, StateEntityKey)>(3, Allocator.Temp);
+            var results = new NativeArray<(StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey)>(3, Allocator.Temp);
 
             results[0] = CreateResultingState(originalStateEntityKey, action, ColorValue.Black, 0.4f, 1f, false);
             results[1] = CreateResultingState(originalStateEntityKey, action, ColorValue.White, 0.4f, 1f, false);
@@ -96,24 +100,24 @@ namespace KeyDomain
             return results;
         }
 
-        (StateEntityKey, ActionKey, ActionResult, StateEntityKey) CreateResultingState(StateEntityKey originalStateEntityKey, ActionKey action,
+        (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) CreateResultingState(StateEntityKey originalStateEntityKey, ActionKey action,
             ColorValue roomColor, float probability, float reward, bool endRoom)
         {
             var originalState = m_StateDataContext.GetStateData(originalStateEntityKey);
-            var originalStateObjectBuffer = originalState.DomainObjects;
+            var originalStateObjectBuffer = originalState.TraitBasedObjects;
 
             var newState = m_StateDataContext.CopyStateData(originalState);
 
-            var newObjectBuffer = newState.DomainObjects;
-            var newDomainIDBuffer = newState.DomainObjectIDs;
+            var newObjectBuffer = newState.TraitBasedObjects;
+            var newDomainIdBuffer = newState.TraitBasedObjectIds;
             var newLockableBuffer = newState.LockableBuffer;
             var newColoredBuffer = newState.ColoredBuffer;
             var newLocalizedBuffer = newState.LocalizedBuffer;
             var newEndBuffer = newState.EndBuffer;
 
             // Action effects
-            var (newRoom, newRoomID) = newState.AddDomainObject(s_RoomTypes);
-            var newRoomIndex = newState.GetDomainObjectIndex(newRoom);
+            newState.AddTraitBasedObject(s_RoomTypes, out var newRoom, out _);
+            var newRoomIndex = newState.GetTraitBasedObjectIndex(newRoom);
 
             var newRoomLockable = newState.GetTraitOnObject<Lockable>(newRoom);
             newRoomLockable.Locked = true;
@@ -125,7 +129,7 @@ namespace KeyDomain
 
             {
                 newLockableBuffer[newObjectBuffer[action[k_RoomIndex]].LockableIndex] = new Lockable { Locked = false };
-                newLocalizedBuffer[newObjectBuffer[action[k_AgentIndex]].LocalizedIndex] = new Localized { Location = newDomainIDBuffer[newRoomIndex].ID };
+                newLocalizedBuffer[newObjectBuffer[action[k_AgentIndex]].LocalizedIndex] = new Localized { Location = newDomainIdBuffer[newRoomIndex].Id };
             }
 
             if (endRoom)
@@ -135,10 +139,10 @@ namespace KeyDomain
                 newObjectBuffer[newObjectBuffer.Length - 1] = newRoom;
             }
 
-            var actionResult = new ActionResult { Probability = probability, TransitionUtilityValue = reward };
+            var StateTransitionInfo = new StateTransitionInfo { Probability = probability, TransitionUtilityValue = reward };
             var resultingStateKey = m_StateDataContext.GetStateDataKey(newState);
 
-            return (originalStateEntityKey, action, actionResult, resultingStateKey);
+            return (originalStateEntityKey, action, StateTransitionInfo, resultingStateKey);
         }
 
         public void Execute(int jobIndex)
@@ -173,7 +177,7 @@ namespace KeyDomain
 
         public struct FixupReference : IBufferElementData
         {
-            public (StateEntityKey, ActionKey, ActionResult, StateEntityKey) TransitionInfo;
+            public (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) TransitionInfo;
         }
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 using UnityEngine;
@@ -7,18 +8,21 @@ namespace Unity.AI.Planner.Utility
 {
     static class TypeResolver
     {
-        private const string k_ValidateTypePattern = @"^[0-9]+|\s";
+        const string k_ValidateTypePattern = @"^[0-9]+|\s";
 
         public const string PlannerAssemblyName = "Unity.AI.Planner";
         public const string DomainsAssemblyName = "AI.Planner.Domains";
         public const string ActionsAssemblyName = "AI.Planner.Actions";
         public const string DomainsNamespace = "AI.Planner.Domains";
+        public const string DomainEnumsNamespace = "AI.Planner.Domains.Enums.";
         public const string ActionsNamespace = "AI.Planner.Actions";
+
+        static Dictionary<string, Type> m_TypeCache = new Dictionary<string, Type>();
 
         public static Type GetType(string typeName)
         {
-            // TODO add cache or replace with 2019.3 TypeCache system
-            Type type = null;
+            if (m_TypeCache.TryGetValue(typeName, out Type type))
+                return type;
 
             if (!typeName.Contains("."))
             {
@@ -38,12 +42,14 @@ namespace Unity.AI.Planner.Utility
             if (type == null)
                 type = Type.GetType(typeName);
 
+            m_TypeCache.Add(typeName, type);
+
             return type;
         }
 
         public static string ToTypeNameCase(string name)
         {
-            return Regex.Replace(name, k_ValidateTypePattern,string.Empty);
+            return Regex.Replace(name, k_ValidateTypePattern, string.Empty);
         }
     }
 }

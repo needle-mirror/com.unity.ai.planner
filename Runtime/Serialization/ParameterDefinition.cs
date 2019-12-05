@@ -27,15 +27,35 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         }
 
         [SerializeField]
-        string m_Name = "obj";
+        string m_Name = "parameter";
 
-        [TraitDefinitionPicker]
         [SerializeField]
         List<TraitDefinition> m_RequiredTraits = new List<TraitDefinition>();
 
-        [TraitDefinitionPicker]
         [SerializeField]
         List<TraitDefinition> m_ProhibitedTraits = new List<TraitDefinition>();
+
+#if UNITY_EDITOR
+        public void OnValidate()
+        {
+            // Remove references of traits that don't exist anymore
+            for (var i = m_RequiredTraits.Count - 1; i >= 0; i--)
+            {
+                if (m_RequiredTraits[i] == null)
+                {
+                    m_RequiredTraits.RemoveAt(i);
+                }
+            }
+
+            for (var i = m_ProhibitedTraits.Count - 1; i >= 0; i--)
+            {
+                if (m_ProhibitedTraits[i] == null)
+                {
+                    m_ProhibitedTraits.RemoveAt(i);
+                }
+            }
+        }
+#endif
     }
 }
 #endif
