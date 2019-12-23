@@ -18,9 +18,10 @@ namespace UnityEditor.AI.Planner
                 using (new EditorGUI.IndentLevelScope())
                 {
                     // Settings
+                    EditorGUILayout.PropertyField(property.FindPropertyRelative("SearchIterationsPerUpdate"));
                     EditorGUILayout.PropertyField(property.FindPropertyRelative("StateExpansionBudgetPerIteration"));
 
-                    DrawEnabledProperty(property, "UseCustomSearchFrequency", "FramesPerSearchIteration");
+                    DrawEnabledProperty(property, "UseCustomSearchFrequency", "FramesPerSearchUpdate");
                     DrawEnabledProperty(property, "CapPlanSize", "MaxStatesInPlan");
                     DrawEnabledProperty(property, "StopPlanningWhenToleranceAchieved", "RootPolicyValueTolerance");
 

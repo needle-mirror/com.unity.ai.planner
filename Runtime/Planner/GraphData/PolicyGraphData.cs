@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace Unity.AI.Planner
 {
-    struct PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> : IPlan<TStateKey, TActionKey>
+    struct PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>
         where TStateKey : struct, IEquatable<TStateKey>
         where TStateInfo : struct, IStateInfo
         where TActionKey : struct, IEquatable<TActionKey>
@@ -181,7 +181,7 @@ namespace Unity.AI.Planner
     /// <summary>
     /// Action result information for an action node in the plan
     /// </summary>
-    public struct StateTransitionInfo
+    internal struct StateTransitionInfo
     {
         /// <summary>
         /// Probability of resulting state occurring
@@ -322,7 +322,7 @@ namespace Unity.AI.Planner
     /// <typeparam name="TStateKey">The type of state key.</typeparam>
     /// <typeparam name="TActionKey">The type of action key.</typeparam>
     /// <typeparam name="TStateTransitionInfo">The type of state transition information.</typeparam>
-    public struct StateTransitionInfoPair<TStateKey, TActionKey, TStateTransitionInfo>
+    struct StateTransitionInfoPair<TStateKey, TActionKey, TStateTransitionInfo>
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
         where TStateTransitionInfo : struct
@@ -356,7 +356,7 @@ namespace Unity.AI.Planner
     /// </summary>
     /// <typeparam name="TStateKey">The type of state key.</typeparam>
     /// <typeparam name="TActionKey">The type of action key.</typeparam>
-    public struct StateActionPair<TStateKey, TActionKey> : IEquatable<StateActionPair<TStateKey, TActionKey>>
+    struct StateActionPair<TStateKey, TActionKey> : IEquatable<StateActionPair<TStateKey, TActionKey>>
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
     {
@@ -409,7 +409,7 @@ namespace Unity.AI.Planner
     /// </summary>
     /// <typeparam name="TStateKey"></typeparam>
     /// <typeparam name="TActionKey"></typeparam>
-    public struct StateTransition<TStateKey, TActionKey> : IEquatable<StateTransition<TStateKey, TActionKey>>
+    struct StateTransition<TStateKey, TActionKey> : IEquatable<StateTransition<TStateKey, TActionKey>>
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
     {

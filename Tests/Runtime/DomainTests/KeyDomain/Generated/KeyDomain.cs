@@ -1075,7 +1075,8 @@ namespace KeyDomain
         }
     }
 
-    class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>, IStateManagerInternal
+    [DisableAutoCreation]
+    class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>
     {
         EntityArchetype m_StateArchetype;
 

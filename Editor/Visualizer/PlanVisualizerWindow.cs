@@ -1,8 +1,7 @@
 using System;
-using System.Reflection;
 using GraphVisualizer;
-using Unity.AI.Planner;
 using UnityEngine;
+using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {
@@ -12,9 +11,9 @@ namespace UnityEditor.AI.Planner.Visualizer
         IGraphLayout m_Layout;
 
         [NonSerialized]
-        IPlanExecutionInfo m_PlanExecutionInfo;
         IPlanVisualizer m_Visualizer;
         IVisualizerNode m_RootNodeOverride;
+        IPlanExecutor m_PlanExecutor;
 
         GraphSettings m_GraphSettings;
         int m_MaxDepth = k_DefaultMaxDepth;
@@ -84,78 +83,47 @@ namespace UnityEditor.AI.Planner.Visualizer
 
                 if (activeGameObject)
                 {
-                    if (!GetPlan(activeGameObject, out var plan))
+                    if (!GetPlanExecutor(activeGameObject, out var executor))
                     {
                         activeGameObject = FindPlannerObject();
-                        GetPlan(activeGameObject, out plan);
+                        GetPlanExecutor(activeGameObject, out executor);
                     }
 
-                    if (plan != null)
+                    if (executor != null)
                     {
-                        m_PlanExecutionInfo = plan;
-                        InitializePlanVisualizer(m_PlanExecutionInfo);
+                        m_PlanExecutor = executor;
+                        m_Visualizer = new PlanVisualizer(m_PlanExecutor);
                     }
                 }
             }
             else
             {
                 m_Visualizer = null;
-                m_PlanExecutionInfo = null;
+                m_PlanExecutor = null;
             }
         }
 
-        void InitializePlanVisualizer(IPlanExecutionInfo plan)
+        static bool GetPlanExecutor(GameObject go, out IPlanExecutor executor)
         {
-            m_Visualizer = new PlanVisualizer(plan);
-        }
-
-        static bool GetPlan(GameObject go, out IPlanExecutionInfo plan)
-        {
-            plan = null;
+            executor = null;
 
             if (go == null)
                 return false;
 
-            var planners = go.GetComponents<UnityEngine.AI.Planner.Controller.DecisionController>();
-            foreach (var planner in planners)
+            var decisionControllers = go.GetComponents<UnityEngine.AI.Planner.Controller.DecisionController>();
+            foreach (var decisionController in decisionControllers)
             {
-                if (!planner.enabled || planner.planExecutor == null)
+                if (!decisionController.enabled || decisionController.PlanExecutor == null)
                     continue;
 
-                var fields = planner.planExecutor.GetType().BaseType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var field in fields)
-                {
-                    if (plan == null && typeof(IPlanExecutionInfo).IsAssignableFrom(field.FieldType))
-                    {
-                        plan = (IPlanExecutionInfo)field.GetValue(planner.planExecutor);
-                        return true;
-                    }
-                }
+                executor = decisionController.PlanExecutor;
+                return true;
             }
 
             return false;
         }
 
-        static bool IsAssignableToGenericType(Type givenType, Type genericType)
-        {
-            var interfaceTypes = givenType.GetInterfaces();
-
-            foreach (var it in interfaceTypes)
-            {
-                if (it.IsGenericType && it.GetGenericTypeDefinition() == genericType)
-                    return true;
-            }
-
-            if (givenType.IsGenericType && givenType.GetGenericTypeDefinition() == genericType)
-                return true;
-
-            var baseType = givenType.BaseType;
-            if (baseType == null) return false;
-
-            return IsAssignableToGenericType(baseType, genericType);
-        }
-
-        void ShowMessage(string msg)
+        static void ShowMessage(string msg)
         {
             GUILayout.BeginVertical();
             GUILayout.FlexibleSpace();
@@ -174,7 +142,7 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         void Update()
         {
-            if (EditorApplication.isPlaying && m_PlanExecutionInfo == null)
+            if (EditorApplication.isPlaying && m_PlanExecutor == null)
                 SelectPlan();
 
             // If in Play mode, refresh the plan each update.
@@ -191,6 +159,7 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         void OnGUI()
         {
+            m_PlanExecutor?.PlannerScheduler?.CurrentJobHandle.Complete();
             GraphOnGUI();
             DrawGraph();
         }
@@ -253,25 +222,20 @@ namespace UnityEditor.AI.Planner.Visualizer
             GUILayout.Label("Show Top Actions:");
             m_MaxChildrenNodes = EditorGUILayout.IntSlider(m_MaxChildrenNodes, 1, 16);
             GUILayout.FlexibleSpace();
-            if (m_PlanExecutionInfo != null)
+            if (m_PlanExecutor != null)
             {
                 EditorGUILayout.Space();
-                GUILayout.Label($"Max Plan Depth: {m_PlanExecutionInfo.MaxHorizonFromRoot}");
-                GUILayout.Label($"Plan Size: {m_PlanExecutionInfo.Size}");
+                GUILayout.Label($"Max Plan Depth: {m_PlanExecutor.MaxPlanDepthFromCurrentState()}");
+                GUILayout.Label($"Plan Size: {m_PlanExecutor.Plan.Size}");
             }
 
             EditorGUILayout.EndHorizontal();
 
-            if (m_Visualizer == null && m_PlanExecutionInfo == null)
+            if (m_Visualizer == null && m_PlanExecutor == null)
             {
-                // Early out if there are no graphs.
-                if (!EditorApplication.isPlaying)
-                {
-                    ShowMessage("You must be in play mode to visualize a plan");
-                    return;
-                }
-
-                ShowMessage("Select an GameObject that has a Planner component");
+                ShowMessage(EditorApplication.isPlaying ?
+                    "Select a GameObject that has a DecisionController component" :
+                    "You must be in play mode to visualize a plan");
             }
         }
 

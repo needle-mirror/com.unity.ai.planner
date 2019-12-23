@@ -1,7 +1,9 @@
 using System;
 using System.Text;
+using System.Collections.Generic;
 using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
@@ -24,18 +26,20 @@ namespace {{ domain_namespace }}
 
     public static class TraitArrayIndex<T> where T : struct, ITrait
     {
-        public static int Index = -1;
+        public static readonly int Index = -1;
+
+        static TraitArrayIndex()
+        {
+            var typeIndex = TypeManager.GetTypeIndex<T>();
+            {{- for trait in trait_list }}
+            {{ if for.index > 0 }}else {{ end }}if (typeIndex == TypeManager.GetTypeIndex<{{ trait.name }}>())
+                Index = {{ for.index }};
+            {{- end }}
+        }
     }
 
     public struct TraitBasedObject : ITraitBasedObject
     {
-        static TraitBasedObject()
-        {
-            {{- for trait in trait_list }}
-            TraitArrayIndex<{{trait.name}}>.Index = {{ for.index }};
-            {{- end }}
-        }
-
         public int Length => {{ num_traits }};
 
         public byte this[int i]
@@ -79,7 +83,7 @@ namespace {{ domain_namespace }}
         {{- end }}
 
         {{~ for trait in trait_list }}
-        static ComponentType s_{{trait.name}}Type = new ComponentType(typeof({{trait.name}}));
+        static readonly int s_{{trait.name}}TypeIndex = TypeManager.GetTypeIndex<{{trait.name}}>();
         {{- end }}
 
         public bool HasSameTraits(TraitBasedObject other)
@@ -112,16 +116,14 @@ namespace {{ domain_namespace }}
             {
                 var t = componentTypes[i];
                 {{~ for trait in trait_list }}
-                {{ if for.index != 0 }}else {{ end }}if (t == s_{{ trait.name }}Type)
+                {{ if for.index != 0 }}else {{ end }}if (t.TypeIndex == s_{{ trait.name }}TypeIndex)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && {{ trait.name }}Index != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && {{ trait.name }}Index == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ {{ trait.name }}Index == Unset)
                         return false;
-                } {{- end }}
-                else
-                {
-                    throw new ArgumentException($"Incorrect trait type used in domain object query: {t}");
                 }
+                {{- end }}
+                else
+                    throw new ArgumentException($"Incorrect trait type used in domain object query: {t}");
             }
 
             return true;
@@ -133,16 +135,14 @@ namespace {{ domain_namespace }}
             {
                 var t = componentTypes[i];
                 {{~ for trait in trait_list }}
-                {{ if for.index != 0 }}else {{ end }}if (t.TypeIndex == s_{{ trait.name }}Type.TypeIndex)
+                {{ if for.index != 0 }}else {{ end }}if (t.TypeIndex == s_{{ trait.name }}TypeIndex)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && {{ trait.name }}Index != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && {{ trait.name }}Index == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ {{ trait.name }}Index == Unset)
                         return false;
-                } {{- end }}
-                else
-                {
-                    throw new ArgumentException($"Incorrect trait type used in domain object query: {t}");
                 }
+                {{- end }}
+                else
+                    throw new ArgumentException($"Incorrect trait type used in domain object query: {t}");
             }
 
             return true;
@@ -158,7 +158,7 @@ namespace {{ domain_namespace }}
         public DynamicBuffer<{{trait.name}}> {{trait.name}}Buffer;
         {{- end }}
         {{~ for trait in trait_list }}
-        static ComponentType s_{{trait.name}}Type = new ComponentType(typeof({{trait.name}}));
+        static readonly int s_{{trait.name}}TypeIndex = TypeManager.GetTypeIndex<{{trait.name}}>();
         {{- end }}
 
         public StateData(JobComponentSystem system, Entity stateEntity, bool readWrite = false)
@@ -216,7 +216,7 @@ namespace {{ domain_namespace }}
             {
                 var t = types[i];
                 {{- for trait in trait_list }}
-                {{ if for.index != 0 }}else {{ end }}if (t == s_{{ trait.name }}Type)
+                {{ if for.index != 0 }}else {{ end }}if (t.TypeIndex == s_{{ trait.name }}TypeIndex)
                 {
                     {{ trait.name }}Buffer.Add(default);
                     traitBasedObject.{{ trait.name }}Index = (byte) ({{ trait.name }}Buffer.Length - 1);
@@ -598,20 +598,42 @@ namespace {{ domain_namespace }}
             if (!traitBasedObjectLHS.HasSameTraits(traitBasedObjectRHS))
                 return false;
             {{~ for trait in trait_list }}
-            if (traitBasedObjectLHS.{{ trait.name }}Index != TraitBasedObject.Unset &&
-                !{{ trait.name }}Buffer[traitBasedObjectLHS.{{ trait.name }}Index].AttributesEqual(rhsState.{{ trait.name }}Buffer[traitBasedObjectRHS.{{ trait.name }}Index]))
+                {{- if !trait.attributes.empty? }}
+            if (traitBasedObjectLHS.{{ trait.name }}Index != TraitBasedObject.Unset
+                && !{{ trait.name }}TraitAttributesEqual({{ trait.name }}Buffer[traitBasedObjectLHS.{{ trait.name }}Index], rhsState.{{ trait.name }}Buffer[traitBasedObjectRHS.{{ trait.name }}Index]))
                 return false;
-            {{- end }}
-
+                {{~ end }}
+            {{~ end }}
             return true;
         }
-
+        {{ for trait in trait_list }}
+        {{- if !trait.attributes.empty? }}
+        bool {{ trait.name }}TraitAttributesEqual({{ trait.name }} one, {{ trait.name }} two)
+        {
+        {{ for field in trait.attributes }}
+        {{- if for.index == 0 }}    return {{- else }} && {{ end ~}}
+            {{- if field.field_type | string.contains "NativeString" }}
+                    one.{{ field.field_name }}.Equals(two.{{ field.field_name }})
+            {{- else }}
+                    one.{{ field.field_name }} == two.{{ field.field_name }}
+            {{- end }}
+            {{- end }};
+        }
+        {{ end -}}
+        {{ end }}
         bool CheckRelationsAndQueueObjects(TraitBasedObject traitBasedObjectLHS, TraitBasedObject traitBasedObjectRHS, StateData rhsState, ObjectCorrespondence objectMap)
         {
+            {{- for trait in trait_list }}
+            {{- if !trait.relations.empty? }}
+            {{- $relations_exist = true }}
+            {{- end }}
+            {{- end }}
+            {{- if $relations_exist }}
             // edge walking - for relation properties
             ObjectId lhsRelationId;
             ObjectId rhsRelationId;
             ObjectId rhsAssignedId;
+            {{- end }}
             {{- for trait in trait_list }}
             {{- if !trait.relations.empty? }}
             if (traitBasedObjectLHS.{{ trait.name }}Index != TraitBasedObject.Unset)
@@ -647,15 +669,24 @@ namespace {{ domain_namespace }}
             var stateHashValue = 0;
 
             var objectIds = TraitBasedObjectIds;
-            foreach (var element in objectIds.AsNativeArray())
+            for (int i = 0; i < objectIds.Length; i++)
             {
+                var element = objectIds[i];
                 var value = element.GetHashCode();
                 stateHashValue = 3860031 + (stateHashValue + value) * 2779 + (stateHashValue * value * 2);
             }
             {{~ for trait in trait_list }}
-            foreach (var element in {{trait.name}}Buffer.AsNativeArray())
+            for (int i = 0; i < {{trait.name}}Buffer.Length; i++)
             {
-                var value = element.GetHashCode();
+                var element = {{trait.name}}Buffer[i];
+                var value = 397
+                {{- for attribute in trait.attributes }}
+                    {{- if (attribute.field_type | string.contains ".Enums.") }}
+                    ^ (int) element.{{ attribute.field_name }}
+                    {{- else }}
+                    ^ element.{{ attribute.field_name }}.GetHashCode()
+                    {{- end }}
+                {{- end }};
                 stateHashValue = 3860031 + (stateHashValue + value) * 2779 + (stateHashValue * value * 2);
             }
             {{- end }}
@@ -684,12 +715,6 @@ namespace {{ domain_namespace }}
             }
 
             return sb.ToString();
-        }
-
-        public struct TraitBasedObjectIndexPair
-        {
-            public TraitBasedObject TraitBasedObject;
-            public int Index;
         }
     }
 
@@ -764,14 +789,14 @@ namespace {{ domain_namespace }}
         }
     }
 
-    public class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>, IStateManagerInternal
+    [DisableAutoCreation]
+    public class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>
     {
-        EntityArchetype m_StateArchetype;
+        public ExclusiveEntityTransaction ExclusiveEntityTransaction;
+        public event Action Destroying;
 
-        public StateManager()
-        {
-            m_StateArchetype = default;
-        }
+        List<EntityCommandBuffer> m_EntityCommandBuffers;
+        EntityArchetype m_StateArchetype;
 
         protected override void OnCreate()
         {
@@ -779,11 +804,30 @@ namespace {{ domain_namespace }}
                 {{- for trait in trait_list }}
                 typeof({{trait.name}}){{ if for.index != for.length - 1 }},{{end}}
                 {{- end }});
+
+            BeginEntityExclusivity();
+            m_EntityCommandBuffers = new List<EntityCommandBuffer>();
+        }
+
+        protected override void OnDestroy()
+        {
+            Destroying?.Invoke();
+            EndEntityExclusivity();
+            base.OnDestroy();
+        }
+
+        public EntityCommandBuffer GetEntityCommandBuffer()
+        {
+            var ecb = new EntityCommandBuffer(Allocator.Persistent);
+            m_EntityCommandBuffers.Add(ecb);
+            return ecb;
         }
 
         public StateData CreateStateData()
         {
+            EndEntityExclusivity();
             var stateEntity = EntityManager.CreateEntity(m_StateArchetype);
+            BeginEntityExclusivity();
             return new StateData(this, stateEntity, true);
         }
 
@@ -794,7 +838,12 @@ namespace {{ domain_namespace }}
 
         public void DestroyState(StateEntityKey stateKey)
         {
-            EntityManager?.DestroyEntity(stateKey.Entity);
+            if (EntityManager != null && EntityManager.IsCreated)
+            {
+                EndEntityExclusivity();
+                EntityManager.DestroyEntity(stateKey.Entity);
+                BeginEntityExclusivity();
+            }
         }
 
         public StateDataContext GetStateDataContext()
@@ -809,18 +858,22 @@ namespace {{ domain_namespace }}
 
         public StateData CopyStateData(StateData stateData)
         {
+            EndEntityExclusivity();
             var copyStateEntity = EntityManager.Instantiate(stateData.StateEntity);
+            BeginEntityExclusivity();
             return new StateData(this, copyStateEntity, true);
         }
 
         public StateEntityKey CopyState(StateEntityKey stateKey)
         {
+            EndEntityExclusivity();
             var copyStateEntity = EntityManager.Instantiate(stateKey.Entity);
+            BeginEntityExclusivity();
             var stateData = GetStateData(stateKey);
             return new StateEntityKey { Entity = copyStateEntity, HashCode = stateData.GetHashCode()};
         }
 
-        protected override JobHandle OnUpdate(JobHandle inputDeps) => inputDeps;
+        protected override JobHandle OnUpdate(JobHandle inputDeps) => JobHandle.CombineDependencies(inputDeps, EntityManager.ExclusiveEntityTransactionDependency);
 
         public bool Equals(StateData x, StateData y)
         {
@@ -832,9 +885,51 @@ namespace {{ domain_namespace }}
             return obj.GetHashCode();
         }
 
-        public IStateData GetStateData(IStateKey stateKey, bool readWrite)
+        void BeginEntityExclusivity()
         {
-            return GetStateData((StateEntityKey)stateKey, readWrite);
+            ExclusiveEntityTransaction = EntityManager.BeginExclusiveEntityTransaction();
+        }
+
+        void EndEntityExclusivity()
+        {
+            EntityManager.EndExclusiveEntityTransaction();
+
+            foreach (var ecb in m_EntityCommandBuffers)
+            {
+                if (ecb.IsCreated)
+                    ecb.Dispose();
+            }
+            m_EntityCommandBuffers.Clear();
+        }
+    }
+
+    struct DestroyStatesJobScheduler : IDestroyStatesScheduler<StateEntityKey, StateData, StateDataContext, StateManager>
+    {
+        public StateManager StateManager { private get; set; }
+        public NativeQueue<StateEntityKey> StatesToDestroy { private get; set; }
+
+        public JobHandle Schedule(JobHandle inputDeps)
+        {
+            var entityManager = StateManager.EntityManager;
+            inputDeps = JobHandle.CombineDependencies(inputDeps, entityManager.ExclusiveEntityTransactionDependency);
+
+            var stateDataContext = StateManager.GetStateDataContext();
+            var ecb = StateManager.GetEntityCommandBuffer();
+            stateDataContext.EntityCommandBuffer = ecb.ToConcurrent();
+            var destroyStatesJobHandle = new DestroyStatesJob<StateEntityKey, StateData, StateDataContext>()
+            {
+                StateDataContext = stateDataContext,
+                StatesToDestroy = StatesToDestroy
+            }.Schedule(inputDeps);
+
+            var playbackECBJobHandle = new PlaybackSingleECBJob()
+            {
+                ExclusiveEntityTransaction = StateManager.ExclusiveEntityTransaction,
+                EntityCommandBuffer = ecb
+            }.Schedule(destroyStatesJobHandle);
+
+            entityManager.ExclusiveEntityTransactionDependency = playbackECBJobHandle;
+            return playbackECBJobHandle;
         }
     }
 }

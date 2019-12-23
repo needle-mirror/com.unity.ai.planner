@@ -41,10 +41,13 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             // Retrieve known ObjectId for a specific trait-based object data
             foreach (var objectData in traitBasedObjects)
             {
-                var objectKnownId = m_DomainDataSources.FirstOrDefault(k => k.Value == objectData);
-                if (!objectKnownId.Equals(default(KeyValuePair<TraitBasedObjectId, ITraitBasedObjectData>)))
+                foreach (var kvp in m_DomainDataSources)
                 {
-                    objectIdLookup[objectData] = objectKnownId.Key;
+                    if (kvp.Value == objectData)
+                    {
+                        objectIdLookup[objectData] = kvp.Key;
+                        break;
+                    }
                 }
             }
 
@@ -120,11 +123,13 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                     if (traitData.TryGetValue(fieldName, out string objectName) && objectName != null)
                     {
                         // Link to first trait-based object with this name
-                        var linkedObject = objectIdLookup.FirstOrDefault(o => objectName == o.Key.Name);
-
-                        if (!linkedObject.Equals(default(KeyValuePair<ITraitBasedObjectData, TraitBasedObjectId>)))
+                        foreach (var kvp in objectIdLookup)
                         {
-                            trait.SetField(fieldName, linkedObject.Value);
+                            if (kvp.Key.Name == objectName)
+                            {
+                                trait.SetField(fieldName, kvp.Value);
+                                break;
+                            }
                         }
                     }
                 }
@@ -138,14 +143,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                     if (value is UnityObject && !unityObject)
                         continue;
 
-                    if (value != null)
-                    {
-                        trait.SetField(fieldName, value);
-                    }
-                    else
-                    {
-                        trait.SetField(fieldName, field.DefaultValue?.GetValue(fieldType));
-                    }
+                    trait.SetField(fieldName, value ?? field.DefaultValue?.GetValue(fieldType));
                 }
             }
             return trait;

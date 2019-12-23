@@ -31,6 +31,7 @@ namespace Unity.AI.Planner.Jobs
         }
     }
 
+    [BurstCompile]
     struct GraphExpansionJob<TStateKey, TStateData, TStateDataContext, TActionKey> : IJobParallelForDefer
         where TStateKey : struct, IEquatable<TStateKey>
         where TStateData : struct

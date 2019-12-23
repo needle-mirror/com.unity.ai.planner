@@ -33,6 +33,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         int m_DefaultHeuristicUpper = 100;
 
         [SerializeField]
+        [Tooltip("Multiplicative factor ([0 -> 1]) for discounting future rewards")]
+        [Range(0, 1)]
         public float DiscountFactor = 0.95f;
 #pragma warning restore 0649
 

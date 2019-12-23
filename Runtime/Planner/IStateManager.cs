@@ -1,15 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Jobs;
 
 namespace Unity.AI.Planner
 {
     /// <summary>
-    /// A state manager
+    /// A state manager.
     /// </summary>
     /// <typeparam name="TStateKey">StateKey type</typeparam>
     /// <typeparam name="TStateData">StateData type</typeparam>
     /// <typeparam name="TStateDataContext">StateDataContext type</typeparam>
-    public interface IStateManager<TStateKey, TStateData, TStateDataContext> : IEqualityComparer<TStateData>
+    interface IStateManager<TStateKey, TStateData, TStateDataContext> : IEqualityComparer<TStateData>
         where TStateKey : struct, IEquatable<TStateKey>
         where TStateData : struct
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>

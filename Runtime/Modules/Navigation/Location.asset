@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4733c0880a5a0ce4f94cc97cb9b0049b, type: 3}
   m_Name: Location
   m_EditorClassIdentifier: 
+  m_Namespace: Unity.AI.Planner.DomainLanguage.TraitBased
   m_Fields:
   - m_UniqueId: 100
     m_Name: Transform

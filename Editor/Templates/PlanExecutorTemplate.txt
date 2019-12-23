@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using AI.Planner.Domains;
 using Unity.AI.Planner;
@@ -38,8 +39,26 @@ namespace {{ class_namespace }}
         }
     }
 
-    class {{ plan_name }}Executor : BasePlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ heuristic }}, TerminationEvaluator, StateManager, ActionKey>
+    class {{ plan_name }}Executor : BasePlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ heuristic }}, TerminationEvaluator, StateManager, ActionKey, DestroyStatesJobScheduler>
     {
+        static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
+        {
+            {{- for action in actions }}
+            { ActionScheduler.{{action.name}}Guid, nameof({{action.name}}) },
+            {{- end}}
+        };
+
+        public override string GetActionName(IActionKey actionKey)
+        {
+            s_ActionGuidToNameLookup.TryGetValue(((IActionKeyWithGuid)actionKey).ActionGuid, out var name);
+            return name;
+        }
+
+        protected override void RegisterOnDestroyCallback()
+        {
+            m_StateManager.Destroying += () => PlannerScheduler.CurrentJobHandle.Complete();
+        }
+
         public override void Act(DecisionController controller)
         {
             var actionKey = GetBestAction();
@@ -49,7 +68,7 @@ namespace {{ class_namespace }}
             switch (actionKey.ActionGuid)
             {
             {{- for action in actions }}
-                case var actionGuid when actionGuid == {{action.name}}.ActionGuid:
+                case var actionGuid when actionGuid == ActionScheduler.{{action.name}}Guid:
                     actionName = nameof({{action.name}});
                     break;
             {{- end}}
@@ -68,6 +87,10 @@ namespace {{ class_namespace }}
 
                 int parameterIndex = -1;
                 var traitBasedObjectName = split[0];
+
+                if (string.IsNullOrEmpty(traitBasedObjectName))
+                    throw new ArgumentException($"An argument to the '{actionName}' callback on '{controller.name}' DecisionController is invalid");
+
                 switch (actionName)
                 {
                 {{- for action in actions }}
@@ -84,7 +107,7 @@ namespace {{ class_namespace }}
                     {
                 {{- for trait in traits }}
                         case nameof({{trait.name}}):
-                            var trait{{trait.name}} = stateData.GetTraitOnObjectAtIndex<{{ trait.name }}>(traitBasedObjectIndex);
+                            var trait{{trait.name}} = stateData.GetTraitOnObjectAtIndex<{{ trait.fully_qualified_name }}>(traitBasedObjectIndex);
                             arguments[i] = split.Length == 3 ? trait{{trait.name}}.GetField(split[2]) : trait{{trait.name}};
                             break;
                 {{- end}}

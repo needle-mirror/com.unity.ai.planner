@@ -8,6 +8,28 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
     interface IPlanExecutor
     {
+        bool IsIdle { get; }
+
+        /// <summary>
+        /// The action key of the current action in the plan.
+        /// </summary>
+        IStateKey CurrentStateKey { get; }
+
+        /// <summary>
+        /// The action key of the current action in the plan.
+        /// </summary>
+        IActionKey CurrentActionKey { get; }
+
+        /// <summary>
+        /// The scheduler for the planning jobs.
+        /// </summary>
+        IPlannerScheduler PlannerScheduler { get; }
+
+        /// <summary>
+        /// The plan to be executed.
+        /// </summary>
+        IPlan Plan { get; }
+
         /// <summary>
         /// Initializes the plan executor.
         /// </summary>
@@ -35,12 +57,6 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         void Act(DecisionController controller);
 
         /// <summary>
-        /// Updates the state of the executor and the root state of the plan.
-        /// </summary>
-        /// <param name="traitBasedObjects">The set of objects used to create a planning state.</param>
-        void UpdateState(IEnumerable<ITraitBasedObjectData> traitBasedObjects);
-
-        /// <summary>
         /// Progresses the state of the plan.
         /// </summary>
         void AdvancePlanWithPredictedState();
@@ -52,20 +68,30 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         void AdvancePlanWithNewState(IEnumerable<ITraitBasedObjectData> traitBasedObjects);
 
         /// <summary>
-        /// The action key of the current action in the plan.
-        /// </summary>
-        IActionKey CurrentActionKey { get; }
-
-        /// <summary>
         /// Returns the state data for the current state of the plan.
         /// </summary>
         /// <param name="readWrite">Setting for whether or not the state data should be readwrite or readonly.</param>
         /// <returns>Returns the state data for the current state of the plan.</returns>
-        IStateData GetCurrentState(bool readWrite = false);
+        IStateData GetCurrentStateData(bool readWrite = false);
 
         /// <summary>
-        /// The scheduler for the planning jobs.
+        /// Returns the name of an action given the action key.
         /// </summary>
-        IPlannerScheduler PlannerScheduler { get; }
+        /// <param name="actionKey">The key of the action.</param>
+        /// <returns>Returns the name of an action given the action key.</returns>
+        string GetActionName(IActionKey actionKey);
+
+        /// <summary>
+        /// Returns state data string for a given state key.
+        /// </summary>
+        /// <param name="stateKey">The key for the state.</param>
+        /// <returns>Returns the state data string for a given state key.</returns>
+        string GetStateString(IStateKey stateKey);
+
+        /// <summary>
+        /// Returns the longest path (in actions taken) within the plan graph starting from the current state.
+        /// </summary>
+        /// <returns>Returns the longest path (in actions taken) within the plan graph starting from the current state.</returns>
+        int MaxPlanDepthFromCurrentState();
     }
 }

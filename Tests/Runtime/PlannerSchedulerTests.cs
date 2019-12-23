@@ -1,5 +1,7 @@
 ﻿using System;
 using NUnit.Framework;
+using Unity.AI.Planner.Jobs;
+using Unity.Collections;
 using Unity.Jobs;
 
 namespace Unity.AI.Planner.Tests.Integration
@@ -8,12 +10,22 @@ namespace Unity.AI.Planner.Tests.Integration
     [TestFixture]
     class PlannerSchedulerTests
     {
+        struct DestroyIntsScheduler : IDestroyStatesScheduler<int, int, TestStateDataContext, TestStateManager>
+        {
+            public TestStateManager StateManager { get; set; }
+            public NativeQueue<int> StatesToDestroy { get; set; }
+            public JobHandle Schedule(JobHandle inputDeps)
+            {
+                return inputDeps;
+            }
+        }
+
         [Test]
         public void TestTenIterations()
         {
             var rootState = 0;
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, DefaultHeuristic, DefaultTerminalStateEvaluator>();
-            scheduler.Initialize(rootState, new TestStateManager(), new CountToActionScheduler(), new DefaultHeuristic(), new DefaultTerminalStateEvaluator());
+            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, DefaultHeuristic, DefaultTerminalStateEvaluator, DestroyIntsScheduler>();
+            scheduler.Initialize(rootState, new TestStateManager(), new DefaultHeuristic(), new DefaultTerminalStateEvaluator());
             JobHandle currentJobHandle = default;
 
             for (int i = 0; i < 10; i++)
@@ -31,20 +43,20 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             const int k_RootState = 0;
             const int k_Goal = 100;
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToHeuristic, CountToTerminationEvaluator>();
-            scheduler.Initialize(k_RootState, new TestStateManager(), new CountToActionScheduler(), new CountToHeuristic { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
+            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToHeuristic, CountToTerminationEvaluator, DestroyIntsScheduler>();
+            scheduler.Initialize(k_RootState, new TestStateManager(), new CountToHeuristic { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
 
-            scheduler.m_SearchContext.PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootInfo);
+            scheduler.SearchContext.PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootInfo);
             while (!rootInfo.SubgraphComplete)
             {
                 var currentJobHandle = scheduler.Schedule(default);
                 currentJobHandle.Complete();
 
-                scheduler.m_SearchContext.PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out rootInfo);
+                scheduler.SearchContext.PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out rootInfo);
             }
 
-            var numStates = scheduler.m_SearchContext.PolicyGraph.StateInfoLookup.Length;
-            var numActions = scheduler.m_SearchContext.PolicyGraph.ActionInfoLookup.Length;
+            var numStates = scheduler.SearchContext.PolicyGraph.StateInfoLookup.Length;
+            var numActions = scheduler.SearchContext.PolicyGraph.ActionInfoLookup.Length;
             scheduler.Dispose();
 
             Assert.IsTrue(rootInfo.SubgraphComplete);

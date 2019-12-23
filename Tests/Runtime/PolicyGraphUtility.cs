@@ -138,11 +138,13 @@ namespace Unity.AI.Planner.Tests.Performance
         {
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var stateInfoLookup = policyGraph.StateInfoLookup;
-            var stateKeyArray = stateInfoLookup.GetKeyArray(Allocator.TempJob);
-            foreach (var stateKey in stateKeyArray)
+            using (var stateKeyArray = stateInfoLookup.GetKeyArray(Allocator.TempJob))
             {
-                if (policyGraph.ActionLookup.TryGetFirstValue(stateKey, out _, out _))
-                    builder.WithState(stateKey).AddAction(actionKey).AddResultingState(stateKey);
+                foreach (var stateKey in stateKeyArray)
+                {
+                    if (policyGraph.ActionLookup.TryGetFirstValue(stateKey, out _, out _))
+                        builder.WithState(stateKey).AddAction(actionKey).AddResultingState(stateKey);
+                }
             }
         }
 
@@ -150,11 +152,13 @@ namespace Unity.AI.Planner.Tests.Performance
         {
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var stateInfoLookup = policyGraph.StateInfoLookup;
-            var stateKeyArray = stateInfoLookup.GetKeyArray(Allocator.TempJob);
-            foreach (var stateKey in stateKeyArray)
+            using (var stateKeyArray = stateInfoLookup.GetKeyArray(Allocator.TempJob))
             {
-                if (policyGraph.ActionLookup.TryGetFirstValue(stateKey, out _, out _))
-                    builder.WithState(stateKey).AddAction(actionKey).AddResultingState(rootKey);
+                foreach (var stateKey in stateKeyArray)
+                {
+                    if (policyGraph.ActionLookup.TryGetFirstValue(stateKey, out _, out _))
+                        builder.WithState(stateKey).AddAction(actionKey).AddResultingState(rootKey);
+                }
             }
         }
     }

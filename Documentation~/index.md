@@ -16,9 +16,10 @@ To create an AI agent using the AI Planner, see the following guides:
 * [Creating a plan definition](PlanDefinition.md)
 * [Configuring the scene](ConfigureScene.md)
 
-During execution, it is also useful to view an agent's plan through the [plan visualizer](PlanVisualizer.md).
-
-If you need to extend the planner for your particular domain, then please take a look at [this guide](CustomPlannerExtensions.md) or one of the samples.
+For debugging and advanced usage of the AI Planner, see 
+* [Visualizing a plan](PlanVisualizer.md)
+* [Extending the planner](CustomPlannerExtensions.md)
+* [Improving performance](PlannerPerformanceTips.md)
 
 For sample projects, see: [AI Planner Samples](https://github.com/Unity-Technologies/ai-planner-samples) 
 

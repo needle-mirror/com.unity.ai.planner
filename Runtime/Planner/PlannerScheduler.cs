@@ -7,38 +7,30 @@ using UnityEngine.AI.Planner;
 
 namespace Unity.AI.Planner
 {
-    /// <summary>
-    /// Schedules all planner jobs for one iteration of the planner
-    /// </summary>
-    /// <typeparam name="TStateKey">StateKey type</typeparam>
-    /// <typeparam name="TActionKey">ActionKey type</typeparam>
-    /// <typeparam name="TStateManager">StateManager type</typeparam>
-    /// <typeparam name="TStateData">StateData type</typeparam>
-    /// <typeparam name="TStateDataContext">StateDataContext type</typeparam>
-    /// <typeparam name="TActionScheduler">ActionScheduler type</typeparam>
-    /// <typeparam name="THeuristic">Heuristic type</typeparam>
-    /// <typeparam name="TTerminationEvaluator">TerminationEvaluator type</typeparam>
-    class PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, THeuristic, TTerminationEvaluator> : IPlannerScheduler, IDisposable
+    class PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, THeuristic, TTerminationEvaluator, TDestroyStatesScheduler> : IPlannerScheduler, IDisposable
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
         where TStateManager : IStateManager<TStateKey, TStateData, TStateDataContext>
         where TStateData : struct
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
-        where TActionScheduler : IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey, StateTransitionInfo>
+        where TActionScheduler : struct, IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey>
         where THeuristic : struct, IHeuristic<TStateData>
         where TTerminationEvaluator : struct, ITerminationEvaluator<TStateData>
+        where TDestroyStatesScheduler : struct, IDestroyStatesScheduler<TStateKey, TStateData, TStateDataContext, TStateManager>
     {
         /// <inheritdoc />
         public PlannerSearchSettings SearchSettings { get; set; }
 
-        internal SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> m_SearchContext;
+        /// <inheritdoc />
+        public JobHandle CurrentJobHandle { get; private set; }
+
+        internal SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> SearchContext;
 
         // Configuration data
         TStateManager m_StateManager;
-        TActionScheduler m_ActionScheduler;
         THeuristic m_Heuristic;
         TTerminationEvaluator m_TerminationEvaluator;
-        float k_DiscountFactor;
+        float m_DiscountFactor;
 
         // Containers for jobs
         NativeMultiHashMap<TStateKey, int> m_AllSelectedStates;
@@ -55,32 +47,31 @@ namespace Unity.AI.Planner
         NativeMultiHashMap<int, TStateKey> m_SelectedStatesByHorizon;
         NativeHashMap<TStateKey, byte> m_PredecessorStates;
         NativeList<TStateKey> m_HorizonStateList;
+        NativeQueue<TStateKey>.ParallelWriter m_NewStateQueueParallelWriter;
+        NativeQueue<TStateKey>.ParallelWriter m_StatesToDestroyParallelWriter;
 
         // Data for job scheduling
         int m_MaxDepth;
-        int m_GraphSize;
-        int m_FramesSinceLastIteration;
+        int m_FramesSinceLastUpdate;
 
         /// <summary>
         /// Initialize a planner scheduler instance
         /// </summary>
         /// <param name="rootStateKey">Key for the root state</param>
         /// <param name="stateManager">StateManager instance</param>
-        /// <param name="actionScheduler">ActionScheduler instance</param>
         /// <param name="heuristic">Heuristic</param>
         /// <param name="terminationEvaluator">State termination evaluator</param>
         /// <param name="stateCapacity">Initial state capacity</param>
         /// <param name="actionCapacity">Initial action capacity</param>
-        /// <param name="discountFactor">Multiplicative factor ([0 -> 1]) for discount future rewards.</param>
-        public void Initialize(TStateKey rootStateKey, TStateManager stateManager, TActionScheduler actionScheduler, THeuristic heuristic = default,
+        /// <param name="discountFactor">Multiplicative factor ([0 -> 1]) for discounting future rewards.</param>
+        public void Initialize(TStateKey rootStateKey, TStateManager stateManager, THeuristic heuristic = default,
             TTerminationEvaluator terminationEvaluator = default, int stateCapacity = 1, int actionCapacity = 1, float discountFactor = 0.95f)
         {
-            m_SearchContext = new SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(rootStateKey, stateManager, stateCapacity, actionCapacity);
+            SearchContext = new SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(rootStateKey, stateManager, stateCapacity, actionCapacity);
             m_StateManager = stateManager;
-            m_ActionScheduler = actionScheduler;
             m_Heuristic = heuristic;
             m_TerminationEvaluator = terminationEvaluator;
-            k_DiscountFactor = discountFactor;
+            m_DiscountFactor = discountFactor;
 
             m_AllSelectedStates = new NativeMultiHashMap<TStateKey, int>(1, Allocator.Persistent);
             m_SelectedUnexpandedStates = new NativeHashMap<TStateKey,byte>(1, Allocator.Persistent);
@@ -93,8 +84,10 @@ namespace Unity.AI.Planner
             m_CreatedStateInfoList = new NativeList<StateTransitionInfoPair<TStateKey, TActionKey, StateTransitionInfo>>(Allocator.Persistent);
 
             m_NewStateQueue = new NativeQueue<TStateKey>(Allocator.Persistent);
+            m_NewStateQueueParallelWriter = m_NewStateQueue.AsParallelWriter();
             m_NewStateList = new NativeList<TStateKey>(Allocator.Persistent);
             m_StatesToDestroy = new NativeQueue<TStateKey>(Allocator.Persistent);
+            m_StatesToDestroyParallelWriter = m_StatesToDestroy.AsParallelWriter();
 
             m_SelectedStatesByHorizon = new NativeMultiHashMap<int, TStateKey>(1, Allocator.Persistent);
             m_PredecessorStates = new NativeHashMap<TStateKey, byte>(1, Allocator.Persistent);
@@ -105,57 +98,76 @@ namespace Unity.AI.Planner
         /// Schedule jobs for each of the planner stages
         /// </summary>
         /// <param name="inputDeps">Any job dependencies</param>
+        /// <param name="forceComplete">Option to force the completion of the previously scheduled planning jobs.</param>
         /// <returns>JobHandle for the scheduled jobs</returns>
-        public JobHandle Schedule(JobHandle inputDeps)
+        public JobHandle Schedule(JobHandle inputDeps, bool forceComplete = false)
         {
+            if (!CurrentJobHandle.IsCompleted && !forceComplete)
+                return inputDeps;
+
+            CurrentJobHandle.Complete();
+
             if (SearchSettings == null)
-                return ScheduleSearchJobs(inputDeps);
-
-            m_FramesSinceLastIteration++;
-
-            if (SearchSettings.CapPlanSize && m_SearchContext.PolicyGraph.Size > SearchSettings.MaxStatesInPlan)
-                return default;
-
-            if (SearchSettings.StopPlanningWhenToleranceAchieved && m_SearchContext.RootsConverged(SearchSettings.RootPolicyValueTolerance))
-                return default;
-
-            if (SearchSettings.UseCustomSearchFrequency && m_FramesSinceLastIteration < SearchSettings.FramesPerSearchIteration)
-                return default;
-
-            m_FramesSinceLastIteration = 0;
-            return ScheduleSearchJobs(inputDeps, SearchSettings.StateExpansionBudgetPerIteration, SearchSettings.GraphSelectionJobMode, SearchSettings.GraphBackpropagationJobMode);
-        }
-
-        JobHandle ScheduleSearchJobs(JobHandle inputDeps, int budget = 1, SelectionJobMode selectionJobMode = SelectionJobMode.Sequential, BackpropagationJobMode backpropagationJobMode = BackpropagationJobMode.Sequential)
-        {
-            // todo - better disposal of unneeded state entities
-            while (m_StatesToDestroy.TryDequeue(out var stateKey))
             {
-                m_StateManager.DestroyState(stateKey);
+                CurrentJobHandle = ScheduleSingleIteration(inputDeps);
+                return CurrentJobHandle;
             }
 
-            // todo - other conditions under which not to plan (graph size, convergence to a tolerance, frequency?)
-            if (budget <= 0 || m_SearchContext.PolicyGraph.StateInfoLookup[m_SearchContext.RootStateKey].SubgraphComplete)
-                return default;
+            m_FramesSinceLastUpdate++;
+            if ((SearchSettings.CapPlanSize && SearchContext.PolicyGraph.Size > SearchSettings.MaxStatesInPlan) ||
+                (SearchSettings.StopPlanningWhenToleranceAchieved && SearchContext.RootsConverged(SearchSettings.RootPolicyValueTolerance)) ||
+                (SearchSettings.UseCustomSearchFrequency && m_FramesSinceLastUpdate < SearchSettings.FramesPerSearchUpdate))
+            {
+                CurrentJobHandle = inputDeps;
+                return CurrentJobHandle;
+            }
 
-            ClearContainers();
+            CurrentJobHandle = ScheduleAllIterations(inputDeps);
+            return CurrentJobHandle;
+        }
 
-            if (backpropagationJobMode == BackpropagationJobMode.Parallel || selectionJobMode == SelectionJobMode.Parallel)
+        JobHandle ScheduleAllIterations(JobHandle inputDeps)
+        {
+            m_FramesSinceLastUpdate = 0;
+
+            if (SearchSettings.GraphSelectionJobMode == SelectionJobMode.Parallel ||
+                SearchSettings.GraphBackpropagationJobMode == BackpropagationJobMode.Parallel)
             {
                 // Find upper bound on number of selection and backpropagation iterations
                 m_MaxDepth = 0;
-                m_GraphSize = m_SearchContext.PolicyGraph.StateInfoLookup.Length;
-                using (var depths = m_SearchContext.StateDepthLookup.GetValueArray(Allocator.Temp))
+                using (var depths = SearchContext.StateDepthLookup.GetValueArray(Allocator.Temp))
                 {
                     for (int i = 0; i < depths.Length; i++)
+                    {
                         m_MaxDepth = math.max(m_MaxDepth, depths[i]);
+                    }
                 }
             }
 
+            var jobHandle = inputDeps;
+            for (int scheduleIteration = 0; scheduleIteration < SearchSettings.SearchIterationsPerUpdate; scheduleIteration++)
+            {
+                jobHandle = ScheduleSingleIteration(jobHandle,
+                    scheduleIteration,
+                    SearchSettings.StateExpansionBudgetPerIteration,
+                    SearchSettings.GraphSelectionJobMode,
+                    SearchSettings.GraphBackpropagationJobMode);
+            }
+
+            return jobHandle;
+        }
+
+        JobHandle ScheduleSingleIteration(JobHandle inputDeps, int scheduleIteration = 0, int budget = 1, SelectionJobMode selectionJobMode = SelectionJobMode.Sequential, BackpropagationJobMode backpropagationJobMode = BackpropagationJobMode.Sequential)
+        {
+            // todo - other conditions under which not to plan (graph size, convergence to a tolerance, frequency?)
+            if (budget <= 0 || SearchContext.PolicyGraph.StateInfoLookup[SearchContext.RootStateKey].SubgraphComplete)
+                return inputDeps;
+
+            var clearContainersJobHandle = ScheduleClearContainers(inputDeps);
 
             var selectionJobHandle = selectionJobMode == SelectionJobMode.Sequential ?
-                ScheduleSelectionSequential(inputDeps, budget) :
-                ScheduleSelectionParallel(inputDeps, budget);
+                ScheduleSelectionSequential(clearContainersJobHandle, budget) :
+                ScheduleSelectionParallel(clearContainersJobHandle, scheduleIteration, budget);
 
             var actionsJobHandle = ScheduleActionsJobs(selectionJobHandle);
             var graphExpansionJobHandle = ScheduleExpansionJob(actionsJobHandle);
@@ -163,20 +175,20 @@ namespace Unity.AI.Planner
 
             var backupJobHandle = backpropagationJobMode == BackpropagationJobMode.Sequential ?
                 ScheduleBackpropagationSequential(evaluateNewStatesJobHandle) :
-                ScheduleBackpropagationParallel(evaluateNewStatesJobHandle);
+                ScheduleBackpropagationParallel(evaluateNewStatesJobHandle,scheduleIteration);
 
             return backupJobHandle;
         }
 
         JobHandle ScheduleSelectionSequential(JobHandle inputDeps, int budget)
         {
-            var policyGraph = m_SearchContext.PolicyGraph;
+            var policyGraph = SearchContext.PolicyGraph;
 
             var jobHandle = new SelectionJob<TStateKey, TActionKey>()
             {
                 SearchBudget = budget,
-                RootStateKey = m_SearchContext.RootStateKey,
-                StateDepthLookup = m_SearchContext.StateDepthLookup,
+                RootStateKey = SearchContext.RootStateKey,
+                StateDepthLookup = SearchContext.StateDepthLookup,
                 StateInfoLookup = policyGraph.StateInfoLookup,
                 ActionLookup = policyGraph.ActionLookup,
                 ActionInfoLookup = policyGraph.ActionInfoLookup,
@@ -190,26 +202,29 @@ namespace Unity.AI.Planner
             return jobHandle;
         }
 
-        JobHandle ScheduleSelectionParallel(JobHandle inputDeps, int budget)
+        JobHandle ScheduleSelectionParallel(JobHandle inputDeps, int scheduleIteration, int budget)
         {
             // Setup input containers
-            m_SelectionInputStates.Add(m_SearchContext.RootStateKey);
-            m_SelectionInputBudgets.Add(budget);
+            var jobHandle = new SetupParallelSelectionJob<TStateKey>
+            {
+                RootStateKey = SearchContext.RootStateKey,
+                Budget = budget,
+                StateInfoLookup = SearchContext.PolicyGraph.StateInfoLookup,
 
-            // Resize container to avoid full hash map
-            int size = math.min(budget, m_SearchContext.PolicyGraph.StateInfoLookup.Length);
-            m_SelectionOutputStateBudgets.Capacity = math.max(m_SelectionOutputStateBudgets.Capacity, size);
-            m_SelectedUnexpandedStates.Capacity = math.max(m_SelectedUnexpandedStates.Capacity, size);
-            m_AllSelectedStates.Capacity = math.max(m_AllSelectedStates.Capacity, size);
+                SelectionInputBudgets = m_SelectionInputBudgets,
+                SelectionInputStates = m_SelectionInputStates,
+                OutputStateBudgets = m_SelectionOutputStateBudgets,
+                SelectedUnexpandedStates = m_SelectedUnexpandedStates,
+                AllSelectedStates = m_AllSelectedStates,
+            }.Schedule(inputDeps);
 
-            var jobHandle = inputDeps;
-            var policyGraph = m_SearchContext.PolicyGraph;
-            for (int iteration = 0; iteration <= m_MaxDepth; iteration++)
+            var policyGraph = SearchContext.PolicyGraph;
+            for (int iteration = 0; iteration <= m_MaxDepth + scheduleIteration; iteration++)
             {
                 // Selection job
                 jobHandle = new ParallelSelectionJob<TStateKey, TActionKey>
                 {
-                    StateDepthLookup = m_SearchContext.StateDepthLookup,
+                    StateDepthLookup = SearchContext.StateDepthLookup,
                     StateInfoLookup = policyGraph.StateInfoLookup,
                     ActionInfoLookup = policyGraph.ActionInfoLookup,
                     ActionLookup = policyGraph.ActionLookup,
@@ -245,39 +260,43 @@ namespace Unity.AI.Planner
 
         JobHandle ScheduleActionsJobs(JobHandle inputDeps)
         {
-            // FIXME: Currently DOTS requires a JobComponentSystem in order to get buffers off of, so unfortunately we
-            // can't use a struct for this part yet; The goal is for this scheduler code to remain agnostic to implementation
-            m_ActionScheduler.UnexpandedStates = m_SelectedUnexpandedStatesList;
-            m_ActionScheduler.CreatedStateInfo = m_CreatedStateInfoQueue;
-            m_ActionScheduler.StateManager = m_StateManager;
-            return m_ActionScheduler.Schedule(inputDeps);
+            var actionScheduler = default(TActionScheduler);
+            actionScheduler.UnexpandedStates = m_SelectedUnexpandedStatesList;
+            actionScheduler.CreatedStateInfo = m_CreatedStateInfoQueue;
+            actionScheduler.StateManager = m_StateManager;
+            return actionScheduler.Schedule(inputDeps);
         }
 
         JobHandle ScheduleExpansionJob(JobHandle actionsJobHandle)
         {
             var prepareForExpansionJobHandle = new PrepareForExpansionJob<TStateKey, TActionKey>
             {
-                PolicyGraph = m_SearchContext.PolicyGraph,
+                PolicyGraph = SearchContext.PolicyGraph,
                 InputStateExpansionInfo = m_CreatedStateInfoQueue,
                 OutputStateExpansionInfo = m_CreatedStateInfoList,
-                BinnedStateKeys = m_SearchContext.BinnedStateKeyLookup,
+                BinnedStateKeys = SearchContext.BinnedStateKeyLookup,
             }.Schedule(actionsJobHandle);
 
-            var policyGraph = m_SearchContext.PolicyGraph;
-            return new GraphExpansionJob<TStateKey, TStateData, TStateDataContext, TActionKey>
+            var policyGraph = SearchContext.PolicyGraph;
+            var graphExpansionJobHandle = new GraphExpansionJob<TStateKey, TStateData, TStateDataContext, TActionKey>
             {
                 NewStateTransitionInfoPairs = m_CreatedStateInfoList.AsDeferredJobArray(),
                 StateDataContext = m_StateManager.GetStateDataContext(),
 
                 ActionLookup = policyGraph.ActionLookup.AsParallelWriter(),
                 ActionInfoLookup = policyGraph.ActionInfoLookup.AsParallelWriter(),
-                NewStates = m_NewStateQueue.AsParallelWriter(),
+                NewStates = m_NewStateQueueParallelWriter,
                 StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup.AsParallelWriter(),
                 PredecessorGraph = policyGraph.PredecessorGraph.AsParallelWriter(),
-                BinnedStateKeys = m_SearchContext.BinnedStateKeyLookup,
+                BinnedStateKeys = SearchContext.BinnedStateKeyLookup,
                 ResultingStateLookup = policyGraph.ResultingStateLookup.AsParallelWriter(),
-                StatesToDestroy = m_StatesToDestroy.AsParallelWriter(),
+                StatesToDestroy = m_StatesToDestroyParallelWriter,
             }.Schedule(m_CreatedStateInfoList, 0, prepareForExpansionJobHandle);
+
+            var destroyStatesScheduler = default(TDestroyStatesScheduler);
+            destroyStatesScheduler.StateManager = m_StateManager;
+            destroyStatesScheduler.StatesToDestroy = m_StatesToDestroy;
+            return destroyStatesScheduler.Schedule(graphExpansionJobHandle);
         }
 
         JobHandle ScheduleEvaluateNewStatesJob(JobHandle graphExpansionJob)
@@ -295,8 +314,8 @@ namespace Unity.AI.Planner
                 Heuristic = m_Heuristic,
                 TerminationEvaluator = m_TerminationEvaluator,
 
-                StateInfoLookup = m_SearchContext.PolicyGraph.StateInfoLookup.AsParallelWriter(),
-                BinnedStateKeys = m_SearchContext.BinnedStateKeyLookup.AsParallelWriter(),
+                StateInfoLookup = SearchContext.PolicyGraph.StateInfoLookup.AsParallelWriter(),
+                BinnedStateKeys = SearchContext.BinnedStateKeyLookup.AsParallelWriter(),
             }.Schedule(m_NewStateList, 0, newStateQueueToListJobHandle);
         }
 
@@ -304,32 +323,29 @@ namespace Unity.AI.Planner
         {
             return new BackpropagationJob<TStateKey, TActionKey>
             {
-                DepthMap = m_SearchContext.StateDepthLookup,
-                PolicyGraph = m_SearchContext.PolicyGraph,
+                DepthMap = SearchContext.StateDepthLookup,
+                PolicyGraph = SearchContext.PolicyGraph,
                 SelectedStates = m_AllSelectedStates,
-                DiscountFactor = k_DiscountFactor,
+                DiscountFactor = m_DiscountFactor,
             }.Schedule(evaluateNewStatesJobHandle);
         }
 
-        JobHandle ScheduleBackpropagationParallel(JobHandle evaluateNewStatesJobHandle)
+        JobHandle ScheduleBackpropagationParallel(JobHandle evaluateNewStatesJobHandle, int scheduleIteration)
         {
-            var jobHandle = evaluateNewStatesJobHandle;
-            var policyGraph = m_SearchContext.PolicyGraph;
-
-            // Resize containers
-            m_SelectedStatesByHorizon.Capacity = math.max(m_SelectedStatesByHorizon.Capacity, m_MaxDepth + 1);
-            m_PredecessorStates.Capacity = math.max(m_PredecessorStates.Capacity, m_GraphSize);
-            m_HorizonStateList.Capacity = math.max(m_HorizonStateList.Capacity, m_GraphSize);
-
-            jobHandle = new UpdateDepthMapJob<TStateKey>
+            var jobHandle = new UpdateDepthMapAndResizeContainersJob<TStateKey>
             {
                 SelectedStates = m_AllSelectedStates,
-                DepthMap = m_SearchContext.StateDepthLookup,
+                MaxDepth = m_MaxDepth + scheduleIteration,
+
+                DepthMap = SearchContext.StateDepthLookup,
                 SelectedStatesByHorizon = m_SelectedStatesByHorizon,
-            }.Schedule(jobHandle);
+                PredecessorStates = m_PredecessorStates,
+                HorizonStateList = m_HorizonStateList,
+            }.Schedule(evaluateNewStatesJobHandle);
 
             // Schedule maxDepth iterations of backpropagation
-            for (int horizon = m_MaxDepth + 1; horizon >= 0; horizon--)
+            var policyGraph = SearchContext.PolicyGraph;
+            for (int horizon = m_MaxDepth + scheduleIteration + 1; horizon >= 0; horizon--)
             {
                 // Prepare info
                 jobHandle = new PrepareBackpropagationHorizon<TStateKey>
@@ -345,7 +361,7 @@ namespace Unity.AI.Planner
                 jobHandle = new ParallelBackpropagationJob<TStateKey, TActionKey>
                 {
                     // Params
-                    DiscountFactor = k_DiscountFactor,
+                    DiscountFactor = m_DiscountFactor,
 
                     // Policy graph info
                     ActionLookup = policyGraph.ActionLookup,
@@ -373,22 +389,22 @@ namespace Unity.AI.Planner
             return jobHandle;
         }
 
-        void ClearContainers()
+        JobHandle ScheduleClearContainers(JobHandle inputDeps)
         {
-            m_AllSelectedStates.Clear();
-            m_SelectedUnexpandedStates.Clear();
-            m_SelectedUnexpandedStatesList.Clear();
-            m_SelectionInputStates.Clear();
-            m_SelectionInputBudgets.Clear();
-            m_SelectionOutputStateBudgets.Clear();
-            m_CreatedStateInfoQueue.Clear();
-            m_CreatedStateInfoList.Clear();
-            m_NewStateQueue.Clear();
-            m_NewStateList.Clear();
-            m_StatesToDestroy.Clear();
-            m_SelectedStatesByHorizon.Clear();
-            m_PredecessorStates.Clear();
-            m_HorizonStateList.Clear();
+            return new ClearContainersJob
+            {
+                AllSelectedStates = m_AllSelectedStates,
+                SelectedUnexpandedStates = m_SelectedUnexpandedStates,
+                SelectedUnexpandedStatesList = m_SelectedUnexpandedStatesList,
+                SelectionInputStates = m_SelectionInputStates,
+                SelectionInputBudgets = m_SelectionInputBudgets,
+                SelectionOutputStateBudgets = m_SelectionOutputStateBudgets,
+                CreatedStateInfoList = m_CreatedStateInfoList,
+                NewStateList = m_NewStateList,
+                SelectedStatesByHorizon = m_SelectedStatesByHorizon,
+                PredecessorStates = m_PredecessorStates,
+                HorizonStateList = m_HorizonStateList,
+            }.Schedule(inputDeps);
         }
 
         /// <summary>
@@ -396,8 +412,9 @@ namespace Unity.AI.Planner
         /// </summary>
         public void Dispose()
         {
-            m_SearchContext.Dispose();
+            CurrentJobHandle.Complete();
 
+            SearchContext.Dispose();
             m_AllSelectedStates.Dispose();
             m_SelectedUnexpandedStates.Dispose();
             m_SelectedUnexpandedStatesList.Dispose();
@@ -412,6 +429,36 @@ namespace Unity.AI.Planner
             m_SelectedStatesByHorizon.Dispose();
             m_PredecessorStates.Dispose();
             m_HorizonStateList.Dispose();
+        }
+
+        struct ClearContainersJob : IJob
+        {
+            public NativeMultiHashMap<TStateKey, int> AllSelectedStates;
+            public NativeHashMap<TStateKey, byte> SelectedUnexpandedStates;
+            public NativeList<TStateKey> SelectedUnexpandedStatesList;
+            public NativeList<StateTransitionInfoPair<TStateKey, TActionKey, StateTransitionInfo>> CreatedStateInfoList;
+            public NativeList<TStateKey> NewStateList;
+            public NativeList<TStateKey> SelectionInputStates;
+            public NativeList<int> SelectionInputBudgets;
+            public NativeMultiHashMap<TStateKey, int> SelectionOutputStateBudgets;
+            public NativeMultiHashMap<int, TStateKey> SelectedStatesByHorizon;
+            public NativeHashMap<TStateKey, byte> PredecessorStates;
+            public NativeList<TStateKey> HorizonStateList;
+
+            public void Execute()
+            {
+                AllSelectedStates.Clear();
+                SelectedUnexpandedStates.Clear();
+                SelectedUnexpandedStatesList.Clear();
+                SelectionInputStates.Clear();
+                SelectionInputBudgets.Clear();
+                SelectionOutputStateBudgets.Clear();
+                CreatedStateInfoList.Clear();
+                NewStateList.Clear();
+                SelectedStatesByHorizon.Clear();
+                PredecessorStates.Clear();
+                HorizonStateList.Clear();
+            }
         }
     }
 

@@ -14,13 +14,43 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
     {
         const int k_DefaultUniqueId = 100;
 
-        public string Name => TypeResolver.ToTypeNameCase(name);
+        public string Name
+        {
+            get
+            {
+                if (m_CachedName == null)
+                {
+                    m_CachedName = name;
+                    m_CachedResolvedName = TypeResolver.ToTypeNameCase(m_CachedName);
+                    return m_CachedResolvedName;
+                }
+
+                if (name.Equals(m_CachedName))
+                    return m_CachedResolvedName ?? (m_CachedResolvedName = TypeResolver.ToTypeNameCase(name));
+
+                m_CachedName = name;
+                m_CachedResolvedName = TypeResolver.ToTypeNameCase(m_CachedName);
+                return m_CachedResolvedName;
+            }
+        }
+
+        string m_CachedName;
+        string m_CachedResolvedName;
+
+        public string FullyQualifiedName => string.IsNullOrEmpty(m_Namespace)
+            ? $"{TypeResolver.DomainsNamespace}.{Name}"
+            : $"{m_Namespace}.{Name}";
 
         public IEnumerable<TraitDefinitionField> Fields
         {
             get => m_Fields;
             set => m_Fields = value.ToList();
         }
+
+#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
+        [SerializeField]
+        string m_Namespace;
+#pragma warning restore CS0649
 
         [SerializeField]
         List<TraitDefinitionField> m_Fields = new List<TraitDefinitionField>();

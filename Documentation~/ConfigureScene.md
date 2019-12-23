@@ -27,6 +27,6 @@ A `DecisionController` has:
 * A world query for including trait-based objects in the initial root state
 * Local trait-based objects specific to this planner
 
-Advanced options for controlling the planner search and execution are also available:
+Advanced options for controlling the planner search and execution are also available by clicking the cog icon on the DecisionController (shown below). For tips on improving planner performance, see [Improving Performance](PlannerPerformanceTips.md).
 
-![Image](images/DecisionControllerMoreOptions.png)
+![Image](images/AdvancedSettings.png)

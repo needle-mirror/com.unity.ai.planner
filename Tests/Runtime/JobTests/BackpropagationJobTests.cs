@@ -4,7 +4,10 @@ using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
+
+#if ENABLE_PERFORMANCE_TESTS
 using Unity.PerformanceTesting;
+#endif
 
 namespace Unity.AI.Planner.Tests.Unit
 {
@@ -78,11 +81,15 @@ namespace Unity.AI.Planner.Tests.Unit
             var predecessorStates  = new NativeHashMap<int, byte>(m_DepthMap.Length, Allocator.TempJob);
             var horizonStateList = new NativeList<int>(m_DepthMap.Length, Allocator.TempJob);
 
-            jobHandle = new UpdateDepthMapJob<int>
+            jobHandle = new UpdateDepthMapAndResizeContainersJob<int>
             {
                 SelectedStates = m_SelectedStates,
+                MaxDepth = maxDepth,
+
                 DepthMap = m_DepthMap,
                 SelectedStatesByHorizon = m_SelectedStatesByHorizon,
+                PredecessorStates = predecessorStates,
+                HorizonStateList = horizonStateList,
             }.Schedule(jobHandle);
 
             // horizons of backprop

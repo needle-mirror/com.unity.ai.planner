@@ -4,6 +4,7 @@ using Unity.Entities;
 using Unity.Jobs;
 using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.Burst;
 using AI.Planner.Domains;
 {{- if include_enums }}
 using {{ domain_namespace }}.Enums;
@@ -11,24 +12,21 @@ using {{ domain_namespace }}.Enums;
 
 namespace {{ action_namespace }}.{{ plan_name }}
 {
+    [BurstCompile]
     struct {{ action_name }} : IJobParallelForDefer
     {
-        public static Guid ActionGuid = Guid.NewGuid();
+        public Guid ActionGuid;
         {{ for p in parameter_list }}
         const int k_{{ p.name }}Index = {{ for.index }};
         {{- end }}
         const int k_MaxArguments = {{ parameter_list.size }};
 
-        {{- for p in parameter_list }}
-        static readonly ComponentType[] s_{{ p.name }}Filter = { {{- for r in p.required_traits -}} ComponentType.ReadWrite<{{ r }}>(),{{ end }}
-                                                        {{- for e in p.prohibited_traits }} ComponentType.Exclude<{{ e }}>(),{{ end }}};
-        {{- end }}
-
         [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
         StateDataContext m_StateDataContext;
 
-        internal {{ action_name }}(NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
+        internal {{ action_name }}(Guid guid, NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
         {
+            ActionGuid = guid;
             m_StatesToExpand = statesToExpand.AsDeferredJobArray();
             m_StateDataContext = stateDataContext;
         }
@@ -46,8 +44,13 @@ namespace {{ action_namespace }}.{{ plan_name }}
         void GenerateArgumentPermutations(StateData stateData, NativeList<ActionKey> argumentPermutations)
         {
             {{- for p in parameter_list }}
+            var {{ p.name }}Filter = new NativeArray<ComponentType>({{p.required_traits.size + p.prohibited_traits.size}}, Allocator.Temp){ {{- for r in p.required_traits -}} [{{ for.index }}] = ComponentType.ReadWrite<{{ r.fully_qualified_name }}>(),{{ end }}
+                                                            {{- for e in p.prohibited_traits }} [{{ for.index + p.required_traits.size }}] = ComponentType.Exclude<{{ e.fully_qualified_name }}>(),{{ end }}  };
+            {{- end }}
+
+            {{- for p in parameter_list }}
             var {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
-            stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, s_{{ p.name }}Filter);
+            stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, {{ p.name }}Filter);
             {{- end }}
 
             {{- for p in precondition_traits }}
@@ -89,7 +92,11 @@ namespace {{ action_namespace }}.{{ plan_name }}
             {{- end }}
 
             {{- for p in parameter_list }}
-                {{ p.name }}ObjectIndices.Dispose();
+            {{ p.name }}ObjectIndices.Dispose();
+            {{- end }}
+
+            {{- for p in parameter_list }}
+            {{ p.name }}Filter.Dispose();
             {{- end }}
         }
 
@@ -197,7 +204,7 @@ namespace {{ action_namespace }}.{{ plan_name }}
 
     public struct {{ action_name }}FixupReference : IBufferElementData
     {
-        public StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> TransitionInfo;
+        internal StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> TransitionInfo;
     }
 }
 

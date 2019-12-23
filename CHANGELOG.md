@@ -4,17 +4,55 @@ All notable changes to this package will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-preview.4] - 2019-12-06
+<!-- 
+Notes about changelog:
+* It's okay to have a section at the top to capture all changes until the next release. This will pass package validation.
+## [Unreleased] 
+### Added
+### Changed
+### Deprecated
+### Removed
 ### Fixed
-* Update template to avoid stack overflow in state data comparison.
+### Security
 
-## [0.2.0-preview.1] - 2019-12-06
+* It's okay to only have the preview version without the .n at the end and to continue updating the release notes until final release.
+[X.Y.Z-preview] - date
+or
+[X.Y.Z] - date
+ -->
+
+## [0.2.1-preview] - 2019-12-20
+### Added
+* IsIdle to `IDecisionController` to reflect when the controller is not planning and not executing actions.
+* UpdateStateWithWorldQuery to `IDecisionController` to allow updating the planner outside of action complete, such as where the plan is complete.
+* BoundedValue validity checks (e.g. NaN, infinity) for when custom heuristics go awry.
+* 32-bit integer field support for traits.
+* Play back the EntityCommandBuffer (for state changes) on a separate thread instead of the main thread.
+* Documentation for custom traits.
+* Planner setting for scheduling multiple iterations of search at once.
+* Action jobs, state evaluation jobs, and graph expansion jobs are now Burst-compatible.
+
+### Changed
+* Code now generates to the Packages directory as source.
+* Expose discount factor in the PlanDefinition settings.
+* Planner search and execution settings stay open when switching to play mode.
+* Clean up public API by hiding unnecessary interfaces, structs, and fields.
+* No longer block on previously scheduled planner iteration in the frame and simply wait until the job chain is complete.
+
+### Removed
+* Moveable.cs -- trait no longer uses `CustomTrait`, but instead gets generated from its `TraitDefinition`.
+
 ### Fixed
-* Null reference on adding a TraitComponent to a GameObject
+* Custom heuristic was not always getting picked up during code generation, so now the fully qualified name is serialized.
+* Compilation upon switching to play mode is more reliable now. 
+* Null reference exceptions when adding a `TraitComponent` initially with no traits added.
+* Exception when dragging a GameObject with a missing component to an action callback of the `DecisionController`.
+* Comparison of custom traits during state equality. 
+* Improved performance while the plan executor waits for plan execution criteria.
 
 ## [0.2.0-preview] - 2019-12-02
-###Added
-* Planner search and execution settings under more options in `DecisionController` inspector
+### Added
+* Planner search and execution settings under more options in `DecisionController` inspector.
 * `ICustomTraitReward` for custom reward modifiers based on specific traits.
 * Navigation module w/ traits, custom reward modifier, and simple navigation script.
 * Help button in the inspector now links to documentation.
@@ -36,6 +74,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 * `IOperationalAction`, since `DecisionController` now handles this implicitly.
 
 ### Fixed
+* Update template to avoid stack overflow in state data comparison.
+* Null reference exceptions on adding a `TraitComponent` to a GameObject.
 * Trait field renames.
 * Endless recompilation.
 

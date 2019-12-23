@@ -14,7 +14,6 @@ namespace UnityEditor.AI.Planner.Editors
     class DecisionControllerInspector : BaseTraitObjectEditor
     {
         static string s_LastPathUsedForNewPlan;
-        static bool s_DisplayAdvancedSettings;
 
         ReorderableList m_QueryFilterList;
         Dictionary<string, Type> m_QueryTypes;
@@ -75,7 +74,9 @@ namespace UnityEditor.AI.Planner.Editors
                 return;
             }
 
-            definition.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.settings, definition.isExpanded, s_DisplayAdvancedSettings, value => s_DisplayAdvancedSettings = value);
+            var displayAdvancedSettings = serializedObject.FindProperty("m_DisplayAdvancedSettings");
+
+            definition.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.settings, definition.isExpanded, displayAdvancedSettings.boolValue, value => displayAdvancedSettings.boolValue = value);
             if (definition.isExpanded)
             {
                 EditorGUI.BeginChangeCheck();
@@ -89,7 +90,7 @@ namespace UnityEditor.AI.Planner.Editors
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("m_AutoUpdate"));
                 serializedObject.ApplyModifiedProperties();
 
-                if (s_DisplayAdvancedSettings)
+                if (displayAdvancedSettings.boolValue)
                 {
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SearchSettings"));
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_ExecutionSettings"));
@@ -154,7 +155,8 @@ namespace UnityEditor.AI.Planner.Editors
                                         var component = sourceProperty.objectReferenceValue as Component;
 
                                         MethodInfo selectedMethod = null;
-                                        var methods = components.SelectMany(c => c.GetType()
+                                        var methods = components.Where(c => c != null)
+                                            .SelectMany(c => c.GetType()
                                             .GetMethods(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public)
                                             .Where(m => !m.IsSpecialName)
                                             .Select(m => ((Component)c, m))).ToArray();

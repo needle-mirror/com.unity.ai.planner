@@ -10,16 +10,16 @@ namespace {{ namespace }}
 {
     public struct {{name}}
     {
-        {{- for p in parameter_list }}
-        static readonly ComponentType[] s_{{ p.name }}Filter = { {{- for r in p.required_traits -}} ComponentType.ReadWrite<{{ r }}>(),{{ end }}
-                                                        {{- for e in p.prohibited_traits }} ComponentType.Exclude<{{ e }}>(),{{ end }}};
-        {{- end }}
-
         public bool IsTerminal(StateData stateData)
         {
             {{- for p in parameter_list }}
+            var {{ p.name }}Filter = new NativeArray<ComponentType>({{p.required_traits.size + p.prohibited_traits.size}}, Allocator.Temp){ {{- for r in p.required_traits -}} [{{ for.index }}] = ComponentType.ReadWrite<{{ r }}>(),{{ end }}
+                                                            {{- for e in p.prohibited_traits }} [{{ for.index + p.required_traits.size }}] = ComponentType.Exclude<{{ e }}>(),{{ end }}  };
+            {{- end }}
+
+            {{- for p in parameter_list }}
             var {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
-            stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, s_{{ p.name }}Filter);
+            stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, {{ p.name }}Filter);
             {{- end }}
 
             {{- for c in criteria_traits }}
@@ -40,6 +40,10 @@ namespace {{ namespace }}
                 {{- end }}
                 {{- end }}
             {{- end }}
+
+                {{- for p in parameter_list }}
+                {{ p.name }}Filter.Dispose();
+                {{- end }}
                 return true;
             {{- for p in parameter_list }}
             }
@@ -47,6 +51,9 @@ namespace {{ namespace }}
 
             {{- for p in parameter_list }}
             {{ p.name }}ObjectIndices.Dispose();
+            {{- end }}
+            {{- for p in parameter_list }}
+            {{ p.name }}Filter.Dispose();
             {{- end }}
 
             return false;

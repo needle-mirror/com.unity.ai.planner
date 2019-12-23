@@ -18,10 +18,11 @@ namespace UnityEditor.AI.Planner.Editors
             {
                 "Boolean",
                 "Float",
-                "Integer",
-                "String/64",
-                "String/512",
-                "String/4096",
+                "Integer (32-bit)",
+                "Large Integer (64-bit)",
+                "String (max length: 64)",
+                "String (max length: 512)",
+                "String (max length: 4096)",
                 "TraitBasedObject",
                 "Custom..."
             },
@@ -29,6 +30,7 @@ namespace UnityEditor.AI.Planner.Editors
             {
                 "System.Boolean",
                 "System.Single",
+                "System.Int32",
                 "System.Int64",
                 "Unity.Entities.NativeString64",
                 "Unity.Entities.NativeString512",

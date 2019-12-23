@@ -40,15 +40,21 @@ namespace UnityEngine.AI.Planner.Controller
 
         [SerializeField]
         ActionExecutionInfo[] m_ActionExecuteInfos;
+
+#if UNITY_EDITOR
+        [SerializeField]
+        bool m_DisplayAdvancedSettings;
+#endif
 #pragma warning restore 0649
 
-        IPlanExecutor m_PlanExecutor;
         IPlannerScheduler m_PlannerScheduler;
         Coroutine m_CurrentAction;
 
-        internal IPlanExecutor planExecutor => m_PlanExecutor;
+        internal IPlanExecutor PlanExecutor;
 
-        string Name => gameObject.name;
+        string Name => $"{gameObject.name} {gameObject.GetInstanceID()}";
+
+        public bool IsIdle => PlanExecutor.IsIdle;
 
         public IEnumerable<ITraitBasedObjectData> LocalObjectData => m_LocalObjectData;
 
@@ -60,11 +66,9 @@ namespace UnityEngine.AI.Planner.Controller
             set => m_AutoUpdate = value;
         }
 
-        IDecisionController m_DecisionControllerImplementation;
-
         public void Initialize()
         {
-            if (m_PlanExecutor != null)
+            if (PlanExecutor != null)
             {
                 Debug.LogWarning("Plan executor instance already created");
                 return;
@@ -84,42 +88,34 @@ namespace UnityEngine.AI.Planner.Controller
                 return;
             }
 
-            m_PlanExecutor = (IPlanExecutor)Activator.CreateInstance(executorType);
-            if (m_PlanExecutor == null)
+            PlanExecutor = (IPlanExecutor)Activator.CreateInstance(executorType);
+            if (PlanExecutor == null)
             {
                 Debug.LogError($"Unable to create an instance of {planExecutorTypeName}");
+                enabled = false;
                 return;
             }
-            m_PlanExecutor.Initialize(Name, m_PlanDefinition, GetTraitBasedObjects(), m_ExecutionSettings);
+            PlanExecutor.Initialize(Name, m_PlanDefinition, GetTraitBasedObjects(), m_ExecutionSettings);
 
-            m_PlannerScheduler = m_PlanExecutor.PlannerScheduler;
+            m_PlannerScheduler = PlanExecutor.PlannerScheduler;
+            if (m_PlannerScheduler == null)
+            {
+                Debug.LogError($"No planning scheduler was found.");
+                enabled = false;
+                return;
+            }
             m_PlannerScheduler.SearchSettings = m_SearchSettings;
         }
 
         public void UpdateExecutor()
         {
-            if (planExecutor == null)
-            {
-                Debug.LogWarning("No Executor to update");
-                return;
-            }
-
-            if (m_CurrentAction != default)
-                return;
-
-            if (m_PlanExecutor.ReadyToAct())
-                m_PlanExecutor.Act(this);
+            if (m_CurrentAction == default && PlanExecutor.ReadyToAct())
+                PlanExecutor.Act(this);
         }
 
-        public void UpdateScheduler()
+        public void UpdateScheduler(bool forceComplete = false)
         {
-            if (m_PlannerScheduler == null)
-            {
-                Debug.LogWarning("No planner scheduler to update.");
-                return;
-            }
-
-            m_PlannerScheduler.Schedule(default).Complete();
+            m_PlannerScheduler.Schedule(default, forceComplete);
         }
 
         void Awake()
@@ -147,10 +143,15 @@ namespace UnityEngine.AI.Planner.Controller
             }
         }
 
+        public void UpdateStateWithWorldQuery()
+        {
+            PlanExecutor.AdvancePlanWithNewState(GetTraitBasedObjects());
+            stateUpdated?.Invoke();
+        }
+
         void OnDestroy()
         {
-            if (planExecutor != null)
-                m_PlanExecutor.Destroy();
+            PlanExecutor?.Destroy();
         }
 
         internal IActionExecutionInfo GetExecutionInfo(string actionName)
@@ -180,7 +181,7 @@ namespace UnityEngine.AI.Planner.Controller
 
         public IStateData GetPlannerState(bool readWrite = false)
         {
-            return m_PlanExecutor?.GetCurrentState(readWrite);
+            return PlanExecutor?.GetCurrentStateData(readWrite);
         }
 
         IEnumerator WaitForAction(ActionComplete onActionComplete)
@@ -201,10 +202,10 @@ namespace UnityEngine.AI.Planner.Controller
             switch (onActionComplete)
             {
                 case ActionComplete.UseWorldState:
-                    m_PlanExecutor.AdvancePlanWithNewState(GetTraitBasedObjects());
+                    PlanExecutor.AdvancePlanWithNewState(GetTraitBasedObjects());
                     break;
                 case ActionComplete.UseNextPlanState:
-                    m_PlanExecutor.AdvancePlanWithPredictedState();
+                    PlanExecutor.AdvancePlanWithPredictedState();
                     break;
             }
 

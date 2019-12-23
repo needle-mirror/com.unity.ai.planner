@@ -17,12 +17,7 @@ namespace Unity.AI.Planner
         public NativeMultiHashMap<int, TStateKey> BinnedStateKeyLookup;
         public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph;
 
-        public IPlan<TStateKey, TActionKey> Plan => PolicyGraph;
-        IPlan ISearchContext.Plan => PolicyGraph;
-
         TStateManager m_StateManager;
-
-        public SearchContext() { }
 
         public SearchContext(TStateKey rootStateKey, TStateManager stateManager, int stateCapacity = 1, int actionCapacity = 1)
         {
@@ -37,40 +32,6 @@ namespace Unity.AI.Planner
 
             PolicyGraph = new PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo>(stateCapacity, actionCapacity);
             PolicyGraph.StateInfoLookup.TryAdd(rootStateKey, default);
-        }
-
-        ~SearchContext()
-        {
-            Dispose();
-        }
-
-        public void Dispose()
-        {
-            if (m_StateManager != null)
-            {
-                using (var stateKeys = PolicyGraph.StateInfoLookup.GetKeyArray(Allocator.TempJob))
-                {
-                    foreach (var stateKey in stateKeys)
-                    {
-                        m_StateManager.DestroyState(stateKey);
-                    }
-                }
-
-                m_StateManager = default;
-            }
-
-            if (StateDepthLookup.IsCreated)
-                StateDepthLookup.Dispose();
-
-            if (BinnedStateKeyLookup.IsCreated)
-                BinnedStateKeyLookup.Dispose();
-
-            PolicyGraph.Dispose();
-        }
-
-        public NativeArray<TStateKey> GetStateKeys(Allocator allocator)
-        {
-            return PolicyGraph.StateInfoLookup.GetKeyArray(allocator);
         }
 
         public void UpdateRootState(TStateKey stateKey)
@@ -155,6 +116,35 @@ namespace Unity.AI.Planner
         public TStateKey GetNextState(TStateKey stateKey, TActionKey actionKey)
         {
             return PolicyGraph.ResultingStateLookup.TryGetFirstValue(new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey), out var resultKey, out _) ? resultKey : default;
+        }
+
+        ~SearchContext()
+        {
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            if (m_StateManager != null)
+            {
+                using (var stateKeys = PolicyGraph.StateInfoLookup.GetKeyArray(Allocator.TempJob))
+                {
+                    foreach (var stateKey in stateKeys)
+                    {
+                        m_StateManager.DestroyState(stateKey);
+                    }
+                }
+
+                m_StateManager = default;
+            }
+
+            if (StateDepthLookup.IsCreated)
+                StateDepthLookup.Dispose();
+
+            if (BinnedStateKeyLookup.IsCreated)
+                BinnedStateKeyLookup.Dispose();
+
+            PolicyGraph.Dispose();
         }
     }
 }

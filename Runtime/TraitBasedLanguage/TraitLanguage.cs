@@ -8,7 +8,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <summary>
     /// Component used to mark state entities
     /// </summary>
-    public struct State : IComponentData { }
+    struct State : IComponentData { }
 
     /// <summary>
     /// A unique identifier assigned to each domain object within a state
@@ -23,7 +23,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <summary>
         /// The reserved ObjectId value specifying a reference to no domain object
         /// </summary>
-        public static ObjectId None = new ObjectId { Value = 0 };
+        public static readonly ObjectId None = new ObjectId { Value = 0 };
 
         static int s_ObjectIds = 1; // 0 is the same as default (uninitialized)
 
@@ -92,7 +92,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <summary>
         /// Default TraitBasedObjectId representing no Domain Object
         /// </summary>
-        public static TraitBasedObjectId None = new TraitBasedObjectId { Id = ObjectId.None };
+        public static readonly TraitBasedObjectId None = new TraitBasedObjectId { Id = ObjectId.None };
 
         /// <summary>
         /// Test for equality

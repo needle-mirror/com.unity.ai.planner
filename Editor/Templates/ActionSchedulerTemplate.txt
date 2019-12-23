@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using AI.Planner.Domains;
 using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
@@ -12,76 +13,93 @@ using {{ domain_namespace }}.{{ actionNamespace }};
 
 namespace {{ domain_namespace }}
 {
-    public class ActionScheduler :
-        ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey, StateTransitionInfo>,
-        IGetActionName
+    public struct ActionScheduler :
+        ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey>
     {
+        {{- for action in actions }}
+        public static readonly Guid {{action.name}}Guid = Guid.NewGuid();
+        {{- end}}
+
         // Input
         public NativeList<StateEntityKey> UnexpandedStates { get; set; }
         public StateManager StateManager { get; set; }
 
         // Output
-        public NativeQueue<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> CreatedStateInfo { get; set; }
-
-        public Guid[] ActionGuids => s_ActionGuids;
-
-        static Guid[] s_ActionGuids = {
-        {{- for action in actions }}
-            {{action.name}}.ActionGuid,
-        {{- end}}
-        };
-
-        static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
+        NativeQueue<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> IActionScheduler<StateEntityKey, StateData, StateDataContext, StateManager, ActionKey>.CreatedStateInfo
         {
+            set => m_CreatedStateInfo = value;
+        }
+
+        NativeQueue<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> m_CreatedStateInfo;
+
+        struct PlaybackECB : IJob
+        {
+            public ExclusiveEntityTransaction ExclusiveEntityTransaction;
+
+            [ReadOnly]
+            public NativeList<StateEntityKey> UnexpandedStates;
+            public NativeQueue<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> CreatedStateInfo;
+
             {{- for action in actions }}
-            { {{action.name}}.ActionGuid, nameof({{action.name}}) },
+            public EntityCommandBuffer {{action.name}}ECB;
             {{- end}}
-        };
 
-        public string GetActionName(IActionKey actionKey)
-        {
-            s_ActionGuidToNameLookup.TryGetValue(((IActionKeyWithGuid)actionKey).ActionGuid, out var name);
-            return name;
+            public void Execute()
+            {
+                // Playback entity changes and output state transition info
+                var entityManager = ExclusiveEntityTransaction;
+
+                {{- for action in actions }}
+
+                {{action.name}}ECB.Playback(entityManager);
+                for (int i = 0; i < UnexpandedStates.Length; i++)
+                {
+                    var stateEntity = UnexpandedStates[i].Entity;
+                    var {{action.name}}Refs = entityManager.GetBuffer<{{action.name}}FixupReference>(stateEntity);
+                    for (int j = 0; j < {{action.name}}Refs.Length; j++)
+                        CreatedStateInfo.Enqueue({{action.name}}Refs[j].TransitionInfo);
+                    entityManager.RemoveComponent(stateEntity, typeof({{action.name}}FixupReference));
+                }
+                {{- end}}
+            }
         }
 
         public JobHandle Schedule(JobHandle inputDeps)
         {
+            var entityManager = StateManager.EntityManager;
+
             {{- for action in actions }}
             var {{action.name}}DataContext = StateManager.GetStateDataContext();
-            var {{action.name}}ECB = new EntityCommandBuffer(Allocator.TempJob);
+            var {{action.name}}ECB = StateManager.GetEntityCommandBuffer();
             {{action.name}}DataContext.EntityCommandBuffer = {{action.name}}ECB.ToConcurrent();
             {{- end}}
 
-            var allActionJobs = new NativeArray<JobHandle>({{ num_actions }}, Allocator.TempJob)
+            var allActionJobs = new NativeArray<JobHandle>({{ num_actions + 1 }}, Allocator.TempJob)
             {
                 {{- for action in actions }}
-                [{{for.index}}] = new {{action.name}}(UnexpandedStates, {{action.name}}DataContext).Schedule(UnexpandedStates, 0, inputDeps),
+                [{{for.index}}] = new {{action.name}}({{action.name}}Guid, UnexpandedStates, {{action.name}}DataContext).Schedule(UnexpandedStates, 0, inputDeps),
+                {{- end}}
+                [{{ num_actions }}] = entityManager.ExclusiveEntityTransactionDependency
+            };
+
+            var allActionJobsHandle = JobHandle.CombineDependencies(allActionJobs);
+            allActionJobs.Dispose();
+
+            // Playback entity changes and output state transition info
+            var playbackJob = new PlaybackECB()
+            {
+                ExclusiveEntityTransaction = StateManager.ExclusiveEntityTransaction,
+                UnexpandedStates = UnexpandedStates,
+                CreatedStateInfo = m_CreatedStateInfo,
+                {{- for action in actions }}
+                {{action.name}}ECB = {{action.name}}ECB,
                 {{- end}}
             };
 
-            JobHandle.CompleteAll(allActionJobs);
+            var playbackJobHandle = playbackJob.Schedule(allActionJobsHandle);
+            entityManager.ExclusiveEntityTransactionDependency = playbackJobHandle;
 
-            // Playback entity changes and output state transition info
-            var entityManager = StateManager.EntityManager;
-            {{- for action in actions }}
-
-            {{action.name}}ECB.Playback(entityManager);
-            for (int i = 0; i < UnexpandedStates.Length; i++)
-            {
-                var stateEntity = UnexpandedStates[i].Entity;
-                var {{action.name}}Refs = entityManager.GetBuffer<{{action.name}}FixupReference>(stateEntity);
-                for (int j = 0; j < {{action.name}}Refs.Length; j++)
-                    CreatedStateInfo.Enqueue({{action.name}}Refs[j].TransitionInfo);
-                entityManager.RemoveComponent<{{action.name}}FixupReference>(stateEntity);
-            }
-            {{- end}}
-
-            allActionJobs.Dispose();
-            {{- for action in actions }}
-            {{action.name}}ECB.Dispose();
-            {{- end}}
-
-            return default;
+            return playbackJobHandle;
         }
     }
 }

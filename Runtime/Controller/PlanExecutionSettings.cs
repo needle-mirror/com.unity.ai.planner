@@ -23,19 +23,15 @@ namespace UnityEngine.AI.Planner
         }
 
         [Tooltip("The criteria for an agent to begin executing an action.")]
-        [SerializeField]
         public PlanExecutionMode ExecutionMode;
 
         [Tooltip("The maximum range of the next value estimate required to act.")]
-        [SerializeField]
         public float MaximumDecisionTolerance;
 
         [Tooltip("The minimum size of a plan required to act.")]
-        [SerializeField]
         public int MinimumPlanSize;
 
         [Tooltip("The minimum time spent iterating on the plan required to act.")]
-        [SerializeField]
         public float MinimumSearchTime;
     }
 }

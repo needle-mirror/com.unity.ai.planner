@@ -270,6 +270,33 @@ namespace Unity.AI.Planner.Jobs
     }
 
     [BurstCompile]
+    struct SetupParallelSelectionJob<TStateKey> : IJob
+        where TStateKey : struct, IEquatable<TStateKey>
+    {
+        [ReadOnly] public TStateKey RootStateKey;
+        [ReadOnly] public int Budget;
+        [ReadOnly] public NativeHashMap<TStateKey, StateInfo> StateInfoLookup;
+
+        [WriteOnly] public NativeList<TStateKey> SelectionInputStates;
+        [WriteOnly] public NativeList<int>  SelectionInputBudgets;
+        public NativeMultiHashMap<TStateKey, int> OutputStateBudgets;
+        public NativeHashMap<TStateKey, byte> SelectedUnexpandedStates;
+        public NativeMultiHashMap<TStateKey, int> AllSelectedStates;
+
+        public void Execute()
+        {
+            SelectionInputStates.Add(RootStateKey);
+            SelectionInputBudgets.Add(Budget);
+
+            // Resize container to avoid full hash map
+            int size = math.min(Budget, StateInfoLookup.Length);
+            OutputStateBudgets.Capacity = math.max(OutputStateBudgets.Capacity, size);
+            SelectedUnexpandedStates.Capacity = math.max(SelectedUnexpandedStates.Capacity, size);
+            AllSelectedStates.Capacity = math.max(AllSelectedStates.Capacity, size);
+        }
+    }
+
+    [BurstCompile]
     struct ParallelSelectionJob<TStateKey, TActionKey> : IJobParallelForDefer
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>

@@ -5,7 +5,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <summary>
     /// A specialized interface of <see cref="IActionKey"/> for trait-based domains that provides GUIDs for lookup
     /// </summary>
-    public interface IActionKeyWithGuid : IActionKey
+    interface IActionKeyWithGuid : IActionKey
     {
         /// <summary>
         /// A GUID (Globally Unique Identifier) for an action type

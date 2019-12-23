@@ -7,7 +7,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// A specialized interface of <see cref="IStateData"/> for trait-based domains
     /// </summary>
     /// <typeparam name="TObject">Object type</typeparam>
-    public interface ITraitBasedStateData<TObject> : IStateData
+    interface ITraitBasedStateData<TObject> : IStateData
         where TObject : ITraitBasedObject
     {
         /// <summary>

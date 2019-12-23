@@ -16,8 +16,10 @@ class PlannerResources : ScriptableSingleton<PlannerResources>
     public TextAsset TemplateEnum => m_TemplateEnum;
     public TextAsset TemplateTermination => m_TemplateTermination;
     public TextAsset TemplateTrait => m_TemplateTrait;
-    public TextAsset TemplateConditionalAssembly => m_TemplateConditionalAssembly;
     public TextAsset TemplatePlanExecutor => m_TemplatePlanExecutor;
+    public TextAsset TemplatePackage => m_TemplatePackage;
+    public TextAsset TemplateDomainsAsmDef => m_TemplateDomainsAsmDef;
+    public TextAsset TemplateActionsAsmDef => m_TemplateActionsAsmDef;
 
 #pragma warning disable 0649
 
@@ -47,9 +49,13 @@ class PlannerResources : ScriptableSingleton<PlannerResources>
     [SerializeField]
     TextAsset m_TemplateTrait;
     [SerializeField]
-    TextAsset m_TemplateConditionalAssembly;
-    [SerializeField]
     TextAsset m_TemplatePlanExecutor;
+    [SerializeField]
+    TextAsset m_TemplatePackage;
+    [SerializeField]
+    TextAsset m_TemplateDomainsAsmDef;
+    [SerializeField]
+    TextAsset m_TemplateActionsAsmDef;
 
 #pragma warning restore 0649
 }

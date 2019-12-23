@@ -208,18 +208,27 @@ namespace Unity.AI.Planner.Jobs
     }
 
     [BurstCompile]
-    struct UpdateDepthMapJob<TStateKey> : IJob
+    struct UpdateDepthMapAndResizeContainersJob<TStateKey> : IJob
         where TStateKey : struct, IEquatable<TStateKey>
     {
         // Input
         public NativeMultiHashMap<TStateKey, int> SelectedStates;
+        public int MaxDepth;
 
         // Output
         public NativeHashMap<TStateKey, int> DepthMap;
         public NativeMultiHashMap<int, TStateKey> SelectedStatesByHorizon;
+        public NativeHashMap<TStateKey, byte> PredecessorStates;
+        public NativeList<TStateKey> HorizonStateList;
 
         public void Execute()
         {
+            // Resize containers
+            int graphSize = DepthMap.Length;
+            SelectedStatesByHorizon.Capacity = math.max(SelectedStatesByHorizon.Capacity, MaxDepth + 1);
+            PredecessorStates.Capacity = math.max(PredecessorStates.Capacity, graphSize);
+            HorizonStateList.Capacity = math.max(HorizonStateList.Capacity, graphSize);
+
             var selectedStateKeys = SelectedStates.GetKeyArray(Allocator.Temp);
             for (int i = 0; i < selectedStateKeys.Length; i++)
             {

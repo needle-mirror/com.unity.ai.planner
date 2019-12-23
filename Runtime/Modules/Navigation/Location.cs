@@ -102,18 +102,6 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
 #endif
 
         /// <summary>
-        /// Compares this Location trait to another
-        /// </summary>
-        /// <param name="other">Another location to which the location is compared</param>
-        /// <returns>Returns true if the two locations are equal</returns>
-        public bool AttributesEqual(Location other)
-        {
-            return TransformInstanceId.Equals(other.TransformInstanceId)
-                && Position == other.Position
-                && Forward == other.Forward;
-        }
-
-        /// <summary>
         /// Compares this location to another
         /// </summary>
         /// <param name="other">Another location to which the location is compared</param>
@@ -123,15 +111,6 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
             return TransformInstanceId.Equals(other.TransformInstanceId)
                 && Position == other.Position
                 && Forward == other.Forward;
-        }
-
-        /// <summary>
-        /// Get the hash code
-        /// </summary>
-        /// <returns>Hash code</returns>
-        public override int GetHashCode()
-        {
-            return 397 ^ TransformInstanceId.GetHashCode();
         }
 
         /// <summary>

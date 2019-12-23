@@ -1,0 +1,5 @@
+{
+  "name": "com.unity.ai.planner.{{ assembly | string.downcase }}.generated",
+  "displayName": "AI Planner {{ assembly }} (Generated Code)",
+  "version": "0.0.0"
+}

@@ -5,7 +5,7 @@
     /// further by the planner
     /// </summary>
     /// <typeparam name="TStateData"></typeparam>
-    public interface ITerminationEvaluator<TStateData>
+    interface ITerminationEvaluator<TStateData>
         where TStateData : struct
     {
         /// <summary>

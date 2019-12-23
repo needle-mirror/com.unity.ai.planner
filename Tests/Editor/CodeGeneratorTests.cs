@@ -115,14 +115,14 @@ namespace UnityEditor.AI.Planner.Tests
         [Test]
         public void TraitIsGenerated()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath, k_TraitAssetsPath);
+            m_CodeGenerator.GenerateDomain(k_OutputPath);
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/Traits/TraitA.cs"));
         }
 
         [Test]
         public void EnumIsGenerated()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath, k_EnumAssetsPath);
+            m_CodeGenerator.GenerateDomain(k_OutputPath);
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/Traits/EnumA.cs"));
         }
 
@@ -130,29 +130,29 @@ namespace UnityEditor.AI.Planner.Tests
         [Test]
         public void StateTerminationIsGenerated()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath, k_AssetsPath);
+            m_CodeGenerator.GenerateDomain(k_OutputPath);
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/TerminationA.cs"));
         }
 
         [Test]
         public void PlanningDataAreGenerated()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath, k_AssetsPath);
+            m_CodeGenerator.GenerateDomain(k_OutputPath);
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/PlanningDomainData.cs"));
 
-            m_CodeGenerator.GeneratePlans(k_OutputPath, k_AssetsPath);
+            m_CodeGenerator.GeneratePlans(k_OutputPath);
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/PlanA/ActionScheduler.cs"));
             Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/PlanA/ActionA.cs"));
         }
 
         [Test]
-        public void DomainAssemblyCompilation()
+        public void PlannerAssemblyCompilation()
         {
-            var paths = m_CodeGenerator.GenerateDomain(k_OutputPath, k_AssetsPath);
+            var paths = m_CodeGenerator.GenerateDomain(k_OutputPath);
             var domainAssemblyPath = $"{k_OutputPath}AI.Planner.Domains.dll";
-            Assert.IsTrue(DomainAssemblyBuilder.BuildAssembly(paths.ToArray(), domainAssemblyPath));
-            paths = m_CodeGenerator.GeneratePlans(k_OutputPath, k_AssetsPath);
-            Assert.IsTrue(DomainAssemblyBuilder.BuildAssembly(paths.ToArray(), $"{k_OutputPath}AI.Planner.Actions.dll",
+            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), domainAssemblyPath));
+            paths = m_CodeGenerator.GeneratePlans(k_OutputPath);
+            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), $"{k_OutputPath}AI.Planner.Actions.dll",
                 additionalReferences: new [] { domainAssemblyPath }));
         }
     }

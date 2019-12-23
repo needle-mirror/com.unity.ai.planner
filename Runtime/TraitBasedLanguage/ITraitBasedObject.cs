@@ -6,7 +6,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <summary>
     /// An interface that marks an implementation of a trait-based object type for DOTS, trait-based domains
     /// </summary>
-    public interface ITraitBasedObject : IBufferElementData
+    interface ITraitBasedObject : IBufferElementData
     {
         /// <summary>
         /// Evaluate whether this trait-based object has the specified trait types

@@ -11,7 +11,7 @@ namespace Unity.AI.Planner
     /// </summary>
     /// <typeparam name="TStateKey">StateKey type</typeparam>
     /// <typeparam name="TStateData">StateData type</typeparam>
-    public interface IStateDataContext<TStateKey, TStateData> : IEqualityComparer<TStateData>
+    interface IStateDataContext<TStateKey, TStateData> : IEqualityComparer<TStateData>
         where TStateKey : struct, IEquatable<TStateKey>
         where TStateData : struct
     {
@@ -28,5 +28,11 @@ namespace Unity.AI.Planner
         /// <param name="stateKey">Key to access the state</param>
         /// <returns>State data for the given key</returns>
         TStateData GetStateData(TStateKey stateKey);
+
+        /// <summary>
+        /// Destroy a state
+        /// </summary>
+        /// <param name="stateKey">Key to access the state that should be destroyed</param>
+        void DestroyState(TStateKey stateKey);
     }
 }

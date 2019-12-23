@@ -10,9 +10,8 @@ namespace KeyDomain
 {
     using StateTransitionInfo = StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>;
 
-    internal class ActionScheduler :
-        ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey, Unity.AI.Planner.StateTransitionInfo>,
-        IGetActionName
+    class ActionScheduler :
+        ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey>
     {
         // Input
         public NativeList<StateEntityKey> UnexpandedStates { get; set; }
@@ -20,14 +19,6 @@ namespace KeyDomain
 
         // Output
         public NativeQueue<StateTransitionInfo> CreatedStateInfo { get; set; }
-
-        public Guid[] ActionGuids => s_ActionGuids;
-
-        static Guid[] s_ActionGuids = {
-            MoveAction.ActionGuid,
-            PickupKeyAction.ActionGuid,
-            UnlockRoomAction.ActionGuid
-        };
 
         static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
         {
@@ -53,7 +44,6 @@ namespace KeyDomain
             var UnlockRoomActionDataContext = StateManager.GetStateDataContext();
             var UnlockRoomActionECB = new EntityCommandBuffer(Allocator.TempJob);
             UnlockRoomActionDataContext.EntityCommandBuffer = UnlockRoomActionECB.ToConcurrent();
-
 
             var allActionJobs = new NativeArray<JobHandle>(3, Allocator.TempJob)
             {
@@ -97,6 +87,10 @@ namespace KeyDomain
             UnlockRoomActionECB.Dispose();
 
             return default;
+        }
+
+        public void Dispose()
+        {
         }
     }
 }

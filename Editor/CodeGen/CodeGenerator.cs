@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Unity.AI.Planner;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.AI.Planner.Utility;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
@@ -15,7 +16,7 @@ namespace UnityEditor.AI.Planner.CodeGen
         CodeRenderer m_CodeRenderer = new CodeRenderer();
         List<string> m_GeneratedFilePaths = new List<string>();
 
-        internal List<string> GenerateDomain(string outputPath, string rootFolder = null)
+        internal List<string> GenerateDomain(string outputPath)
         {
             m_GeneratedFilePaths.Clear();
             DomainAssetDatabase.Refresh();
@@ -23,16 +24,14 @@ namespace UnityEditor.AI.Planner.CodeGen
             bool anyEnums = false;
             foreach (var e in DomainAssetDatabase.EnumDefinitions)
             {
-                if (rootFolder == null || !AssetDatabase.GetAssetPath(e).StartsWith(rootFolder))
-                    continue;
-
                 GenerateEnum(e, TypeResolver.DomainsNamespace, outputPath);
                 anyEnums = true;
             }
 
             foreach (var trait in DomainAssetDatabase.TraitDefinitions)
             {
-                if (rootFolder == null || !AssetDatabase.GetAssetPath(trait).StartsWith(rootFolder))
+                var traitType = TypeResolver.GetType(trait.Name);
+                if (traitType != null && typeof(ICustomTrait).IsAssignableFrom(traitType)) // No codegen needed
                     continue;
 
                 GenerateTrait(trait, TypeResolver.DomainsNamespace, outputPath, anyEnums);
@@ -41,13 +40,13 @@ namespace UnityEditor.AI.Planner.CodeGen
             GeneratePlanningDomain(TypeResolver.DomainsNamespace, outputPath);
 
             var domainsNamespace = TypeResolver.DomainsNamespace;
-            GenerateConditionalAssembly(domainsNamespace, "PLANNER_DOMAIN_GENERATED", outputPath);
             SaveToFile($"{outputPath}/{domainsNamespace}/AssemblyInfo.cs", "using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"AI.Planner.Actions\")]");
 
-            return m_GeneratedFilePaths;
+            // Make a copy, so this is re-entrant
+            return m_GeneratedFilePaths.ToList();
         }
 
-        internal List<string> GeneratePlans(string outputPath, string rootFolder = null)
+        internal List<string> GeneratePlans(string outputPath)
         {
             m_GeneratedFilePaths.Clear();
             DomainAssetDatabase.Refresh();
@@ -57,9 +56,6 @@ namespace UnityEditor.AI.Planner.CodeGen
             var anyEnums = DomainAssetDatabase.EnumDefinitions.Any();
             foreach (var plan in DomainAssetDatabase.PlanDefinitions)
             {
-                if (rootFolder == null || !AssetDatabase.GetAssetPath(plan).StartsWith(rootFolder))
-                    continue;
-
                 foreach (var action in plan.ActionDefinitions)
                 {
                     if (action != null)
@@ -70,9 +66,9 @@ namespace UnityEditor.AI.Planner.CodeGen
 
                 GeneratePlanner(plan, plan.Name, TypeResolver.ActionsNamespace, outputPath, anyEnums);
             }
-            GenerateConditionalAssembly(actionsNamespace, "PLANNER_ACTIONS_GENERATED", outputPath);
 
-            return m_GeneratedFilePaths;
+            // Make a copy, so this is re-entrant
+            return m_GeneratedFilePaths.ToList();
         }
 
         void GenerateTrait(TraitDefinition trait, string domainNamespace, string outputPath, bool includeEnums = false)
@@ -111,7 +107,14 @@ namespace UnityEditor.AI.Planner.CodeGen
             var traits = DomainAssetDatabase.TraitDefinitions.Select(p => new
             {
                 name = p.Name,
-                relations = p.Fields.Where(f => f.Type.EndsWith("ObjectId")).Select(f => new { name = f.Name })
+                relations = p.Fields.Where(f => f.Type.EndsWith("ObjectId")).Select(f => new { name = f.Name }),
+                attributes = p.Fields.Where(f => !f.Type.EndsWith("ObjectId")
+                    && (f.FieldType == null // It's possible the type isn't available for reflection, so just assume it's blittable for now
+                    || UnsafeUtility.IsBlittable(f.FieldType))).Select(t => new
+                {
+                    field_type = t.Type,
+                    field_name = t.Name
+                })
             });
 
             foreach (var termination in DomainAssetDatabase.StateTerminationDefinitions)
@@ -202,16 +205,8 @@ namespace UnityEditor.AI.Planner.CodeGen
 
         void GeneratePlanner(PlanDefinition definition, string planningNamespace, string domainNamespace, string outputPath, bool includeEnums = false)
         {
-            var heuristicTypeName = "DefaultHeuristic";
-            if (!string.IsNullOrEmpty(definition.CustomHeuristic))
-            {
-                List<Type> heuristicTypes = new List<Type>();
-                typeof(ICustomHeuristic<>).GetImplementationsOfInterface(heuristicTypes);
-
-                var type = heuristicTypes.FirstOrDefault(h => h.Name == definition.CustomHeuristic);
-                if (type != null)
-                    heuristicTypeName = type.FullName;
-            }
+            var customHeuristic = definition.CustomHeuristic;
+            var heuristicTypeName = string.IsNullOrEmpty(customHeuristic) ? "DefaultHeuristic" : customHeuristic;
 
             var defaultHeuristic = new
             {
@@ -277,7 +272,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             var customRewards = action.CustomRewards.Select(c => new
             {
                 @operator = c.Operator,
-                typename = TypeResolver.GetType(c.Typename).FullName,
+                typename = c.Typename.Split(',')[0],
                 parameters = c.Parameters.Select((p, index) => new
                 {
                     index = parameterNames.IndexOf(p),
@@ -423,23 +418,10 @@ namespace UnityEditor.AI.Planner.CodeGen
             return modifierLines.ToArray();
         }
 
-        void GenerateConditionalAssembly(string domainNamespace, string define, string outputPath)
-        {
-            var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateConditionalAssembly, new
-            {
-                @namespace = domainNamespace,
-                define = define
-            });
-
-            SaveToFile($"{outputPath}/{domainNamespace}/ConditionalAssembly.cs", result);
-        }
-
         void SaveToFile(string filePath, string text)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-
             File.WriteAllText(filePath, text);
-            AssetDatabase.ImportAsset(filePath);
 
             m_GeneratedFilePaths.Add(filePath);
         }

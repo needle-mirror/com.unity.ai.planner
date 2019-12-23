@@ -24,9 +24,12 @@ MonoImporter:
   - m_TemplateTermination: {fileID: 4900000, guid: 9dff2e41acf2e1949b87e4013ebfbf28,
       type: 3}
   - m_TemplateTrait: {fileID: 4900000, guid: ea72ba89ab2c80241a8a4e9d390f99b7, type: 3}
-  - m_TemplateConditionalAssembly: {fileID: 4900000, guid: 8bde2b5f76fb4a84ea9cbde1d7dac735,
-      type: 3}
   - m_TemplatePlanExecutor: {fileID: 4900000, guid: c0815597e284fbc4faa054f4b8273a9a,
+      type: 3}
+  - m_TemplatePackage: {fileID: 4900000, guid: ee17fffe131ff934b8e256d955fbeaba, type: 3}
+  - m_TemplateDomainsAsmDef: {fileID: 4900000, guid: 3355d92bb3263da42991d7d8f3a4e514,
+      type: 3}
+  - m_TemplateActionsAsmDef: {fileID: 4900000, guid: 90aff38792df6ce43b020363899dadbf,
       type: 3}
   executionOrder: 0
   icon: {instanceID: 0}

@@ -5,6 +5,7 @@ using Unity.AI.Planner;
 using UnityEditor.AI.Planner.Editors;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
+using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {
@@ -13,14 +14,16 @@ namespace UnityEditor.AI.Planner.Visualizer
         public bool ExpansionNode { get; }
         public string Label { get; }
 
-        protected IPlanExecutionInfo m_PlanExecutionInfo;
+        protected IPlanExecutor m_PlanExecutor;
+        protected IPlan m_Plan;
 
-        protected BaseNode(IPlanExecutionInfo planExecutionInfo, string label, object content, bool expansion = false,  float weight = 1, bool active = false)
+        protected BaseNode(IPlanExecutor planExecutor, string label, object content, bool expansion = false,  float weight = 1, bool active = false)
             : base(content, weight, active)
         {
+            m_PlanExecutor = planExecutor;
+            m_Plan = planExecutor.Plan;
             Label = label;
             ExpansionNode = expansion;
-            m_PlanExecutionInfo = planExecutionInfo;
         }
 
         public abstract IEnumerable<Node> GetNodeChildren(int maxDepth, int maxChildrenNodes);
@@ -63,11 +66,11 @@ namespace UnityEditor.AI.Planner.Visualizer
         }
 
         // Local cache
-        List<(StateTransitionInfo, IStateKey)> m_StateTransitions = new List<(StateTransitionInfo, IStateKey)>();
+        List<IStateKey> m_StateTransitions = new List<IStateKey>();
         List<Successor> m_Successors = new List<Successor>();
 
-        public ActionNode(IPlanExecutionInfo planExecutionInfo, (IStateKey, IActionKey) stateActionKey, bool expansion = false, float weight = 1, bool active = false)
-            : base(planExecutionInfo, planExecutionInfo.GetActionName(stateActionKey.Item2), stateActionKey, expansion, weight, active)
+        public ActionNode(IPlanExecutor planExecutor, (IStateKey, IActionKey) stateActionKey, bool expansion = false, float weight = 1, bool active = false)
+            : base(planExecutor, planExecutor.GetActionName(stateActionKey.Item2), stateActionKey, expansion, weight, active)
         {
         }
 
@@ -87,33 +90,38 @@ namespace UnityEditor.AI.Planner.Visualizer
             if (weight < 0f)
                 return base.GetExpansionString(); // Back to parent node
 
-            var stateTransitionCount = m_PlanExecutionInfo.GetActionResults(StateActionKey, null);
+            var (stateKey, actionKey) = StateActionKey;
+            var stateTransitionCount = m_Plan.GetResultingStates(stateKey, actionKey, null);
             return $"{stateTransitionCount} State(s)";
         }
 
         public override void DrawInspector()
         {
-            base.DrawInspector();
+            var (stateKey, actionKey) = StateActionKey;
+            if (m_Plan.TryGetActionInfo(stateKey, actionKey, out var actionInfo))
+            {
+                base.DrawInspector();
 
-            var actionInfo = m_PlanExecutionInfo.GetActionInfo(StateActionKey);
+                EditorGUILayout.LabelField("Action Value", $"{actionInfo.ActionValue}", EditorStyles.whiteLabel);
+                EditorGUILayout.LabelField("Complete", $"{actionInfo.SubgraphComplete}", EditorStyles.whiteLabel);
 
-            EditorGUILayout.LabelField("Action Value", $"{actionInfo.ActionValue}", EditorStyles.whiteLabel);
-            EditorGUILayout.LabelField("Complete", $"{actionInfo.SubgraphComplete}", EditorStyles.whiteLabel);
+                SortSuccessorStates(stateKey, actionKey, m_StateTransitions, ref m_Successors, out _, out _);
 
-            SortSuccessorStates(m_StateTransitions, ref m_Successors, out _, out _);
+                if (m_Successors.Count > 0)
+                {
+                    var successor = m_Successors[0];
 
-            var successor = m_Successors[0];
+                    EditorGUILayout.Space();
+                    EditorGUILayout.LabelField("Resulting state", $"{successor.StateKey.Label}", EditorStyles.whiteLabel);
+                    EditorGUILayout.LabelField("Probability", $"{successor.StateTransitionInfo.Probability}", EditorStyles.whiteLabel);
+                    EditorGUILayout.LabelField("Transition Utility Value", $"{successor.StateTransitionInfo.TransitionUtilityValue}", EditorStyles.whiteLabel);
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Resulting state", $"{successor.StateKey.Label}", EditorStyles.whiteLabel);
-            EditorGUILayout.LabelField("Probability", $"{successor.StateTransitionInfo.Probability}", EditorStyles.whiteLabel);
-            EditorGUILayout.LabelField("Transition Utility Value", $"{successor.StateTransitionInfo.TransitionUtilityValue}", EditorStyles.whiteLabel);
-
-            // TODO display Action arguments
-
+                    // TODO display Action arguments
+                }
+            }
         }
 
-        static void SortSuccessorStates(List<(StateTransitionInfo, IStateKey)> stateTransitions, ref List<Successor> successors, out float minProbability, out float maxProbability)
+        void SortSuccessorStates(IStateKey stateKey, IActionKey actionKey, List<IStateKey> stateTransitions, ref List<Successor> successors, out float minProbability, out float maxProbability)
         {
             // Grab all child nodes and sort them
             minProbability = float.MaxValue;
@@ -121,19 +129,19 @@ namespace UnityEditor.AI.Planner.Visualizer
             successors.Clear();
             for (var i = 0; i < stateTransitions.Count; i++)
             {
-                var stateTransitionPair = stateTransitions[i];
-                var stateTransitionInfo = stateTransitionPair.Item1;
-                var resultingState = stateTransitionPair.Item2;
-
-                var resultProbability = stateTransitionInfo.Probability;
-                minProbability = Mathf.Min(minProbability, resultProbability);
-                maxProbability = Mathf.Max(maxProbability, resultProbability);
-
-                successors.Add(new Successor()
+                var resultingState = stateTransitions[i];
+                if (m_Plan.TryGetStateTransitionInfo(stateKey, actionKey, resultingState, out var stateTransitionInfo))
                 {
-                    StateTransitionInfo = stateTransitionInfo,
-                    StateKey = resultingState
-                });
+                    var resultProbability = stateTransitionInfo.Probability;
+                    minProbability = Mathf.Min(minProbability, resultProbability);
+                    maxProbability = Mathf.Max(maxProbability, resultProbability);
+
+                    successors.Add(new Successor()
+                    {
+                        StateTransitionInfo = stateTransitionInfo,
+                        StateKey = resultingState
+                    });
+                }
             }
 
             successors.Sort();
@@ -141,14 +149,15 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         public override IEnumerable<Node> GetNodeChildren(int maxDepth, int maxChildrenNodes)
         {
-            m_PlanExecutionInfo.GetActionResults(StateActionKey, m_StateTransitions);
+            var (stateKey, actionKey) = StateActionKey;
+            m_Plan.GetResultingStates(stateKey, actionKey, m_StateTransitions);
 
             // Handle current node
             if (maxDepth > 0 && depth > maxDepth)
             {
                 if (depth == maxDepth + 1 && m_StateTransitions.Count > 0)
                 {
-                    var expansionNode = new ActionNode(m_PlanExecutionInfo, StateActionKey, true,
+                    var expansionNode = new ActionNode(m_PlanExecutor, StateActionKey, true,
                         Mathf.Min(weight, float.Epsilon));
                     yield return expansionNode;
                 }
@@ -157,7 +166,7 @@ namespace UnityEditor.AI.Planner.Visualizer
             }
 
             var successors = new List<Successor>();
-            SortSuccessorStates(m_StateTransitions, ref successors, out var minProbability, out var maxProbability);
+            SortSuccessorStates(stateKey, actionKey, m_StateTransitions, ref successors, out var minProbability, out var maxProbability);
 
             // Yield children
             var c = 0;
@@ -171,7 +180,7 @@ namespace UnityEditor.AI.Planner.Visualizer
                     float.MaxValue :
                     Mathf.InverseLerp(minProbability, maxProbability, probability);
 
-                yield return new StateNode(m_PlanExecutionInfo, successor.StateKey, weight: nodeWeight);
+                yield return new StateNode(m_PlanExecutor, successor.StateKey, weight: nodeWeight);
 
                 c++;
             }
@@ -197,15 +206,17 @@ namespace UnityEditor.AI.Planner.Visualizer
         static List<IActionKey> s_Actions = new List<IActionKey>();
         static List<Successor> s_Successors = new List<Successor>();
 
-        public StateNode(IPlanExecutionInfo planExecutionInfo, IStateKey stateKey, bool expansion = false, float weight = 1, bool active = false)
-            : base(planExecutionInfo, stateKey.Label, stateKey, expansion, weight, active)
+        public StateNode(IPlanExecutor planExecutor, IStateKey stateKey, bool expansion = false, float weight = 1, bool active = false)
+            : base(planExecutor, stateKey.Label, stateKey, expansion, weight, active)
         {
         }
 
         public override Type GetContentType()
         {
-            var stateInfo = m_PlanExecutionInfo.GetStateInfo(StateKey);
-            return stateInfo.GetType();
+            if (m_Plan.TryGetStateInfo(StateKey, out var stateInfo))
+                return stateInfo.GetType();
+
+            return base.GetContentType();
         }
 
         protected override string GetExpansionString()
@@ -213,65 +224,54 @@ namespace UnityEditor.AI.Planner.Visualizer
             if (weight < 0f)
                 return base.GetExpansionString(); // Back to parent node
 
-            var actionsCount = m_PlanExecutionInfo.GetActions(StateKey, null);
+            var actionsCount = m_Plan.GetActions(StateKey, null);
             return $"{actionsCount} Action(s)";
         }
 
         public override void DrawInspector()
         {
-            base.DrawInspector();
-
-            var stateInfo = m_PlanExecutionInfo.GetStateInfo(StateKey);
-
-            EditorGUILayout.LabelField("Policy Value", $"{stateInfo.PolicyValue}", EditorStyles.whiteLabel);
-            EditorGUILayout.LabelField("Complete", $"{stateInfo.SubgraphComplete}", EditorStyles.whiteLabel);
-
-            if (m_PlanExecutionInfo.GetOptimalAction(StateKey, out var optimalActionKey))
+            if (m_Plan.TryGetStateInfo(StateKey, out var stateInfo))
             {
-                EditorGUILayout.LabelField("Optimal Action", m_PlanExecutionInfo.GetActionName(optimalActionKey), EditorStyles.whiteLabel);
-            }
+                base.DrawInspector();
 
-            var stateManager = m_PlanExecutionInfo.StateManager;
-            if (stateManager != null) // null when stateManager does not implement IStateManagerInternal
-            {
-                try
+                EditorGUILayout.LabelField("Policy Value", $"{stateInfo.PolicyValue}", EditorStyles.whiteLabel);
+                EditorGUILayout.LabelField("Complete", $"{stateInfo.SubgraphComplete}", EditorStyles.whiteLabel);
+
+                if (m_Plan.TryGetOptimalAction(StateKey, out var optimalActionKey))
                 {
-                    var stateData = stateManager.GetStateData(StateKey, false);
-
-                    s_ActionsGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("Successor Actions"), s_ActionsGUIFoldout);
-                    if (s_ActionsGUIFoldout)
-                    {
-                        using (new EditorGUI.IndentLevelScope())
-                        {
-                            m_PlanExecutionInfo.GetActions(StateKey, s_Actions);
-                            SortSuccessorActions(s_Actions, ref s_Successors, out _, out _);
-
-                            foreach (var successor in s_Successors)
-                            {
-                                var actionKey = successor.ActionKey;
-                                var stateActionKey = (StateKey, actionKey);
-
-                                var actionInfo = m_PlanExecutionInfo.GetActionInfo(stateActionKey);
-
-                                EditorGUILayout.LabelField($"{m_PlanExecutionInfo.GetActionName(actionKey)}", $"{actionInfo.ActionValue}", EditorStyles.whiteLabel);
-                            }
-                        }
-                    }
-
-                    var stateString = stateData.ToString();
-                    EditorGUILayout.Space();
-                    s_StateGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("State information"), s_StateGUIFoldout);
-                    if (s_StateGUIFoldout)
-                    {
-                        using (new EditorGUI.IndentLevelScope())
-                        {
-                            EditorGUILayout.LabelField(stateString, EditorStyleHelper.inspectorStyleLabel);
-                        }
-                    }
-                    if (GUILayout.Button("Copy State", EditorStyles.miniButton))
-                        stateString.CopyToClipboard();
+                    EditorGUILayout.LabelField("Optimal Action", m_PlanExecutor.GetActionName(optimalActionKey), EditorStyles.whiteLabel);
                 }
-                catch (ArgumentException) {}
+
+                var stateString = m_PlanExecutor.GetStateString(StateKey);
+
+                s_ActionsGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("Successor Actions"), s_ActionsGUIFoldout);
+                if (s_ActionsGUIFoldout)
+                {
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        m_Plan.GetActions(StateKey, s_Actions);
+                        SortSuccessorActions(s_Actions, ref s_Successors, out _, out _);
+
+                        foreach (var successor in s_Successors)
+                        {
+                            var actionKey = successor.ActionKey;
+                            if (m_Plan.TryGetActionInfo(StateKey, actionKey, out var actionInfo))
+                                EditorGUILayout.LabelField($"{m_PlanExecutor.GetActionName(actionKey)}", $"{actionInfo.ActionValue}", EditorStyles.whiteLabel);
+                        }
+                    }
+                }
+
+                EditorGUILayout.Space();
+                s_StateGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("State information"), s_StateGUIFoldout);
+                if (s_StateGUIFoldout)
+                {
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        EditorGUILayout.LabelField(stateString, EditorStyleHelper.inspectorStyleLabel);
+                    }
+                }
+                if (GUILayout.Button("Copy State", EditorStyles.miniButton))
+                    stateString.CopyToClipboard();
             }
         }
 
@@ -284,16 +284,18 @@ namespace UnityEditor.AI.Planner.Visualizer
             for (var i = 0; i < actions.Count; i++)
             {
                 var actionKey = actions[i];
-                var actionInfo = m_PlanExecutionInfo.GetActionInfo((StateKey, actionKey));
-                var actionValue = actionInfo.ActionValue;
-                minActionValue = Mathf.Min(minActionValue, actionValue.Average);
-                maxActionValue = Mathf.Max(maxActionValue, actionValue.Average);
-
-                successors.Add(new Successor()
+                if (m_Plan.TryGetActionInfo(StateKey, actionKey, out var actionInfo))
                 {
-                    ActionKey = actionKey,
-                    ActionInfo = actionInfo,
-                });
+                    var actionValue = actionInfo.ActionValue;
+                    minActionValue = Mathf.Min(minActionValue, actionValue.Average);
+                    maxActionValue = Mathf.Max(maxActionValue, actionValue.Average);
+
+                    successors.Add(new Successor()
+                    {
+                        ActionKey = actionKey,
+                        ActionInfo = actionInfo,
+                    });
+                }
             }
 
             successors.Sort();
@@ -301,14 +303,14 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         public override IEnumerable<Node> GetNodeChildren(int maxDepth, int maxChildrenNodes)
         {
-            m_PlanExecutionInfo.GetActions(StateKey, s_Actions);
+            m_Plan.GetActions(StateKey, s_Actions);
 
             // Handle current node
             if (maxDepth > 0 && depth > maxDepth)
             {
                 if (depth == maxDepth + 1 && s_Actions.Count > 0)
                 {
-                    var expansionNode = new StateNode(m_PlanExecutionInfo, StateKey,  true,
+                    var expansionNode = new StateNode(m_PlanExecutor, StateKey,  true,
                         Mathf.Min(weight, float.Epsilon));
                     yield return expansionNode;
                 }
@@ -320,20 +322,23 @@ namespace UnityEditor.AI.Planner.Visualizer
             SortSuccessorActions(s_Actions, ref successors, out var minActionValue, out var maxActionValue);
 
             // Yield children
-            m_PlanExecutionInfo.GetOptimalAction(StateKey, out var optimalActionKey);
-            var c = 0;
-            foreach (var successor in successors)
+            if (m_Plan.TryGetOptimalAction(StateKey, out var optimalActionKey))
             {
-                if (c >= maxChildrenNodes)
-                    yield break;
+                var c = 0;
+                foreach (var successor in successors)
+                {
+                    if (c >= maxChildrenNodes)
+                        yield break;
 
-                var actionKey = successor.ActionKey;
-                var nodeWeight = actionKey.Equals(optimalActionKey) ? float.MaxValue
-                    : Mathf.InverseLerp(minActionValue, maxActionValue, successor.ActionInfo.ActionValue.Average);
+                    var actionKey = successor.ActionKey;
+                    var nodeWeight = actionKey.Equals(optimalActionKey)
+                        ? float.MaxValue
+                        : Mathf.InverseLerp(minActionValue, maxActionValue, successor.ActionInfo.ActionValue.Average);
 
-                yield return new ActionNode(m_PlanExecutionInfo, (StateKey, actionKey), weight: nodeWeight);
+                    yield return new ActionNode(m_PlanExecutor, (StateKey, actionKey), weight: nodeWeight);
 
-                c++;
+                    c++;
+                }
             }
         }
     }
@@ -344,11 +349,11 @@ namespace UnityEditor.AI.Planner.Visualizer
         public int MaxChildrenNodes { get; set; }
         public IVisualizerNode RootNodeOverride { get; set; }
 
-        IPlanExecutionInfo m_PlanExecutionInfo;
+        IPlanExecutor m_PlanExecutor;
 
-        public PlanVisualizer(IPlanExecutionInfo planExecutionInfo)
+        public PlanVisualizer(IPlanExecutor planExecutor)
         {
-            m_PlanExecutionInfo = planExecutionInfo;
+            m_PlanExecutor = planExecutor;
         }
 
         protected override IEnumerable<Node> GetChildren(Node node)
@@ -359,9 +364,6 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         protected override void Populate()
         {
-            if (!m_PlanExecutionInfo.PlanExists)
-                return;
-
             if (RootNodeOverride == null)
                 PopulateWithRoot();
             else
@@ -370,11 +372,11 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         void PopulateWithRoot()
         {
-            var rootStateKey = m_PlanExecutionInfo.RootStateKey;
+            var rootStateKey = m_PlanExecutor.CurrentStateKey;
 
             // If action is in progress use action node as root.
-            var actionKey = m_PlanExecutionInfo.CurrentAction;
-            if (actionKey != null)
+            var actionKey = m_PlanExecutor.CurrentActionKey;
+            if (!actionKey.Equals(default))
             {
                 var visualizerActionNode = CreateActionNode((rootStateKey, actionKey),1f, true);
                 AddNodeHierarchy(visualizerActionNode);
@@ -415,12 +417,12 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         BaseNode CreateActionNode((IStateKey, IActionKey) stateActionKey, float weight, bool active = false, bool expansion = false)
         {
-            return new ActionNode(m_PlanExecutionInfo, stateActionKey, expansion, weight, active);
+            return new ActionNode(m_PlanExecutor, stateActionKey, expansion, weight, active);
         }
 
         BaseNode CreateStateNode(IStateKey stateKey, float weight, bool active = false, bool expansion = false)
         {
-            return new StateNode(m_PlanExecutionInfo, stateKey, expansion, weight, active);
+            return new StateNode(m_PlanExecutor, stateKey, expansion, weight, active);
         }
     }
 }

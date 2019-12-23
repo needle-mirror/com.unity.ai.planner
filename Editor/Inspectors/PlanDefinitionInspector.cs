@@ -58,7 +58,7 @@ namespace UnityEditor.AI.Planner.Editors
             GUILayout.Label(EditorStyleHelper.planSearchSettings, EditorStyles.boldLabel);
 
             var customHeuristic = serializedObject.FindProperty("m_CustomHeuristic");
-            var heuristicTypeNames = m_CustomHeuristicTypes.Where(t => !t.IsGenericType).Select(t => t.Name).Prepend(k_Default).ToArray();
+            var heuristicTypeNames = m_CustomHeuristicTypes.Where(t => !t.IsGenericType).Select(t => t.FullName).Prepend(k_Default).ToArray();
 
             var heuristicIndex = Math.Max(0, Array.IndexOf(heuristicTypeNames, customHeuristic.stringValue));
             EditorGUI.BeginChangeCheck();
@@ -85,6 +85,9 @@ namespace UnityEditor.AI.Planner.Editors
                 upperHeuristic.intValue = EditorGUILayout.IntField(upperHeuristic.intValue);
                 EditorGUILayout.EndHorizontal();
             }
+
+            var discountFactor = serializedObject.FindProperty("DiscountFactor");
+            EditorGUILayout.PropertyField(discountFactor);
 
             serializedObject.ApplyModifiedProperties();
 

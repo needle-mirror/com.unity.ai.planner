@@ -1,4 +1,5 @@
-﻿using Unity.AI.Planner.Jobs;
+﻿using System;
+using Unity.AI.Planner.Jobs;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -32,6 +33,8 @@ namespace Unity.AI.Planner.Tests
 
         public int GetStateData(int stateKey, bool readWrite) => GetStateData(stateKey);
 
+        public IStateData GetStateData(IStateKey stateKey, bool readWrite) => null;
+
         public int CreateStateData() => default;
 
         public int CopyStateData(int stateData) => stateData;
@@ -49,7 +52,7 @@ namespace Unity.AI.Planner.Tests
         public int GetHashCode(int stateData) => stateData;
     }
 
-    class CountToActionScheduler : IActionScheduler<int, int, TestStateDataContext, TestStateManager, int, StateTransitionInfo>
+    struct CountToActionScheduler : IActionScheduler<int, int, TestStateDataContext, TestStateManager, int>
     {
         // Input
         public NativeList<int> UnexpandedStates { get; set; }

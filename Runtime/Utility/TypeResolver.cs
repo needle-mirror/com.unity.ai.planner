@@ -38,11 +38,14 @@ namespace Unity.AI.Planner.Utility
             if (type == null)
                 type = Type.GetType($"{typeName},{DomainsAssemblyName}");
             if (type == null)
+                type = Type.GetType($"{typeName},{PlannerAssemblyName}");
+            if (type == null)
                 type = Type.GetType($"{typeName},UnityEngine");
             if (type == null)
                 type = Type.GetType(typeName);
 
-            m_TypeCache.Add(typeName, type);
+            if (type != null)
+                m_TypeCache.Add(typeName, type);
 
             return type;
         }

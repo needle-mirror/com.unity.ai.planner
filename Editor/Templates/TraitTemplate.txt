@@ -55,23 +55,6 @@ namespace {{ namespace }}
         {{- end }}
         }
 
-        public bool AttributesEqual({{name}} other)
-        {
-        {{- if fields.empty? }}
-            return true;
-        {{- else }}
-        {{ for field in fields }}
-            {{- if for.index == 0 }}    return true{{ else }} {{ end }}
-            {{- if field.field_type | string.contains "ObjectId" }}
-            {{- else if field.field_type | string.contains "NativeString" }}
-                    && {{ field.field_name }}.Equals(other.{{ field.field_name }})
-            {{- else }}
-                    && {{ field.field_name }} == other.{{ field.field_name }}
-            {{- end }}
-            {{- end }};
-        {{- end }}
-        }
-
         public bool Equals({{ name }} other)
         {
         {{- if fields.empty? }}
@@ -84,18 +67,6 @@ namespace {{ namespace }}
             {{- else }}
                     {{- field.field_name }} == other.{{ field.field_name }}
             {{- end }}
-            {{- end }};
-        {{- end }}
-        }
-
-        public override int GetHashCode()
-        {
-        {{- if fields.empty? }}
-            return ComponentType.ReadOnly<{{ name }}>().TypeIndex;
-        {{- else }}
-            return 397
-            {{- for field in fields }}
-                ^ {{ field.field_name }}.GetHashCode()
             {{- end }};
         {{- end }}
         }

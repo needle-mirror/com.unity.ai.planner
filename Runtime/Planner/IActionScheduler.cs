@@ -13,14 +13,12 @@ namespace Unity.AI.Planner.Jobs
     /// <typeparam name="TStateDataContext">StateDataContext type</typeparam>
     /// <typeparam name="TStateManager">StateManager type</typeparam>
     /// <typeparam name="TActionKey">ActionKey type</typeparam>
-    /// <typeparam name="TStateTransitionInfo">StateTransitionInfo type</typeparam>
-    public interface IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey, TStateTransitionInfo>
+    interface IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey>
         where TStateKey : struct, IEquatable<TStateKey>
         where TStateData : struct
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
         where TStateManager : IStateManager<TStateKey, TStateData, TStateDataContext>
         where TActionKey : struct, IEquatable<TActionKey>
-        where TStateTransitionInfo : struct
     {
         /// <summary>
         /// Input to action scheduler: List of states to expand via scheduled actions

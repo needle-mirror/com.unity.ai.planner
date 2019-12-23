@@ -67,7 +67,7 @@ namespace UnityEditor.AI.Planner
 
                     // Auto-compile
                     {
-                        var label = new GUIContent("Auto-build (Play Mode)",
+                        var label = new GUIContent("Auto-build (play mode)",
                             "If any planner assets have changed, then the generated assemblies for the AI Planner "
                             + "will be re-generated before entering into play mode.");
 
