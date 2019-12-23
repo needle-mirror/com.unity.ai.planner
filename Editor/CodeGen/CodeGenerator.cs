@@ -158,16 +158,29 @@ namespace UnityEditor.AI.Planner.CodeGen
                     , parameterNames.FindIndex(name => name == p.OperandB.Parameter))
             });
 
-            var customRewards = termination.CustomRewards.Select(c => new
+            var customRewards = termination.CustomRewards.Select(c =>
             {
-                @operator = c.Operator,
-                typename = TypeResolver.GetType(c.Typename).FullName,
-                parameters = c.Parameters.Select((p, index) => new
+                var customRewardType = TypeResolver.GetType(c.Typename);
+                if (customRewardType != null)
                 {
-                    index = parameterNames.IndexOf(p),
-                    type = TypeResolver.GetType(c.Typename).GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
-                })
-            });
+                    return new
+                    {
+                        @operator = c.Operator,
+                        typename = customRewardType.FullName,
+                        parameters = c.Parameters.Select((p, index) => new
+                        {
+                            index = parameterNames.IndexOf(p),
+                            type = TypeResolver.GetType(c.Typename).GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
+                        })
+                    };
+                }
+                else
+                {
+                    Debug.LogWarning($"Couldn't resolve custom type {c.Typename} for termination {termination.Name}. Skipping for now, but try to re-generate.");
+                }
+
+                return null;
+            }).Where(c => c != null);
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateTermination, new
             {
@@ -269,16 +282,29 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var objectModifiers = action.ObjectModifiers.Select(p => BuildModifierLines(action, p.Operator, p.OperandA, p.OperandB, ref requiredObjectBuffers, ref requiredTraitBuffers));
 
-            var customRewards = action.CustomRewards.Select(c => new
+            var customRewards = action.CustomRewards.Select(c =>
             {
-                @operator = c.Operator,
-                typename = c.Typename.Split(',')[0],
-                parameters = c.Parameters.Select((p, index) => new
+                var customRewardType = TypeResolver.GetType(c.Typename);
+                if (customRewardType != null)
                 {
-                    index = parameterNames.IndexOf(p),
-                    type = TypeResolver.GetType(c.Typename).GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
-                })
-            });
+                    return new
+                    {
+                        @operator = c.Operator,
+                        typename = c.Typename.Split(',')[0],
+                        parameters = c.Parameters.Select((p, index) => new
+                        {
+                            index = parameterNames.IndexOf(p),
+                            type = customRewardType.GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
+                        })
+                    };
+                }
+                else
+                {
+                    Debug.LogWarning($"Couldn't resolve custom type {c.Typename} for termination {action.Name}. Skipping for now, but try to re-generate.");
+                }
+
+                return null;
+            }).Where(c => c != null);
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateAction, new
             {
