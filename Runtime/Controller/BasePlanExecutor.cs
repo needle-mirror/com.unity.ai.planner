@@ -200,7 +200,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             m_PlannerScheduler = new PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, THeuristic, TTerminationEvaluator, TDestroyStatesScheduler>();
             m_PlannerScheduler.Initialize(initialStateKey, m_StateManager, new THeuristic(), new TTerminationEvaluator(), discountFactor: planDefinition.DiscountFactor);
 
-            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(world);
+            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(world, ScriptBehaviourUpdateOrder.CurrentPlayerLoop);
 
             var controllerState = m_StateManager.CopyStateData(initialStateData);
             CurrentStateKey = m_StateManager.GetStateDataKey(controllerState);

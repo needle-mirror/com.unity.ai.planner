@@ -23,8 +23,8 @@ namespace UnityEditor.AI.Planner.CodeGen
         const string k_TempOutputDomainsAssembly = k_TempOutputPath + k_DomainsAssemblyName;
         const string k_TempOutputActionsAssembly = k_TempOutputPath + k_ActionsAssemblyName;
 
-        const string k_GeneratedProjectPath = "Packages/";
-        static readonly string k_GeneratedPackagesPath = $"{k_GeneratedProjectPath}/com.";
+        const string k_GeneratedProjectPath = "Packages";
+        static readonly string k_GeneratedPackagesPath = Path.Combine(k_GeneratedProjectPath, "com.");
 
         [InitializeOnLoadMethod]
         public static void AttachAutoBuild()
@@ -138,7 +138,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 if (actionsAssemblyBuilt || !Directory.Exists(generatedDomainsPath))
                 {
                     // Copy generated files for the domain over to the packages folder
-                    var domainsSourceDir = $"{generatedDomainsPath}/{TypeResolver.DomainsNamespace}";
+                    var domainsSourceDir = Path.Combine(generatedDomainsPath, TypeResolver.DomainsNamespace);
                     if (Directory.Exists(domainsSourceDir))
                     {
                         Directory.Delete(domainsSourceDir, true);
@@ -153,12 +153,12 @@ namespace UnityEditor.AI.Planner.CodeGen
                         Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
                         File.Copy(file, newFilePath, true);
                     }
-                    File.WriteAllText($"{generatedDomainsPath}/{domainsNamespace}.asmdef", codeRenderer.RenderTemplate(
+                    File.WriteAllText($"{Path.Combine(generatedDomainsPath, domainsNamespace)}.asmdef", codeRenderer.RenderTemplate(
                         PlannerResources.instance.TemplateDomainsAsmDef, new
                         {
                             @namespace = domainsNamespace
                         }));
-                    File.WriteAllText($"{generatedDomainsPath}/package.json", codeRenderer.RenderTemplate(
+                    File.WriteAllText(Path.Combine(generatedDomainsPath,"package.json"), codeRenderer.RenderTemplate(
                         PlannerResources.instance.TemplatePackage, new
                         {
                             assembly = domainsNamespace.Split('.').Last()
@@ -168,7 +168,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     {
                         // Copy generated files for the action over to the packages folder
                         var generatedActionsPath = $"{k_GeneratedPackagesPath}{actionsNamespace.ToLower()}.generated";
-                        var actionsSourceDir = $"{generatedActionsPath}/{TypeResolver.ActionsNamespace}";
+                        var actionsSourceDir = $"{Path.Combine(generatedActionsPath, TypeResolver.ActionsNamespace)}";
                         if (Directory.Exists(actionsSourceDir))
                         {
                             Directory.Delete(actionsSourceDir, true);
@@ -183,7 +183,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                             File.Copy(file, newFilePath, true);
                         }
 
-                        File.WriteAllText($"{generatedActionsPath}/{actionsNamespace}.asmdef", codeRenderer.RenderTemplate(
+                        File.WriteAllText($"{Path.Combine(generatedActionsPath, actionsNamespace)}.asmdef", codeRenderer.RenderTemplate(
                             PlannerResources.instance.TemplateActionsAsmDef, new
                             {
                                 @namespace = actionsNamespace,
@@ -191,7 +191,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                                 additional_references = dependentAssemblies
                             }));
 
-                        File.WriteAllText($"{generatedActionsPath}/package.json", codeRenderer.RenderTemplate(
+                        File.WriteAllText(Path.Combine(generatedActionsPath, "package.json"), codeRenderer.RenderTemplate(
                             PlannerResources.instance.TemplatePackage, new
                             {
                                 assembly = actionsNamespace.Split('.').Last()
@@ -206,6 +206,9 @@ namespace UnityEditor.AI.Planner.CodeGen
         internal static bool BuildAssembly(string[] paths, string outputPath, string[] excludeReferences = null,
             string[] additionalReferences = null, string[] additionalDefines = null)
         {
+            if (paths == null || paths.Length == 0)
+                return false;
+
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
 
             var predefinedReferences = new[]

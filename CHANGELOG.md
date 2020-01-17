@@ -20,7 +20,12 @@ Notes about changelog:
 or
 [X.Y.Z] - date
  -->
-
+ 
+## [0.2.2-preview] - 2020-01-16
+### Fixed
+* Fix filepath concatenation when generating code. 
+* Fix loss of existing player loop when initializing the plan executor. 
+ 
 ## [0.2.1-preview] - 2019-12-20
 ### Added
 * IsIdle to `IDecisionController` to reflect when the controller is not planning and not executing actions.
