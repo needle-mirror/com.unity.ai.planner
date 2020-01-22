@@ -6,7 +6,7 @@ namespace Unity.AI.Planner
     /// <summary>
     /// Interface marking an implementation of the planner scheduler.
     /// </summary>
-    public interface IPlannerScheduler
+    public interface IPlannerScheduler : IDisposable
     {
         /// <summary>
         /// The current plan request for which the planning jobs are scheduled.

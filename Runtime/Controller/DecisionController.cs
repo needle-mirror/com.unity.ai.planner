@@ -289,6 +289,8 @@ namespace Unity.AI.Planner.Controller
 
         void OnDestroy()
         {
+            m_PlannerScheduler?.Dispose();
+            m_StateConverter?.Dispose();
             m_PlanExecutor?.Dispose();
         }
 

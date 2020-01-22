@@ -8,7 +8,7 @@ namespace Unity.AI.Planner.Traits
     /// An interface denoting the implementation of a state converter for trait-based planning states. A state converter
     /// creates planning state representations from game state data.
     /// </summary>
-    public interface ITraitBasedStateConverter
+    public interface ITraitBasedStateConverter : IDisposable
     {
         /// <summary>
         /// Creates a planning state from a set of entities holding traits. Only traits covered by the converter's

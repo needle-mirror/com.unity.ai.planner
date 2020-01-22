@@ -23,6 +23,12 @@ or
 [X.Y.Z] - date
  -->
 
+## [0.3.0-preview.2] - 2020-01-22
+
+### Fixed
+
+* Fix a memory leak when DecisionController is destroyed
+
 ## [0.3.0-preview.1] - 2020-12-03
 ### Added
 
