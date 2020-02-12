@@ -1059,7 +1059,7 @@ namespace KeyDomain
         [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<Lockable> LockableData;
         [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<End> EndData;
 
-        public StateDataContext(JobComponentSystem system, EntityArchetype stateArchetype)
+        public StateDataContext(SystemBase system, EntityArchetype stateArchetype)
         {
             EntityCommandBuffer = default;
             TraitBasedObjects = system.GetBufferFromEntity<TraitBasedObject>(true);
@@ -1127,7 +1127,7 @@ namespace KeyDomain
     }
 
     [DisableAutoCreation]
-    class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>
+    class StateManager : SystemBase, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>
     {
         public new EntityManager EntityManager
         {
@@ -1237,14 +1237,13 @@ namespace KeyDomain
             return new StateEntityKey { Entity = copyStateEntity, HashCode = stateData.GetHashCode()};
         }
 
-        protected override JobHandle OnUpdate(JobHandle inputDeps)
+        protected override void OnUpdate()
         {
             if (!EntityManager.ExclusiveEntityTransactionDependency.IsCompleted)
-                return inputDeps;
+                return;
 
             EntityManager.ExclusiveEntityTransactionDependency.Complete();
             ClearECBs();
-            return inputDeps;
         }
 
         void ClearECBs()

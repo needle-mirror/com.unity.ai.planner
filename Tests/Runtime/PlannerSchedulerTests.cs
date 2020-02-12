@@ -23,12 +23,10 @@ namespace Unity.AI.Planner.Tests.Integration
     [TestFixture]
     class PlannerSchedulerTests
     {
-
-
         [Test]
         public void TestTenIterations()
         {
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, DefaultCumulativeRewardEstimator<int>, DefaultTerminalStateEvaluator<int>, DestroyIntsScheduler>();
+            var scheduler = new DefaultScheduler();
             scheduler.Initialize(new TestStateManager(), new DefaultCumulativeRewardEstimator<int>(), new DefaultTerminalStateEvaluator<int>());
             JobHandle currentJobHandle = default;
 
@@ -47,7 +45,7 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             const int k_RootState = 0;
             const int k_Goal = 100;
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToCumulativeRewardEstimator, CountToTerminationEvaluator, DestroyIntsScheduler>();
+            var scheduler = new CountToScheduler();
             scheduler.Initialize(new TestStateManager(), new CountToCumulativeRewardEstimator { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
 
             bool complete = false;
@@ -70,7 +68,7 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             const int k_RootState = 0;
             const int k_Goal = 100;
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToCumulativeRewardEstimator, CountToTerminationEvaluator, DestroyIntsScheduler>();
+            var scheduler = new CountToScheduler();
             scheduler.Initialize(new TestStateManager(), new CountToCumulativeRewardEstimator { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
             var request = scheduler.RequestPlan(k_RootState);
             for (int i = 0; i < 10; i++)
@@ -88,6 +86,70 @@ namespace Unity.AI.Planner.Tests.Integration
 
             Assert.AreEqual(1, planRootState);
             Assert.IsFalse(zeroInPlan);
+        }
+
+        [Test]
+        public void UpdateRootState_AfterSchedule_DoesNotThrow()
+        {
+            const int k_RootState = 0;
+
+            var scheduler = new DefaultScheduler();
+            scheduler.Initialize(new TestStateManager(), new DefaultCumulativeRewardEstimator<int>(), new DefaultTerminalStateEvaluator<int>());
+            scheduler.RequestPlan(k_RootState);
+            var jobHandle = scheduler.Schedule(default);
+
+            Assert.DoesNotThrow(() => scheduler.UpdatePlanRequestRootState(k_RootState+1));
+
+            jobHandle.Complete();
+            scheduler.Dispose();
+        }
+
+        [Test]
+        public void RequestPlan_AfterSchedule_DoesNotThrow()
+        {
+            const int k_RootState = 0;
+
+            var scheduler = new DefaultScheduler();
+            scheduler.Initialize(new TestStateManager(), new DefaultCumulativeRewardEstimator<int>(), new DefaultTerminalStateEvaluator<int>());
+            scheduler.RequestPlan(k_RootState);
+            var jobHandle = scheduler.Schedule(default);
+
+            Assert.DoesNotThrow(() => scheduler.RequestPlan(k_RootState+1));
+
+            jobHandle.Complete();
+            scheduler.Dispose();
+        }
+
+        [Test]
+        public void SetTermination_AfterSchedule_DoesNotThrow()
+        {
+            const int k_RootState = 0;
+
+            var scheduler = new DefaultScheduler();
+            scheduler.Initialize(new TestStateManager(), new DefaultCumulativeRewardEstimator<int>(), new DefaultTerminalStateEvaluator<int>());
+            scheduler.RequestPlan(k_RootState);
+            var jobHandle = scheduler.Schedule(default);
+
+            Assert.DoesNotThrow(() => scheduler.SetTerminationEvaluator(new DefaultTerminalStateEvaluator<int>()));
+
+            jobHandle.Complete();
+            scheduler.Dispose();
+        }
+
+        [Test]
+        public void Schedule_AfterSchedule_DoesNotThrow()
+        {
+            const int k_RootState = 0;
+
+            var scheduler = new DefaultScheduler();
+            scheduler.Initialize(new TestStateManager(), new DefaultCumulativeRewardEstimator<int>(), new DefaultTerminalStateEvaluator<int>());
+            scheduler.RequestPlan(k_RootState);
+            var jobHandle = scheduler.Schedule(default);
+
+            Assert.DoesNotThrow(() => jobHandle = scheduler.Schedule(jobHandle));
+
+            jobHandle.Complete();
+            scheduler.Dispose();
         }
     }
 }

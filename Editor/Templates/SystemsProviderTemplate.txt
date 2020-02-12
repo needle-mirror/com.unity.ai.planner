@@ -21,9 +21,6 @@ namespace {{ namespace }}
         {
             var world = new World(planningSimulationWorldName);
             var stateManager = world.GetOrCreateSystem<StateManager>();
-            world.GetOrCreateSystem<SimulationSystemGroup>().AddSystemToUpdateList(stateManager);
-            var playerLoop = UnityEngine.LowLevel.PlayerLoop.GetCurrentPlayerLoop();
-            ScriptBehaviourUpdateOrder.AddWorldToPlayerLoop(world, ref playerLoop);
 
             m_StateConverter = new PlannerStateConverter<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager>(problemDefinition, stateManager);
 

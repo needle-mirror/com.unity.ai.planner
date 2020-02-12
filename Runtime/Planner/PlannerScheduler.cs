@@ -146,6 +146,8 @@ namespace Unity.AI.Planner
 
         public void UpdatePlanRequestRootState(TStateKey stateKey)
         {
+            CurrentJobHandle.Complete();
+
             var oldPlanData = m_PlanData;
             var oldPlanGraph = m_PlanData.PlanGraph;
             var newPlanData = new PlanData<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(m_StateManager,

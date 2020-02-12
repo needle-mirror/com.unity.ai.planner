@@ -23,6 +23,13 @@ or
 [X.Y.Z] - date
  -->
 
+## [0.3.0-preview.3] - 2020-02-12
+
+### Fixed
+
+* Fix a memory leak from undisposed EntityCommandBuffers
+* Fix a job scheduling error when updating plan requests.
+
 ## [0.3.0-preview.2] - 2020-01-22
 
 ### Fixed

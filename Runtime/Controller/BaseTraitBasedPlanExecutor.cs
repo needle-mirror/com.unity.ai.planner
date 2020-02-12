@@ -14,7 +14,7 @@ namespace Unity.AI.Planner.Traits
         where TActionKey : struct, IEquatable<TActionKey>, IActionKey
         where TStateData : struct, ITraitBasedStateData<TObject, TStateData>
         where TStateDataContext : struct, ITraitBasedStateDataContext<TObject, TStateKey, TStateData>
-        where TStateManager : JobComponentSystem, ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext>
+        where TStateManager : SystemBase, ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext>
     {
         struct DecisionRuntimeInfo
         {
