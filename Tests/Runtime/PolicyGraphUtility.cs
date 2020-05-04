@@ -1,8 +1,6 @@
 ﻿using System;
-using NUnit.Framework;
 using Unity.Collections;
 using UnityEngine;
-
 
 namespace Unity.AI.Planner.Tests.Performance
 {
@@ -30,7 +28,7 @@ namespace Unity.AI.Planner.Tests.Performance
             var subNodesPerNode = actionsPerState * resultsPerAction;
             int totalStates = GetTotalNodeCountForTreeDepth(subNodesPerNode, depth);
 
-            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(totalStates, totalStates);
+            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(totalStates, totalStates, totalStates);
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var queue = new NativeQueue<int>(Allocator.TempJob);
 
@@ -73,7 +71,7 @@ namespace Unity.AI.Planner.Tests.Performance
             int nextStateIndex = 0;
             int totalStates = (int)Math.Pow(2, midLatticeDepth) * 2;
 
-            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(totalStates, totalStates);
+            var policyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(totalStates, totalStates, totalStates);
             var builder = new PolicyGraphBuilder<int, int> { PolicyGraph = policyGraph };
             var queue = new NativeQueue<int>(Allocator.TempJob);
 

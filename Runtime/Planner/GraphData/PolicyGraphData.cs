@@ -1,7 +1,7 @@
 ﻿using System;
 using Unity.Collections;
+using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEngine;
 
 namespace Unity.AI.Planner
 {
@@ -23,40 +23,40 @@ namespace Unity.AI.Planner
         public NativeHashMap<StateTransition<TStateKey, TActionKey>, TStateTransitionInfo> StateTransitionInfoLookup;
 
         // Interface
-        public int Size => StateInfoLookup.Length;
+        public int Size => StateInfoLookup.Count();
 
-        public PolicyGraph(int stateCapacity, int actionCapacity)
+        public PolicyGraph(int stateCapacity, int actionCapacity, int transitionCapacity)
         {
-            ActionLookup = new NativeMultiHashMap<TStateKey, TActionKey>(stateCapacity, Allocator.Persistent);
-            ResultingStateLookup = new NativeMultiHashMap<StateActionPair<TStateKey, TActionKey>, TStateKey>(actionCapacity, Allocator.Persistent);
-            PredecessorGraph = new NativeMultiHashMap<TStateKey, TStateKey>(stateCapacity, Allocator.Persistent);
+            ActionLookup = new NativeMultiHashMap<TStateKey, TActionKey>(actionCapacity, Allocator.Persistent);
+            ResultingStateLookup = new NativeMultiHashMap<StateActionPair<TStateKey, TActionKey>, TStateKey>(transitionCapacity, Allocator.Persistent);
+            PredecessorGraph = new NativeMultiHashMap<TStateKey, TStateKey>(transitionCapacity, Allocator.Persistent);
 
             StateInfoLookup = new NativeHashMap<TStateKey, TStateInfo>(stateCapacity, Allocator.Persistent);
             ActionInfoLookup = new NativeHashMap<StateActionPair<TStateKey, TActionKey>, TActionInfo>(actionCapacity, Allocator.Persistent);
-            StateTransitionInfoLookup = new NativeHashMap<StateTransition<TStateKey, TActionKey>, TStateTransitionInfo>(actionCapacity, Allocator.Persistent);
+            StateTransitionInfoLookup = new NativeHashMap<StateTransition<TStateKey, TActionKey>, TStateTransitionInfo>(transitionCapacity, Allocator.Persistent);
         }
 
-        public bool GetOptimalAction(TStateKey stateKey, out TActionKey action)
+        public bool TryGetOptimalAction(TStateKey stateKey, out TActionKey action)
         {
+            action = default;
+
             bool actionsFound = ActionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator);
             if (!actionsFound)
-            {
-                action = default;
                 return false;
-            }
 
-            var maxActionValuePair = (default(TActionKey), float.MinValue);
-
+            var maxActionValue = float.MinValue;
             do
             {
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                 ActionInfoLookup.TryGetValue(stateActionPair, out var actionInfo);
-                if (actionInfo.ActionValue.Average > maxActionValuePair.Item2)
-                    maxActionValuePair = (actionKey, actionInfo.ActionValue.Average);
+                if (actionInfo.ActionValue.Average > maxActionValue)
+                {
+                    action = actionKey;
+                    maxActionValue = actionInfo.ActionValue.Average;
+                }
 
             } while (ActionLookup.TryGetNextValue(out actionKey, ref iterator));
 
-            action = maxActionValuePair.Item1;
             return true;
         }
 
@@ -123,55 +123,104 @@ namespace Unity.AI.Planner
             predecessorQueue.Dispose();
         }
 
-        #region ContainerManagement
+        public struct ParallelWriter
+        {
+            // Graph structure
+            public NativeMultiHashMap<TStateKey, TActionKey>.ParallelWriter ActionLookup;
+            public NativeMultiHashMap<StateActionPair<TStateKey, TActionKey>, TStateKey>.ParallelWriter ResultingStateLookup;
+            public NativeMultiHashMap<TStateKey, TStateKey>.ParallelWriter PredecessorGraph;
+
+            // Graph info
+            public NativeHashMap<TStateKey, TStateInfo>.ParallelWriter StateInfoLookup;
+            public NativeHashMap<StateActionPair<TStateKey, TActionKey>, TActionInfo>.ParallelWriter ActionInfoLookup;
+            public NativeHashMap<StateTransition<TStateKey, TActionKey>, TStateTransitionInfo>.ParallelWriter StateTransitionInfoLookup;
+        }
+
+        public ParallelWriter AsParallelWriter()
+        {
+            return new ParallelWriter
+            {
+                ActionLookup = ActionLookup.AsParallelWriter(),
+                ResultingStateLookup = ResultingStateLookup.AsParallelWriter(),
+                PredecessorGraph = PredecessorGraph.AsParallelWriter(),
+
+                StateInfoLookup = StateInfoLookup.AsParallelWriter(),
+                ActionInfoLookup = ActionInfoLookup.AsParallelWriter(),
+                StateTransitionInfoLookup = StateTransitionInfoLookup.AsParallelWriter()
+            };
+        }
+
         public void ExpandBy(int minimumFreeStateCapacity, int minimumFreeActionCapacity)
         {
-            if (ActionLookup.Length + minimumFreeActionCapacity > ActionLookup.Capacity)
-                ActionLookup.Capacity = Math.Max(ActionLookup.Length + minimumFreeActionCapacity, ActionLookup.Capacity * 2);
-            if (ResultingStateLookup.Length + minimumFreeStateCapacity > ResultingStateLookup.Capacity)
-                ResultingStateLookup.Capacity = Math.Max(ResultingStateLookup.Length + minimumFreeStateCapacity, ResultingStateLookup.Capacity * 2);
-            if (PredecessorGraph.Length + minimumFreeStateCapacity > PredecessorGraph.Capacity)
-                PredecessorGraph.Capacity = Math.Max(PredecessorGraph.Length + minimumFreeStateCapacity, PredecessorGraph.Capacity * 2);
+            if (ActionLookup.Count() + minimumFreeActionCapacity > ActionLookup.Capacity)
+                ActionLookup.Capacity = Math.Max(ActionLookup.Count() + minimumFreeActionCapacity, ActionLookup.Capacity * 2);
+            if (ResultingStateLookup.Count() + minimumFreeStateCapacity > ResultingStateLookup.Capacity)
+                ResultingStateLookup.Capacity = Math.Max(ResultingStateLookup.Count() + minimumFreeStateCapacity, ResultingStateLookup.Capacity * 2);
+            if (PredecessorGraph.Count() + minimumFreeStateCapacity > PredecessorGraph.Capacity)
+                PredecessorGraph.Capacity = Math.Max(PredecessorGraph.Count() + minimumFreeStateCapacity, PredecessorGraph.Capacity * 2);
 
-            if (StateInfoLookup.Length + minimumFreeStateCapacity > StateInfoLookup.Capacity)
-                StateInfoLookup.Capacity = Math.Max(StateInfoLookup.Length + minimumFreeStateCapacity, StateInfoLookup.Capacity * 2);
-            if (ActionInfoLookup.Length + minimumFreeActionCapacity > ActionInfoLookup.Capacity)
-                ActionInfoLookup.Capacity = Math.Max(ActionInfoLookup.Length + minimumFreeActionCapacity, ActionInfoLookup.Capacity * 2);
-            if (StateTransitionInfoLookup.Length + minimumFreeActionCapacity > StateTransitionInfoLookup.Capacity)
-                StateTransitionInfoLookup.Capacity = Math.Max(StateTransitionInfoLookup.Length + minimumFreeActionCapacity, StateTransitionInfoLookup.Capacity * 2);
+            if (StateInfoLookup.Count() + minimumFreeStateCapacity > StateInfoLookup.Capacity)
+                StateInfoLookup.Capacity = Math.Max(StateInfoLookup.Count() + minimumFreeStateCapacity, StateInfoLookup.Capacity * 2);
+            if (ActionInfoLookup.Count() + minimumFreeActionCapacity > ActionInfoLookup.Capacity)
+                ActionInfoLookup.Capacity = Math.Max(ActionInfoLookup.Count() + minimumFreeActionCapacity, ActionInfoLookup.Capacity * 2);
+            if (StateTransitionInfoLookup.Count() + minimumFreeActionCapacity > StateTransitionInfoLookup.Capacity)
+                StateTransitionInfoLookup.Capacity = Math.Max(StateTransitionInfoLookup.Count() + minimumFreeActionCapacity, StateTransitionInfoLookup.Capacity * 2);
         }
 
-        public void Dispose()
+        public void Dispose(JobHandle jobHandle = default)
         {
             if (ActionLookup.IsCreated)
-                ActionLookup.Dispose();
+                ActionLookup.Dispose(jobHandle);
             if (ResultingStateLookup.IsCreated)
-                ResultingStateLookup.Dispose();
+                ResultingStateLookup.Dispose(jobHandle);
             if (PredecessorGraph.IsCreated)
-                PredecessorGraph.Dispose();
+                PredecessorGraph.Dispose(jobHandle);
 
             if (StateInfoLookup.IsCreated)
-                StateInfoLookup.Dispose();
+                StateInfoLookup.Dispose(jobHandle);
             if (ActionInfoLookup.IsCreated)
-                ActionInfoLookup.Dispose();
+                ActionInfoLookup.Dispose(jobHandle);
             if (StateTransitionInfoLookup.IsCreated)
-                StateTransitionInfoLookup.Dispose();
+                StateTransitionInfoLookup.Dispose(jobHandle);
         }
-        #endregion
     }
 
-    struct StateInfo : IStateInfo
+    /// <summary>
+    /// State information specific to a state within a plan.
+    /// </summary>
+    public struct StateInfo : IStateInfo
     {
+        /// <summary>
+        /// A BoundedValue representing the upper bound, average/expected, and lower bound for the future cumulative
+        /// reward from the state onward.
+        /// </summary>
         public BoundedValue PolicyValue;
+
+        /// <summary>
+        /// Denotes that all branches beyond the state have either reached a terminal state or have been ruled out in
+        /// favor of branches with higher policy values.
+        /// </summary>
         public bool SubgraphComplete;
 
         BoundedValue IStateInfo.PolicyValue => PolicyValue;
         bool IStateInfo.SubgraphComplete => SubgraphComplete;
     }
 
-    struct ActionInfo : IActionInfo
+    /// <summary>
+    /// Action information specific to an action within a plan.
+    /// </summary>
+    public struct ActionInfo : IActionInfo
     {
+        /// <summary>
+        /// A BoundedValue representing the upper bound, average/expected, and lower bound for the future cumulative
+        /// reward from the action onward, including the immediate reward from the action itself.
+        /// </summary>
         public BoundedValue ActionValue;
+
+        /// <summary>
+        /// Denotes that all branches beyond the state have either reached a terminal state or have been ruled out in
+        /// favor of branches with higher policy values.
+        /// </summary>
         public bool SubgraphComplete;
 
         BoundedValue IActionInfo.ActionValue => ActionValue;
@@ -181,7 +230,7 @@ namespace Unity.AI.Planner
     /// <summary>
     /// Action result information for an action node in the plan
     /// </summary>
-    internal struct StateTransitionInfo
+    public struct StateTransitionInfo
     {
         /// <summary>
         /// Probability of resulting state occurring
@@ -306,7 +355,7 @@ namespace Unity.AI.Planner
 
         static bool Approximately(float a, float b)
         {
-            return Mathf.Abs(b - a) < Mathf.Max(1E-06f * Mathf.Max(Mathf.Abs(a), Mathf.Abs(b)), 1.175494E-38f * 8f);
+            return math.abs(b - a) < math.max(1E-06f * math.max(math.abs(a), math.abs(b)), 1.175494E-38f * 8f);
         }
 
         /// <summary>
@@ -475,5 +524,23 @@ namespace Unity.AI.Planner
                 return (((PredecessorStateKey.GetHashCode() * 397) ^ ActionKey.GetHashCode()) * 397) ^ SuccessorStateKey.GetHashCode();
             }
         }
+
+        public override string ToString()
+        {
+            return $"StateTransition({PredecessorStateKey}, {ActionKey}, {SuccessorStateKey})";
+        }
+    }
+
+    struct StateHorizonPair<TStateKey> : IEquatable<StateHorizonPair<TStateKey>>
+        where TStateKey : struct, IEquatable<TStateKey>
+    {
+        public TStateKey StateKey;
+        public int Horizon;
+
+        public bool Equals(StateHorizonPair<TStateKey> other)
+            => Horizon == other.Horizon && StateKey.Equals(other.StateKey);
+
+        public override int GetHashCode()
+            => (StateKey.GetHashCode() * 397) ^ Horizon;
     }
 }

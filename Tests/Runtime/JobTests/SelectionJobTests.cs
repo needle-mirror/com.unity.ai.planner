@@ -1,11 +1,8 @@
-﻿using System.Collections;
-using NUnit.Framework;
+﻿using NUnit.Framework;
 using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
-using Unity.PerformanceTesting;
-using UnityEngine.TestTools;
 
 using TestSearchContext = Unity.AI.Planner.SearchContext<int, int, Unity.AI.Planner.Tests.TestStateManager, int, Unity.AI.Planner.Tests.TestStateDataContext>;
 
@@ -40,7 +37,13 @@ namespace Unity.AI.Planner.Tests.Unit
         void SelectStates()
         {
             if (!m_DepthMap.IsCreated)
-                m_DepthMap = m_PolicyGraph.GetReachableDepthMap(rootState);
+            {
+                m_DepthMap = new NativeHashMap<int, int>(m_PolicyGraph.Size, Allocator.TempJob);
+                using (var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.Temp))
+                {
+                    m_PolicyGraph.GetReachableDepthMap(rootState, m_DepthMap, queue);
+                }
+            }
 
             switch (m_JobMode)
             {
@@ -139,7 +142,7 @@ namespace Unity.AI.Planner.Tests.Unit
         {
             m_SelectedUnexpandedStates = new NativeList<int>(1, Allocator.TempJob);
             m_SelectedStateHorizons = new NativeMultiHashMap<int, int>(1, Allocator.TempJob);
-            m_PolicyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(1, 1);
+            m_PolicyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(1, 1, 1);
             m_Builder = new PolicyGraphBuilder<int, int> { PolicyGraph = m_PolicyGraph };
         }
 
@@ -178,7 +181,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
             // Test
             // Job has selected one state for expansion
-            Assert.AreEqual(1, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(1, m_SelectedStateHorizons.Count());
 
             // Root state selected for expansion
             Assert.IsTrue(m_SelectedStateHorizons.ContainsKey(rootState));
@@ -225,7 +228,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
             // Test
             // Job has selected one state for expansion
-            Assert.AreEqual(1, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(1, m_SelectedStateHorizons.Count());
 
             // Incomplete state selected for expansion
             Assert.IsTrue(m_SelectedStateHorizons.ContainsKey(stateOne));
@@ -271,7 +274,7 @@ namespace Unity.AI.Planner.Tests.Unit
             SelectStates();
 
             // Test
-            Assert.AreEqual(0, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(0, m_SelectedStateHorizons.Count());
             Assert.AreEqual(0, m_SelectedUnexpandedStates.Length);
         }
 
@@ -316,7 +319,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
             // Test
             // Job has selected one state for expansion
-            Assert.AreEqual(1, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(1, m_SelectedStateHorizons.Count());
 
             // Root state selected for expansion
             Assert.IsTrue(m_SelectedStateHorizons.ContainsKey(stateThree));
@@ -368,7 +371,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
             // Test
             // Job has selected one state for expansion
-            Assert.AreEqual(1, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(1, m_SelectedStateHorizons.Count());
 
             // Root state selected for expansion
             Assert.IsTrue(m_SelectedStateHorizons.ContainsKey(stateOne));
@@ -413,7 +416,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
             // Test
             // Job has selected one state for expansion
-            Assert.AreEqual(1, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(1, m_SelectedStateHorizons.Count());
 
             // Root state selected for expansion
             Assert.IsTrue(m_SelectedStateHorizons.ContainsKey(rootState));
@@ -457,7 +460,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
             // Test
             // Job has selected one state for expansion
-            Assert.AreEqual(1, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(1, m_SelectedStateHorizons.Count());
 
             // Incomplete state selected for expansion
             Assert.IsTrue(m_SelectedStateHorizons.ContainsKey(stateTwo));
@@ -504,7 +507,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
             // Test
             // Job has selected one state for expansion
-            Assert.AreEqual(1, m_SelectedStateHorizons.Length);
+            Assert.AreEqual(1, m_SelectedStateHorizons.Count());
 
             // Incomplete state selected for expansion
             Assert.IsTrue(m_SelectedStateHorizons.ContainsKey(stateTwo));
@@ -521,6 +524,10 @@ namespace Unity.AI.Planner.Tests.Unit
 #if ENABLE_PERFORMANCE_TESTS
 namespace Unity.AI.Planner.Tests.Performance
 {
+    using System.Collections;
+    using Unity.PerformanceTesting;
+    using UnityEngine.TestTools;
+
     [Category("Performance")]
     class SelectionJobPerformanceTests
     {

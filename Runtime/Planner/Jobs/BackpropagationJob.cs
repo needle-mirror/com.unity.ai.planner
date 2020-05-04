@@ -6,9 +6,19 @@ using Unity.Mathematics;
 
 namespace Unity.AI.Planner.Jobs
 {
-    enum BackpropagationJobMode
+    /// <summary>
+    /// Modes designating the strategy for computing updated decision policy values during backpropagation.
+    /// </summary>
+    public enum BackpropagationJobMode
     {
+        /// <summary>
+        /// All values will be updated in a job by a single worker.
+        /// </summary>
         Sequential,
+
+        /// <summary>
+        /// Values will be updated in a parallel job by multiple workers.
+        /// </summary>
         Parallel
     }
 
@@ -25,7 +35,7 @@ namespace Unity.AI.Planner.Jobs
 
         public void Execute()
         {
-            var statesToUpdate = new NativeMultiHashMap<int, TStateKey>(SelectedStates.Length, Allocator.Temp);
+            var statesToUpdate = new NativeMultiHashMap<int, TStateKey>(SelectedStates.Count(), Allocator.Temp);
             var maxDepth = int.MinValue;
 
             var selectedStateKeys = SelectedStates.GetKeyArray(Allocator.Temp);
@@ -54,8 +64,8 @@ namespace Unity.AI.Planner.Jobs
             var predecessorLookup = PolicyGraph.PredecessorGraph;
             var depth = maxDepth;
 
-            var currentHorizon = new NativeList<TStateKey>(statesToUpdate.Length, Allocator.Temp);
-            var nextHorizon = new NativeList<TStateKey>(statesToUpdate.Length, Allocator.Temp);
+            var currentHorizon = new NativeList<TStateKey>(statesToUpdate.Count(), Allocator.Temp);
+            var nextHorizon = new NativeList<TStateKey>(statesToUpdate.Count(), Allocator.Temp);
 
             // pull out states from statesToUpdate
             if (statesToUpdate.TryGetFirstValue(depth, out var stateToAdd, out var stateIterator))
@@ -131,12 +141,14 @@ namespace Unity.AI.Planner.Jobs
             {
                 if (!stateInfo.SubgraphComplete)
                 {
-                    var policyAverage = stateInfo.PolicyValue.Average;
-                    stateInfo.PolicyValue = new BoundedValue(policyAverage, policyAverage, policyAverage);
+                    // State was not marked terminal, so the value should be reset, as to not use the heuristic value.
+                    stateInfo.PolicyValue = new BoundedValue(0,0,0);
                     stateInfo.SubgraphComplete = true;
                     stateInfoLookup[stateKey] = stateInfo;
                     return true;
                 }
+
+                // Terminal state. No update required.
                 return false;
             }
 
@@ -224,7 +236,7 @@ namespace Unity.AI.Planner.Jobs
         public void Execute()
         {
             // Resize containers
-            int graphSize = DepthMap.Length;
+            int graphSize = DepthMap.Count();
             SelectedStatesByHorizon.Capacity = math.max(SelectedStatesByHorizon.Capacity, MaxDepth + 1);
             PredecessorStates.Capacity = math.max(PredecessorStates.Capacity, graphSize);
             HorizonStateList.Capacity = math.max(HorizonStateList.Capacity, graphSize);
@@ -374,10 +386,10 @@ namespace Unity.AI.Planner.Jobs
             // Handle case of no actions (mark complete, override bounds)
             var originalStateInfo = StateInfoLookup[stateKey];
             var policyAverage = originalStateInfo.PolicyValue.Average;
-
             updatedStateInfo = new StateInfo
             {
-                PolicyValue = new BoundedValue(policyAverage, policyAverage, policyAverage),
+                PolicyValue = originalStateInfo.SubgraphComplete ?
+                    new BoundedValue(policyAverage, policyAverage, policyAverage) : new BoundedValue(0,0,0),
                 SubgraphComplete = true
             };
 
@@ -451,11 +463,11 @@ namespace Unity.AI.Planner.Jobs
 
         public void Execute()
         {
-            if (StatesToUpdate.Length == 0)
+            if (StatesToUpdate.Count() == 0)
                 return;
 
-            var currentHorizon = new NativeList<TStateKey>(StatesToUpdate.Length, Allocator.Temp);
-            var nextHorizon = new NativeList<TStateKey>(StatesToUpdate.Length, Allocator.Temp);
+            var currentHorizon = new NativeList<TStateKey>(StatesToUpdate.Count(), Allocator.Temp);
+            var nextHorizon = new NativeList<TStateKey>(StatesToUpdate.Count(), Allocator.Temp);
 
             var stateKeys = StatesToUpdate.GetKeyArray(Allocator.Temp);
             for (int i = 0; i < stateKeys.Length; i++)

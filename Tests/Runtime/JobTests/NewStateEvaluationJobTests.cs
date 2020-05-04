@@ -78,7 +78,7 @@ namespace Unity.AI.Planner.Tests.Unit
                 states.Add(i);
             }
 
-            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, StateValueAsHeuristicValue, DefaultTerminalStateEvaluator>
+            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, StateValueAsHeuristicValue, DefaultTerminalStateEvaluator<int>>
             {
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),
@@ -112,7 +112,7 @@ namespace Unity.AI.Planner.Tests.Unit
                 states.Add(i);
             }
 
-            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, DefaultHeuristic, EvensTerminalStateEvaluator>
+            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, DefaultHeuristic<int>, EvensTerminalStateEvaluator>
             {
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),

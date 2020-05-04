@@ -1,25 +1,30 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
+using Unity.AI.Planner.Utility;
 using UnityEditor.AI.Planner.CodeGen;
+using UnityEditor.AI.Planner.Utility;
+using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using Object = UnityEngine.Object;
 
 namespace UnityEditor.AI.Planner.Tests
 {
     class CodeGeneratorTestFixture
     {
-        protected const string k_AssetsPath = "Assets/Temp/";
-        protected const string k_TraitAssetsPath = k_AssetsPath + "Traits/";
-        protected const string k_EnumAssetsPath = k_AssetsPath + "Enums/";
+        static readonly string k_AssetsPath = Path.Combine("Assets", "Temp");
+        static readonly string k_TraitAssetsPath = Path.Combine(k_AssetsPath, "Traits");
+        static readonly string k_EnumAssetsPath = Path.Combine(k_AssetsPath, "Enums");
+        protected static readonly string k_OutputPath = Path.Combine("Temp", "TestPlannerAssembly");
 
-        protected const string k_OutputPath = "Temp/TestPlannerAssembly/";
-
-        protected TraitDefinition m_TraitDefinition;
-        protected EnumDefinition m_EnumDefinition;
-        protected ActionDefinition m_ActionDefinition;
-        protected PlanDefinition m_PlanDefinition;
-        protected StateTerminationDefinition m_StateTerminationDefinition;
+        TraitDefinition m_TraitDefinition;
+        EnumDefinition m_EnumDefinition;
+        ActionDefinition m_ActionDefinition;
+        PlanDefinition m_PlanDefinition;
+        StateTerminationDefinition m_StateTerminationDefinition;
 
         protected CodeGenerator m_CodeGenerator = new CodeGenerator();
 
@@ -34,8 +39,8 @@ namespace UnityEditor.AI.Planner.Tests
                     Name = "FieldA",
                     FieldType = typeof(int)
                 }
-            };
-            SaveAsset(m_TraitDefinition, $"{k_TraitAssetsPath}TraitA.asset");
+            }.ToList();
+            SaveAsset(m_TraitDefinition, Path.Combine(k_TraitAssetsPath, "TraitA.asset"));
 
             m_EnumDefinition = ScriptableObject.CreateInstance<EnumDefinition>();
             m_EnumDefinition.Values = new[]
@@ -44,50 +49,103 @@ namespace UnityEditor.AI.Planner.Tests
                 "ValueB",
                 "ValueC"
             };
-            SaveAsset(m_EnumDefinition, $"{k_EnumAssetsPath}EnumA.asset");
+            SaveAsset(m_EnumDefinition, Path.Combine(k_EnumAssetsPath, "EnumA.asset"));
 
-            m_StateTerminationDefinition = ScriptableObject.CreateInstance<StateTerminationDefinition>();
-            m_StateTerminationDefinition.Parameters = new[]
-            {
-                new ParameterDefinition()
-                {
-                    Name = "ParameterA",
-                    RequiredTraits = new []
-                    {
-                        m_TraitDefinition
-                    }
-                }
-            };
-            SaveAsset(m_StateTerminationDefinition, $"{k_AssetsPath}TerminationA.asset");
+            SetupTerminationDefinition("TerminationA.asset");
 
-            m_ActionDefinition = ScriptableObject.CreateInstance<ActionDefinition>();
-            m_ActionDefinition.Parameters = new[]
-            {
-                new ParameterDefinition()
-                {
-                    Name = "ParameterA",
-                    RequiredTraits = new []
-                    {
-                        m_TraitDefinition
-                    }
-                }
-            };
-            m_ActionDefinition.CustomRewards = new List<CustomRewardData>();
-            SaveAsset(m_ActionDefinition, $"{k_AssetsPath}ActionA.asset");
+            SetupActionDefinition("ActionA.asset");
 
             m_PlanDefinition = ScriptableObject.CreateInstance<PlanDefinition>();
             m_PlanDefinition.ActionDefinitions = new[]
             {
                 m_ActionDefinition
             };
-            m_PlanDefinition.StateTerminationDefinitions = new List<StateTerminationDefinition>();
+            m_PlanDefinition.StateTerminationDefinitions = new[]
+            {
+                m_StateTerminationDefinition
+            };
 
-            SaveAsset(m_PlanDefinition, $"{k_AssetsPath}PlanA.asset");
+            SaveAsset(m_PlanDefinition, Path.Combine(k_AssetsPath, "PlanA.asset"));
+
+            PlannerAssetDatabase.Refresh(new []{  Path.Combine("Assets", "Temp") });
+        }
+
+        void SetupTerminationDefinition(string name)
+        {
+            m_StateTerminationDefinition = ScriptableObject.CreateInstance<StateTerminationDefinition>();
+            m_StateTerminationDefinition.Parameters = new[]
+            {
+                new ParameterDefinition()
+                {
+                    Name = "ParameterA",
+                    RequiredTraits = new[]
+                    {
+                        m_TraitDefinition
+                    }
+                }
+            };
+
+            m_StateTerminationDefinition.Criteria = new[]
+            {
+                new Operation()
+                {
+                    Operator = nameof(Operation.SpecialOperators.Custom),
+                    CustomOperatorType = "CustomTerminationPrecondition"
+                }
+            };
+
+            SaveAsset(m_StateTerminationDefinition, Path.Combine(k_AssetsPath, name));
+        }
+
+        void SetupActionDefinition(string name)
+        {
+            m_ActionDefinition = ScriptableObject.CreateInstance<ActionDefinition>();
+            m_ActionDefinition.Parameters = new[]
+            {
+                new ParameterDefinition()
+                {
+                    Name = "ParameterA",
+                    RequiredTraits = new[]
+                    {
+                        m_TraitDefinition
+                    }
+                }
+            };
+            m_ActionDefinition.CustomRewards = new List<CustomRewardData>();
+
+            m_ActionDefinition.Preconditions = new[]
+            {
+                new Operation()
+                {
+                    Operator = nameof(Operation.SpecialOperators.Custom),
+                    CustomOperatorType = "CustomActionPrecondition"
+                }
+            };
+
+            m_ActionDefinition.ObjectModifiers = new[]
+            {
+                new Operation()
+                {
+                    Operator = nameof(Operation.SpecialOperators.Custom),
+                    CustomOperatorType = "CustomActionEffect"
+                }
+            };
+
+            m_ActionDefinition.CustomRewards = new[]
+            {
+                new CustomRewardData()
+                {
+                    Operator = "+=",
+                    Typename = "CustomActionReward",
+                    Parameters = new string[0]
+                }
+            };
+
+            SaveAsset(m_ActionDefinition, Path.Combine(k_AssetsPath, name));
         }
 
         void SaveAsset(Object asset, string path)
         {
-            Debug.Log(path);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             AssetDatabase.CreateAsset(asset, path);
         }
@@ -97,6 +155,7 @@ namespace UnityEditor.AI.Planner.Tests
         {
             CleanupFiles();
             AssetDatabase.Refresh();
+            PlannerAssetDatabase.Refresh();
         }
 
         static void CleanupFiles()
@@ -115,45 +174,71 @@ namespace UnityEditor.AI.Planner.Tests
         [Test]
         public void TraitIsGenerated()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath);
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/Traits/TraitA.cs"));
+            m_CodeGenerator.GenerateStateRepresentation(k_OutputPath);
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.StateRepresentationQualifier, "Traits", "TraitA.cs")));
         }
 
         [Test]
         public void EnumIsGenerated()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath);
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/Traits/EnumA.cs"));
+            m_CodeGenerator.GenerateStateRepresentation(k_OutputPath);
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.StateRepresentationQualifier, "Traits", "EnumA.cs")));
         }
 
-
-        [Test]
-        public void StateTerminationIsGenerated()
+        [Test, Order(1)]
+        public void StateRepresentationAssemblyIsCompiled()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath);
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/TerminationA.cs"));
+            var paths = m_CodeGenerator.GenerateStateRepresentation(k_OutputPath);
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.StateRepresentationQualifier, "PlanA", "PlanStateRepresentation.cs")));
+
+            var stateRepresentationAssemblyPath = Path.Combine(k_OutputPath, $"{TypeResolver.StateRepresentationQualifier}.dll");
+            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), stateRepresentationAssemblyPath));
         }
 
-        [Test]
-        public void PlanningDataAreGenerated()
+        [Test, Order(2)]
+        public void PlansAssemblyIsCompiled()
         {
-            m_CodeGenerator.GenerateDomain(k_OutputPath);
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Domains/PlanningDomainData.cs"));
+            var stateRepresentationAssemblyPath = Path.Combine(k_OutputPath, $"{TypeResolver.StateRepresentationQualifier}.dll");
 
-            m_CodeGenerator.GeneratePlans(k_OutputPath);
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/PlanA/ActionScheduler.cs"));
-            Assert.IsTrue(File.Exists($"{k_OutputPath}AI.Planner.Actions/PlanA/ActionA.cs"));
-        }
+            // Reference .cs files from Unity.AI.Planner.Editor.CustomMethods.Tests assembly definition
+            var assemblyReference = AssetDatabase.FindAssets($"t: {nameof(AssemblyDefinitionAsset)}");
+            var paths = new List<string>();
+            foreach (var asmRefGuid in assemblyReference)
+            {
+                var assetPath = AssetDatabase.GUIDToAssetPath(asmRefGuid);
+                if (assetPath.Contains("Unity.AI.Planner.Editor.Tests.CustomMethods.asmdef"))
+                {
+                    PlannerAssemblyBuilder.ReferenceSourceFromAssetPath(assetPath, paths);
+                    break;
+                }
+            }
 
-        [Test]
-        public void PlannerAssemblyCompilation()
-        {
-            var paths = m_CodeGenerator.GenerateDomain(k_OutputPath);
-            var domainAssemblyPath = $"{k_OutputPath}AI.Planner.Domains.dll";
-            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), domainAssemblyPath));
-            paths = m_CodeGenerator.GeneratePlans(k_OutputPath);
-            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), $"{k_OutputPath}AI.Planner.Actions.dll",
-                additionalReferences: new [] { domainAssemblyPath }));
+            var additionalReferences = new List<string>();
+            additionalReferences.Add(stateRepresentationAssemblyPath);
+
+            var customAssemblyPath = Path.Combine(k_OutputPath, $"{TypeResolver.CustomAssemblyName}.dll");
+            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), customAssemblyPath,
+                additionalReferences: additionalReferences.ToArray()));
+
+            // Pre-load referenced assemblies in the reflection context
+            System.Reflection.Assembly.ReflectionOnlyLoadFrom(stateRepresentationAssemblyPath);
+            foreach (var reference in PlannerAssemblyBuilder.predefinedReferences)
+            {
+                System.Reflection.Assembly.ReflectionOnlyLoadFrom(reference);
+            }
+
+            AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += PlannerAssemblyBuilder.ResolveReflectionAssemblyDependency;
+            var customAssembly = System.Reflection.Assembly.ReflectionOnlyLoadFrom(customAssemblyPath);
+
+            additionalReferences.Add(customAssemblyPath);
+            paths = m_CodeGenerator.GeneratePlans(k_OutputPath, customAssembly);
+
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.PlansQualifier, "PlanA", "ActionScheduler.cs")));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.PlansQualifier, "PlanA", "ActionA.cs")));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.PlansQualifier, "PlanA", "TerminationA.cs")));
+
+            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), Path.Combine(k_OutputPath, $"{TypeResolver.PlansQualifier}.dll"),
+                additionalReferences: additionalReferences.ToArray()));
         }
     }
 }

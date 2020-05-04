@@ -8,9 +8,7 @@ using Unity.Jobs;
 
 namespace KeyDomain
 {
-    using StateTransitionInfo = StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>;
-
-    class ActionScheduler :
+    struct ActionScheduler :
         ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey>
     {
         // Input
@@ -18,9 +16,9 @@ namespace KeyDomain
         public StateManager StateManager { get; set; }
 
         // Output
-        public NativeQueue<StateTransitionInfo> CreatedStateInfo { get; set; }
+        public NativeQueue<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> CreatedStateInfo { private get; set; }
 
-        static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
+        internal static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
         {
             { MoveAction.ActionGuid, nameof(MoveAction) },
             { PickupKeyAction.ActionGuid, nameof(PickupKeyAction) },
@@ -33,64 +31,96 @@ namespace KeyDomain
             return name;
         }
 
+        struct PlaybackECB : IJob
+        {
+            public ExclusiveEntityTransaction ExclusiveEntityTransaction;
+
+            [ReadOnly]
+            public NativeList<StateEntityKey> UnexpandedStates;
+            public NativeQueue<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> CreatedStateInfo;
+
+            public EntityCommandBuffer MoveActionECB;
+            public EntityCommandBuffer PickupKeyActionECB;
+            public EntityCommandBuffer UnlockRoomActionECB;
+
+            public void Execute()
+            {
+                // Playback entity changes and output state transition info
+                var entityManager = ExclusiveEntityTransaction;
+
+                MoveActionECB.Playback(entityManager);
+                for (int i = 0; i < UnexpandedStates.Length; i++)
+                {
+                    var stateEntity = UnexpandedStates[i].Entity;
+                    var MoveActionRefs = entityManager.GetBuffer<MoveAction.FixupReference>(stateEntity);
+                    for (int j = 0; j < MoveActionRefs.Length; j++)
+                        CreatedStateInfo.Enqueue(MoveActionRefs[j].TransitionInfo);
+                    entityManager.RemoveComponent(stateEntity, typeof(MoveAction.FixupReference));
+                }
+
+                PickupKeyActionECB.Playback(entityManager);
+                for (int i = 0; i < UnexpandedStates.Length; i++)
+                {
+                    var stateEntity = UnexpandedStates[i].Entity;
+                    var PickupKeyActionRefs = entityManager.GetBuffer<PickupKeyAction.FixupReference>(stateEntity);
+                    for (int j = 0; j < PickupKeyActionRefs.Length; j++)
+                        CreatedStateInfo.Enqueue(PickupKeyActionRefs[j].TransitionInfo);
+                    entityManager.RemoveComponent(stateEntity, typeof(PickupKeyAction.FixupReference));
+                }
+
+                UnlockRoomActionECB.Playback(entityManager);
+                for (int i = 0; i < UnexpandedStates.Length; i++)
+                {
+                    var stateEntity = UnexpandedStates[i].Entity;
+                    var UnlockRoomActionRefs = entityManager.GetBuffer<UnlockRoomAction.FixupReference>(stateEntity);
+                    for (int j = 0; j < UnlockRoomActionRefs.Length; j++)
+                        CreatedStateInfo.Enqueue(UnlockRoomActionRefs[j].TransitionInfo);
+                    entityManager.RemoveComponent(stateEntity, typeof(UnlockRoomAction.FixupReference));
+                }
+            }
+        }
+
         public JobHandle Schedule(JobHandle inputDeps)
         {
+            var entityManager = StateManager.EntityManager;
+
             var MoveActionDataContext = StateManager.GetStateDataContext();
-            var MoveActionECB = new EntityCommandBuffer(Allocator.TempJob);
+            var MoveActionECB = StateManager.GetEntityCommandBuffer();
             MoveActionDataContext.EntityCommandBuffer = MoveActionECB.ToConcurrent();
             var PickupKeyActionDataContext = StateManager.GetStateDataContext();
-            var PickupKeyActionECB = new EntityCommandBuffer(Allocator.TempJob);
+            var PickupKeyActionECB = StateManager.GetEntityCommandBuffer();
             PickupKeyActionDataContext.EntityCommandBuffer = PickupKeyActionECB.ToConcurrent();
             var UnlockRoomActionDataContext = StateManager.GetStateDataContext();
-            var UnlockRoomActionECB = new EntityCommandBuffer(Allocator.TempJob);
+            var UnlockRoomActionECB = StateManager.GetEntityCommandBuffer();
             UnlockRoomActionDataContext.EntityCommandBuffer = UnlockRoomActionECB.ToConcurrent();
 
-            var allActionJobs = new NativeArray<JobHandle>(3, Allocator.TempJob)
+            var allActionJobs = new NativeArray<JobHandle>(4, Allocator.TempJob)
             {
                 [0] = new MoveAction(UnexpandedStates, MoveActionDataContext).Schedule(UnexpandedStates, 0, inputDeps),
                 [1] = new PickupKeyAction(UnexpandedStates, PickupKeyActionDataContext).Schedule(UnexpandedStates, 0, inputDeps),
                 [2] = new UnlockRoomAction(UnexpandedStates, UnlockRoomActionDataContext).Schedule(UnexpandedStates, 0, inputDeps),
+                [3] = entityManager.ExclusiveEntityTransactionDependency,
             };
 
-            JobHandle.CompleteAll(allActionJobs);
+            var allActionJobsHandle = JobHandle.CombineDependencies(allActionJobs);
+            allActionJobs.Dispose();
 
             // Playback entity changes and output state transition info
-            var entityManager = StateManager.EntityManager;
-
-            MoveActionECB.Playback(entityManager);
-            for (int i = 0; i < UnexpandedStates.Length; i++)
+            var playbackJob = new PlaybackECB()
             {
-                var MoveActionRefs = entityManager.GetBuffer<MoveAction.FixupReference>(UnexpandedStates[i].Entity);
-                for (int j = 0; j < MoveActionRefs.Length; j++)
-                    CreatedStateInfo.Enqueue(MoveActionRefs[j].StateTransitionInfoPair);
-            }
+                ExclusiveEntityTransaction = StateManager.ExclusiveEntityTransaction,
+                UnexpandedStates = UnexpandedStates,
+                CreatedStateInfo = CreatedStateInfo,
+                MoveActionECB = MoveActionECB,
+                PickupKeyActionECB = PickupKeyActionECB,
+                UnlockRoomActionECB = UnlockRoomActionECB,
+            };
 
-            PickupKeyActionECB.Playback(entityManager);
-            for (int i = 0; i < UnexpandedStates.Length; i++)
-            {
-                var PickupKeyActionRefs = entityManager.GetBuffer<MoveAction.FixupReference>(UnexpandedStates[i].Entity);
-                for (int j = 0; j < PickupKeyActionRefs.Length; j++)
-                    CreatedStateInfo.Enqueue(PickupKeyActionRefs[j].StateTransitionInfoPair);
-            }
+            var playbackJobHandle = playbackJob.Schedule(allActionJobsHandle);
+            entityManager.ExclusiveEntityTransactionDependency = playbackJobHandle;
 
-            UnlockRoomActionECB.Playback(entityManager);
-            for (int i = 0; i < UnexpandedStates.Length; i++)
-            {
-                var UnlockRoomActionRefs = entityManager.GetBuffer<MoveAction.FixupReference>(UnexpandedStates[i].Entity);
-                for (int j = 0; j < UnlockRoomActionRefs.Length; j++)
-                    CreatedStateInfo.Enqueue(UnlockRoomActionRefs[j].StateTransitionInfoPair);
-            }
+            return playbackJobHandle;
 
-            allActionJobs.Dispose();
-            MoveActionECB.Dispose();
-            PickupKeyActionECB.Dispose();
-            UnlockRoomActionECB.Dispose();
-
-            return default;
-        }
-
-        public void Dispose()
-        {
         }
     }
 }

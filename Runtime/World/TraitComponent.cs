@@ -31,19 +31,45 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         /// </summary>
         public object ParentObject => m_ObjectData.ParentObject;
 
-        /// <summary>
-        /// List of initialization data for traits
-        /// </summary>
-        public IEnumerable<ITraitData> TraitData => m_ObjectData.TraitData;
+        IList<TraitData> ITraitBasedObjectData.TraitData => m_ObjectData.TraitData;
 
         /// <summary>
-        /// Get initialization data for a given trait
+        /// Get data for a given trait
         /// </summary>
         /// <typeparam name="TTrait">Trait type</typeparam>
         /// <returns>Initialization data</returns>
         public ITraitData GetTraitData<TTrait>() where TTrait : ITrait
         {
             return m_ObjectData.GetTraitData<TTrait>();
+        }
+
+        /// <summary>
+        /// Remove data for a given trait
+        /// </summary>
+        /// <typeparam name="TTrait">Trait type</typeparam>
+        public void RemoveTraitData<TTrait>() where TTrait : ITrait
+        {
+            m_ObjectData.RemoveTraitData<TTrait>();
+        }
+
+        /// <summary>
+        /// Checks whether the component has a specific type of trait
+        /// </summary>
+        /// <typeparam name="TTrait">Trait type</typeparam>
+        /// <returns>True, if the component has the trait</returns>
+        public bool HasTraitData<TTrait>() where TTrait : ITrait
+        {
+            return m_ObjectData.HasTraitData<TTrait>();
+        }
+
+        /// <summary>
+        /// Add a trait and initialize with default values
+        /// </summary>
+        /// <param name="definition">Definition of the Trait</param>
+        public void AddDefaultTrait(TraitDefinition definition)
+        {
+            var traitData = new TraitData(definition);
+            m_ObjectData.AddTraitData(traitData);
         }
 
         void Awake()
@@ -53,6 +79,9 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 
         internal void Initialize()
         {
+            if (m_ObjectData == null)
+                m_ObjectData = new TraitBasedObjectData();
+
             m_ObjectData.Initialize(gameObject);
         }
 
@@ -81,13 +110,13 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 return;
 
             bool isSelected = UnityEditor.Selection.activeGameObject == gameObject;
-
-            foreach (var traitData in TraitData)
+            foreach (var traitData in m_ObjectData.TraitData)
             {
-                if (TraitGizmos.HasCustomGizmoType(traitData.TraitDefinitionName))
-                {
-                    TraitGizmos.DrawGizmo(traitData.TraitDefinitionName, gameObject, traitData, isSelected);
-                }
+                if (!traitData.IsInitialized)
+                    continue;
+
+                var gizmoMethod = TraitGizmos.GetGizmoMethod(traitData.TraitDefinitionName);
+                gizmoMethod?.Invoke(gameObject, traitData, isSelected);
             }
         }
 #endif

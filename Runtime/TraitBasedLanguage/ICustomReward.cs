@@ -1,10 +1,25 @@
 ﻿namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
     /// <summary>
-    /// Custom implementation of a reward modifier
+    /// Custom implementation of a reward modifier for termination state
     /// </summary>
     /// <typeparam name="TStateData">IStateData Type</typeparam>
-    public interface ICustomReward<TStateData>
+    public interface ICustomTerminationReward<TStateData>
+        where TStateData : struct, IStateData
+    {
+        /// <summary>
+        /// Return the value of a reward for a given state
+        /// </summary>
+        /// <param name="state">Current state</param>
+        /// <returns>Reward value modification</returns>
+        float RewardModifier(TStateData state);
+    }
+
+    /// <summary>
+    /// Custom implementation of a reward modifier for action state
+    /// </summary>
+    /// <typeparam name="TStateData">IStateData Type</typeparam>
+    public interface ICustomActionReward<TStateData>
         where TStateData : struct, IStateData
     {
         /// <summary>
@@ -18,17 +33,10 @@
     }
 
     /// <summary>
-    /// Base implementation of a reward modifier based on trait data
-    /// </summary>
-    public interface ICustomTraitReward
-    {
-    }
-
-    /// <summary>
-    /// A specialized interface of <see cref="ICustomTraitReward"/>
+    /// Custom implementation of a reward modifier based on trait data
     /// </summary>
     /// <typeparam name="TTrait1">Trait type</typeparam>
-    public interface ICustomTraitReward<TTrait1> : ICustomTraitReward
+    public interface ICustomTraitReward<TTrait1>
         where TTrait1 : struct, ITrait
     {
         /// <summary>
@@ -40,11 +48,11 @@
     }
 
     /// <summary>
-    /// A specialized interface of <see cref="ICustomTraitReward"/>
+    /// Custom implementation of a reward modifier based on trait data
     /// </summary>
     /// <typeparam name="TTrait1">Trait type</typeparam>
     /// <typeparam name="TTrait2">Trait type</typeparam>
-    public interface ICustomTraitReward<TTrait1, TTrait2> : ICustomTraitReward
+    public interface ICustomTraitReward<TTrait1, TTrait2>
         where TTrait1 : struct, ITrait
         where TTrait2 : struct, ITrait
     {
@@ -58,12 +66,12 @@
     }
 
     /// <summary>
-    /// A specialized interface of <see cref="ICustomTraitReward"/>
+    /// Custom implementation of a reward modifier based on trait data
     /// </summary>
     /// <typeparam name="TTrait1">Trait type</typeparam>
     /// <typeparam name="TTrait2">Trait type</typeparam>
     /// <typeparam name="TTrait3">Trait type</typeparam>
-    public interface ICustomTraitReward<TTrait1, TTrait2, TTrait3> : ICustomTraitReward
+    public interface ICustomTraitReward<TTrait1, TTrait2, TTrait3>
         where TTrait1 : struct, ITrait
         where TTrait2 : struct, ITrait
         where TTrait3 : struct, ITrait

@@ -7,25 +7,25 @@ namespace Unity.AI.Planner
 {
     static class PolicyGraphExtensions
     {
-        public static NativeHashMap<TStateKey, int> GetExpandedDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> policyGraph, TStateKey rootKey)
+        public static void GetExpandedDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> policyGraph, TStateKey rootKey, NativeHashMap<TStateKey, int> depthMap, NativeQueue<StateHorizonPair<TStateKey>> queue)
             where TStateKey : struct, IEquatable<TStateKey>
             where TStateInfo : struct, IStateInfo
             where TActionKey : struct, IEquatable<TActionKey>
             where TActionInfo : struct, IActionInfo
             where TStateTransitionInfo : struct
         {
-            var depthMap = new NativeHashMap<TStateKey, int>(policyGraph.StateInfoLookup.Length, Allocator.Persistent);
-
+            depthMap.Clear();
+            queue.Clear();
             var actionLookup = policyGraph.ActionLookup;
             var resultingStateLookup = policyGraph.ResultingStateLookup;
-            var queue = new NativeQueue<(TStateKey, int)>(Allocator.TempJob);
 
             depthMap.TryAdd(rootKey, 0);
-            queue.Enqueue((rootKey, 0));
+            queue.Enqueue(new StateHorizonPair<TStateKey> {StateKey = rootKey, Horizon = 0});
 
             while (queue.TryDequeue(out var stateHorizonPair))
             {
-                (var stateKey, int horizon) = stateHorizonPair;
+                var stateKey = stateHorizonPair.StateKey;
+                var horizon = stateHorizonPair.Horizon;
                 var nextHorizon = horizon + 1;
 
                 if (actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator))
@@ -43,7 +43,7 @@ namespace Unity.AI.Planner
 
                                 // first add will be most shallow due to BFS
                                 if(depthMap.TryAdd(resultingStateKey, nextHorizon))
-                                    queue.Enqueue((resultingStateKey, nextHorizon));
+                                    queue.Enqueue(new StateHorizonPair<TStateKey>() { StateKey =  resultingStateKey, Horizon =  nextHorizon});
 
                             } while (resultingStateLookup.TryGetNextValue(out resultingStateKey, ref resultIterator));
                         }
@@ -51,31 +51,27 @@ namespace Unity.AI.Planner
                     } while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
                 }
             }
-
-            queue.Dispose();
-
-            return depthMap;
         }
 
-        public static NativeHashMap<TStateKey, int> GetReachableDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> policyGraph, TStateKey rootKey, Allocator allocator = Allocator.Persistent)
+        public static void GetReachableDepthMap<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo>(this PolicyGraph<TStateKey, TStateInfo, TActionKey, TActionInfo, TStateTransitionInfo> policyGraph, TStateKey rootKey, NativeHashMap<TStateKey, int> depthMap, NativeQueue<StateHorizonPair<TStateKey>> queue)
             where TStateKey : struct, IEquatable<TStateKey>
             where TStateInfo : struct, IStateInfo
             where TActionKey : struct, IEquatable<TActionKey>
             where TActionInfo : struct, IActionInfo
             where TStateTransitionInfo : struct
         {
-            var depthMap = new NativeHashMap<TStateKey, int>(policyGraph.StateInfoLookup.Length, allocator);
-
+            depthMap.Clear();
+            queue.Clear();
             var actionLookup = policyGraph.ActionLookup;
             var resultingStateLookup = policyGraph.ResultingStateLookup;
-            var queue = new NativeQueue<(TStateKey, int)>(Allocator.Temp);
 
             depthMap.TryAdd(rootKey, 0);
-            queue.Enqueue((rootKey, 0));
+            queue.Enqueue(new StateHorizonPair<TStateKey>{ StateKey = rootKey, Horizon = 0 });
 
             while (queue.TryDequeue(out var stateHorizonPair))
             {
-                (var stateKey, int horizon) = stateHorizonPair;
+                var stateKey = stateHorizonPair.StateKey;
+                var horizon = stateHorizonPair.Horizon;
                 var nextHorizon = horizon + 1;
 
                 if (actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator))
@@ -89,7 +85,7 @@ namespace Unity.AI.Planner
                             {
                                 // first add will be most shallow due to BFS
                                 if(depthMap.TryAdd(resultingStateKey, nextHorizon))
-                                    queue.Enqueue((resultingStateKey, nextHorizon));
+                                    queue.Enqueue(new StateHorizonPair<TStateKey>() { StateKey =  resultingStateKey, Horizon =  nextHorizon});
 
                             } while (resultingStateLookup.TryGetNextValue(out resultingStateKey, ref resultIterator));
                         }
@@ -97,10 +93,6 @@ namespace Unity.AI.Planner
                     } while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
                 }
             }
-
-            queue.Dispose();
-
-            return depthMap;
         }
 
 
@@ -112,7 +104,7 @@ namespace Unity.AI.Planner
             where TActionInfo : struct, IActionInfo
             where TStateTransitionInfo : struct
         {
-            Debug.Log($"States: {policyGraph.StateInfoLookup.Length}");
+            Debug.Log($"States: {policyGraph.StateInfoLookup.Count()}");
 
             var (predecessorKeyArray, uniquePredecessorCount) = policyGraph.PredecessorGraph.GetUniqueKeyArray(Allocator.TempJob);
             Debug.Log($"States with Predecessors: {uniquePredecessorCount}");
@@ -122,8 +114,8 @@ namespace Unity.AI.Planner
             Debug.Log($"States with Successors: {uniqueStateActionCount}");
             stateActionKeyArray.Dispose();
 
-            Debug.Log($"Actions: {policyGraph.ActionInfoLookup.Length}");
-            Debug.Log($"Action Results: {policyGraph.StateTransitionInfoLookup.Length}");
+            Debug.Log($"Actions: {policyGraph.ActionInfoLookup.Count()}");
+            Debug.Log($"Action Results: {policyGraph.StateTransitionInfoLookup.Count()}");
         }
 #endif
     }

@@ -14,7 +14,7 @@ namespace UnityEditor.AI.Planner.Editors
 
         string m_ExpectedTrait;
 
-        public ParameterSelectorPopup(SerializedProperty property, List<ParameterDefinition> parameters, Type expectedType = null)
+        public ParameterSelectorPopup(SerializedProperty property, IList<ParameterDefinition> parameters, Type expectedType = null)
         {
             m_Property = property;
 

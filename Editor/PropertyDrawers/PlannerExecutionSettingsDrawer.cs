@@ -22,7 +22,7 @@ namespace UnityEditor.AI.Planner
                     switch ((PlanExecutionSettings.PlanExecutionMode)executionModeProperty.enumValueIndex)
                     {
                         case PlanExecutionSettings.PlanExecutionMode.ActImmediately:
-                        case PlanExecutionSettings.PlanExecutionMode.WaitForActMethodCall:
+                        case PlanExecutionSettings.PlanExecutionMode.WaitForManualExecutionCall:
                         case PlanExecutionSettings.PlanExecutionMode.WaitForPlanCompletion:
                             break;
 

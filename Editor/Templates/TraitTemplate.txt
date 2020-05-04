@@ -76,7 +76,7 @@ namespace {{ namespace }}
         {{- if fields.empty? }}
             return $"{{ name }}";
         {{- else }}
-            return $"{{ name }}:{{ for field in fields }} { {{- field.field_name -}} }{{ end -}}";
+            return $"{{ name }}{{ for field in fields }}\n  {{ field.field_name }}: { {{- field.field_name -}} }{{ end -}}";
         {{- end }}
         }
     }

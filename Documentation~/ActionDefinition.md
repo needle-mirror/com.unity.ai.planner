@@ -1,6 +1,8 @@
 # Defining actions
 
-A plan is composed of actions that an agent makes in pursuit of its goal. To define an action, create an "Action Definition" via the asset creation menu (Create -> AI -> Planner) or the Create menu from the project window.
+A plan is composed of actions that an agent makes in pursuit of its goal. In the context of a plan, actions represent *potential* decisions the agent can make. In order for the planning process to reason about these decisions, it is necessary to conceptualize an action with regard to which objects are involved, how the world changes as a result, and what incentives/disincentives an agent receives.
+
+To define an action, create an "Action Definition" via the asset creation menu (Create -> AI -> Planner) or the Create menu from the project window.
 
 ![Image](images/CreateActionAssets.png)
 
@@ -23,7 +25,7 @@ Parameters are given a name, so that you can refer to them in the preconditions 
 
 ### Preconditions
 
-Beyond specifying the trait compositions on parameters of the action, you may specify further required conditions on the properties of the parameters' traits. These conditions may be specified on a single object (e.g. checking that a count is greather than 0) or specified between properties on multiple objects (e.g. making sure that two positions are equal). Whenever one or more of the preconditions are not met, the action is considered invalid and is excluded from the planning process. 
+Beyond specifying the trait compositions on parameters of the action, you may specify further required conditions on the properties of the parameters' traits. These conditions may be specified on a single object (e.g. checking that a count is greater than 0) or specified between properties on multiple objects (e.g. making sure that two positions are equal). Whenever one or more of the preconditions are not met, the action is considered invalid and is excluded from the planning process. 
 
 ### Effects
 
@@ -40,6 +42,10 @@ Deleted objects are specified by selecting the parameter referring to the object
 ![Deleted Object](images/DeletedObject.png)
 
 
-### Cost / Reward
+### Reward / Cost
 
-The reward is given by a numerical value associated with the inherent benefit or penalty associated with taking the action. Typically, positive values are referred to as _rewards_ while negative values are referred to as _costs_. Since the agent's goal is to maximize its cumulative reward over the course of the plan, it will prefer to select actions with high reward or low cost. As the agent maximizes _cumulative_ reward, it may select low reward actions in order to achieve a larger delayed payoff from future actions.
+An action's reward or cost is a numerical value associated with the inherent benefit or penalty associated with taking the action. Typically, positive values are referred to as _rewards_ while negative values are referred to as _costs_. In the context of planning, these values are a representation of "utility" (see: utility theory), which is simply a numeric, unitless representation of preference. This characteristic allows the search algorithm to evaluate plans and order them accordingly. Specifically, the plans are given a total reward/cost, which is the discounted or undiscounted[^1] sum of the costs/rewards of each individual action over the course of the plan. 
+
+Since the agent's goal is to maximize its *cumulative* reward over the course of the plan, it will prefer to select actions with high reward or low cost. This can entail selecting near-term actions with low reward in order to achieve a larger delayed payoff from future actions, which is one of the benefits of sequential decision-making.
+
+[^1]: Here, discounting refers to the scaling down of the rewards/costs of actions farther along the plan, which effectively considers near-term decisions with more weight than for long-term decisions. For information how to set the discount factor, see [PlanDefinition](PlanDefinition.md).

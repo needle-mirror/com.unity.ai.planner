@@ -109,7 +109,7 @@ namespace KeyDomain
             roomObjects.Dispose();
         }
 
-        (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
+        StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
         {
             var originalState = m_StateDataContext.GetStateData(originalStateEntityKey);
             var originalStateObjectBuffer = originalState.TraitBasedObjects;
@@ -142,7 +142,7 @@ namespace KeyDomain
             var StateTransitionInfo = new StateTransitionInfo { Probability = 1f, TransitionUtilityValue = reward };
             var resultingStateKey = m_StateDataContext.GetStateDataKey(newState);
 
-            return (originalStateEntityKey, action, StateTransitionInfo, resultingStateKey);
+            return new StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>(originalStateEntityKey, action, resultingStateKey, StateTransitionInfo);
         }
 
         float Reward(StateData originalState, ActionKey action, StateData newState)
@@ -177,7 +177,7 @@ namespace KeyDomain
 
         public struct FixupReference : IBufferElementData
         {
-            public (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) TransitionInfo;
+            public StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> TransitionInfo;
         }
     }
 }

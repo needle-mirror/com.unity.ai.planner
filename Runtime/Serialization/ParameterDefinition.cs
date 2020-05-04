@@ -26,6 +26,24 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             set => m_ProhibitedTraits = value.ToList();
         }
 
+        public int LimitCount
+        {
+            get { return m_LimitCount; }
+            set { m_LimitCount = value; }
+        }
+
+        public string LimitComparerType
+        {
+            get { return m_LimitComparerType; }
+            set { m_LimitComparerType = value; }
+        }
+
+        public string LimitComparerReference
+        {
+            get { return m_LimitComparerReference; }
+            set { m_LimitComparerReference = value; }
+        }
+
         [SerializeField]
         string m_Name = "parameter";
 
@@ -34,6 +52,15 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 
         [SerializeField]
         List<TraitDefinition> m_ProhibitedTraits = new List<TraitDefinition>();
+
+        [SerializeField]
+        int m_LimitCount;
+
+        [SerializeField]
+        string m_LimitComparerType;
+
+        [SerializeField]
+        string m_LimitComparerReference;
 
 #if UNITY_EDITOR
         public void OnValidate()

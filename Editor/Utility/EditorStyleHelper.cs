@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using UnityEngine;
 
 namespace UnityEditor.AI.Planner.Editors
@@ -28,6 +29,8 @@ namespace UnityEditor.AI.Planner.Editors
         public static readonly GUIContent actions = EditorGUIUtility.TrTextContent("Actions");
         public static readonly GUIContent terminations = EditorGUIUtility.TrTextContent("Terminations", tooltip: "For most applications, there is no need to continue planning beyond a point in which one or more termination conditions have been met. These conditions may represent the achievement of a desired goal or possibly the circumstances in which success has become impossible, such as when an agent has been defeated.");
         public static readonly GUIContent planSearchSettings = EditorGUIUtility.TrTextContent("Search Settings", tooltip: "For most applications the default search settings should be okay. However, if you want to ensure that the planner has planned long enough before an action is taken, then you can adjust these settings.");
+        public static readonly GUIContent comparerLimit = EditorGUIUtility.TrTextContent("Limit", tooltip: "Maximum number of valid objects considered in the search for this parameter.");
+        public static readonly GUIContent comparerOrder = EditorGUIUtility.TrTextContent("Order By", tooltip: "Specify a method used to order object list before the limit is applied.");
 
         public static readonly GUIContent objectsChanged = EditorGUIUtility.TrTextContent("Objects Modified");
         public static readonly GUIContent objectsRemoved = EditorGUIUtility.TrTextContent("Objects Removed");
@@ -68,6 +71,9 @@ namespace UnityEditor.AI.Planner.Editors
         public static GUIContent moreOptionsLabel;
         public static GUIStyle moreOptionsLabelStyle;
         public static Color moreOptionsActive = EditorGUIUtility.isProSkin ? new Color(0.3f, 0.3f, 0.3f, 1f) : Color.gray;
+
+        public static int subHeaderPaddingTop = 3;
+        public static int subHeaderPaddingBottom = 10;
 
         static Texture2D s_DarkBackground;
         static Texture2D s_DarkBackgroundActive;
@@ -223,7 +229,7 @@ namespace UnityEditor.AI.Planner.Editors
             }
 
             // Title
-            EditorGUI.LabelField(labelRect, title, EditorStyles.boldLabel);
+            isExpanded = GUI.Toggle(labelRect, isExpanded, title, EditorStyles.boldLabel);
 
             // Foldout
             isExpanded = GUI.Toggle(foldoutRect, isExpanded, GUIContent.none, EditorStyles.foldout);
@@ -236,6 +242,20 @@ namespace UnityEditor.AI.Planner.Editors
         public static string RichText(string text, string color, bool bold = false)
         {
             return bold ? $"<color={color}><b>{text}</b></color>" : $"<color={color}>{text}</color>";
+        }
+
+        public static void CustomMethodField(Rect rect, string typeName, Type[] types)
+        {
+            var customType = types.FirstOrDefault(c => c.FullName == typeName);
+
+            if (customType == null)
+            {
+                EditorGUI.LabelField(rect, $"Unknown type {typeName}", listValueStyleError);
+            }
+            else
+            {
+                EditorGUI.LabelField(rect, customType.Name, listValueStyle);
+            }
         }
     }
 
@@ -250,7 +270,12 @@ namespace UnityEditor.AI.Planner.Editors
 
         internal void AdjustElementHeight(int rowByElement)
         {
-            elementHeight = EditorGUIUtility.singleLineHeight * rowByElement + EditorGUIUtility.standardVerticalSpacing * (rowByElement + 2);
+            elementHeight = CalcElementHeight(rowByElement);
+        }
+
+        public static float CalcElementHeight(int rowByElement)
+        {
+            return EditorGUIUtility.singleLineHeight * rowByElement + EditorGUIUtility.standardVerticalSpacing * (rowByElement + 2);
         }
     }
 }

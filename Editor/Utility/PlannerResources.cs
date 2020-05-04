@@ -12,14 +12,13 @@ class PlannerResources : ScriptableSingleton<PlannerResources>
 
     public TextAsset TemplateAction => m_TemplateAction;
     public TextAsset TemplateActionScheduler => m_TemplateActionScheduler;
-    public TextAsset TemplateDomain => m_TemplateDomain;
+    public TextAsset TemplateStateRepresentation => m_TemplateStateRepresentation;
     public TextAsset TemplateEnum => m_TemplateEnum;
     public TextAsset TemplateTermination => m_TemplateTermination;
     public TextAsset TemplateTrait => m_TemplateTrait;
     public TextAsset TemplatePlanExecutor => m_TemplatePlanExecutor;
     public TextAsset TemplatePackage => m_TemplatePackage;
-    public TextAsset TemplateDomainsAsmDef => m_TemplateDomainsAsmDef;
-    public TextAsset TemplateActionsAsmDef => m_TemplateActionsAsmDef;
+    public TextAsset TemplateAsmRef => m_TemplateAsmRef;
 
 #pragma warning disable 0649
 
@@ -41,7 +40,7 @@ class PlannerResources : ScriptableSingleton<PlannerResources>
     [SerializeField]
     TextAsset m_TemplateActionScheduler;
     [SerializeField]
-    TextAsset m_TemplateDomain;
+    TextAsset m_TemplateStateRepresentation;
     [SerializeField]
     TextAsset m_TemplateEnum;
     [SerializeField]
@@ -53,9 +52,7 @@ class PlannerResources : ScriptableSingleton<PlannerResources>
     [SerializeField]
     TextAsset m_TemplatePackage;
     [SerializeField]
-    TextAsset m_TemplateDomainsAsmDef;
-    [SerializeField]
-    TextAsset m_TemplateActionsAsmDef;
+    TextAsset m_TemplateAsmRef;
 
 #pragma warning restore 0649
 }

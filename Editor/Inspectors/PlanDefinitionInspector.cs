@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Unity.AI.Planner;
 using UnityEditor.AI.Planner.Utility;
@@ -14,12 +13,18 @@ namespace UnityEditor.AI.Planner.Editors
     {
         const string k_Default = "Default";
 
-        List<Type> m_CustomHeuristicTypes = new List<Type>();
-
         NoHeaderReorderableList m_ActionList;
         NoHeaderReorderableList m_TerminationList;
 
         void OnEnable()
+        {
+            PlannerAssetDatabase.Refresh();
+            PlannerCustomTypeCache.Refresh();
+
+            InitializeReorderableLists();
+        }
+
+        void InitializeReorderableLists()
         {
             m_ActionList = new NoHeaderReorderableList(serializedObject,
                 serializedObject.FindProperty("m_ActionDefinitions"), DrawActionListElement, 1);
@@ -30,11 +35,6 @@ namespace UnityEditor.AI.Planner.Editors
                 serializedObject.FindProperty("m_StateTerminationDefinitions"), DrawTerminationListElement, 1);
             m_TerminationList.onAddDropdownCallback += ShowAddTerminationMenu;
             m_TerminationList.onRemoveCallback += RemoveTermination;
-
-            m_CustomHeuristicTypes.Clear();
-            typeof(ICustomHeuristic<>).GetImplementationsOfInterface(m_CustomHeuristicTypes);
-
-            DomainAssetDatabase.Refresh();
         }
 
         void OnDisable()
@@ -49,45 +49,79 @@ namespace UnityEditor.AI.Planner.Editors
         {
             serializedObject.Update();
 
-            GUILayout.Label(EditorStyleHelper.actions, EditorStyles.boldLabel);
-            m_ActionList.DoLayoutList();
+            m_ActionList.serializedProperty.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.actions, m_ActionList.serializedProperty.isExpanded);
+            if (m_ActionList.serializedProperty.isExpanded)
+            {
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingTop);
 
-            GUILayout.Label(EditorStyleHelper.terminations, EditorStyles.boldLabel);
-            m_TerminationList.DoLayoutList();
+                m_ActionList.DoLayoutList();
 
-            GUILayout.Label(EditorStyleHelper.planSearchSettings, EditorStyles.boldLabel);
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingBottom);
+            }
+
+            m_TerminationList.serializedProperty.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.terminations, m_TerminationList.serializedProperty.isExpanded);
+            if (m_TerminationList.serializedProperty.isExpanded)
+            {
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingTop);
+
+                m_TerminationList.DoLayoutList();
+
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingBottom);
+            }
 
             var customHeuristic = serializedObject.FindProperty("m_CustomHeuristic");
-            var heuristicTypeNames = m_CustomHeuristicTypes.Where(t => !t.IsGenericType).Select(t => t.FullName).Prepend(k_Default).ToArray();
-
-            var heuristicIndex = Math.Max(0, Array.IndexOf(heuristicTypeNames, customHeuristic.stringValue));
-            EditorGUI.BeginChangeCheck();
-            heuristicIndex = EditorGUILayout.Popup(EditorStyleHelper.heuristic, heuristicIndex, heuristicTypeNames);
-            if (EditorGUI.EndChangeCheck())
+            customHeuristic.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.planSearchSettings, customHeuristic.isExpanded, AIPlannerPreferences.displayPlanDefinitionAdvancedSettings, value => AIPlannerPreferences.displayPlanDefinitionAdvancedSettings = value);
+            if (customHeuristic.isExpanded)
             {
-                var customHeuristicName = heuristicTypeNames[heuristicIndex];
-                customHeuristic.stringValue = heuristicIndex == 0 ? string.Empty : customHeuristicName;
-            }
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingTop);
 
-            if (heuristicIndex == 0)
-            {
-                EditorGUILayout.BeginHorizontal();
-                using (new EditorGUI.IndentLevelScope())
+                var heuristicTypeNames = PlannerCustomTypeCache.HeuristicTypes.Select(t => t.FullName).Prepend(string.Empty).ToArray();
+                var heuristicTypeShortNames = PlannerCustomTypeCache.HeuristicTypes.Select(t => t.Name).Prepend(k_Default).ToArray();
+
+                var heuristicIndex = Array.IndexOf(heuristicTypeNames, customHeuristic.stringValue);
+                EditorGUI.BeginChangeCheck();
+
+                if (heuristicIndex == -1 && !string.IsNullOrEmpty(customHeuristic.stringValue))
                 {
-                    EditorGUILayout.PrefixLabel("Bounds");
+                    GUI.backgroundColor = Color.red;
+                    heuristicTypeShortNames = heuristicTypeShortNames.Append($"Unknown type {customHeuristic.stringValue}").ToArray();
+                    heuristicIndex = heuristicTypeShortNames.Length - 1;
                 }
 
-                var lowerHeuristic = serializedObject.FindProperty("m_DefaultHeuristicLower");
-                var averageHeuristic = serializedObject.FindProperty("m_DefaultHeuristicAverage");
-                var upperHeuristic = serializedObject.FindProperty("m_DefaultHeuristicUpper");
-                lowerHeuristic.intValue = EditorGUILayout.IntField(lowerHeuristic.intValue);
-                averageHeuristic.intValue = EditorGUILayout.IntField(averageHeuristic.intValue);
-                upperHeuristic.intValue = EditorGUILayout.IntField(upperHeuristic.intValue);
-                EditorGUILayout.EndHorizontal();
-            }
+                heuristicIndex = EditorGUILayout.Popup(EditorStyleHelper.heuristic, heuristicIndex, heuristicTypeShortNames);
 
-            var discountFactor = serializedObject.FindProperty("DiscountFactor");
-            EditorGUILayout.PropertyField(discountFactor);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    if (heuristicIndex < heuristicTypeNames.Length)
+                        customHeuristic.stringValue = heuristicTypeNames[heuristicIndex];
+                }
+                GUI.backgroundColor = Color.white;
+
+                if (heuristicIndex == 0)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        EditorGUILayout.PrefixLabel("Bounds");
+                    }
+
+                    var lowerHeuristic = serializedObject.FindProperty("m_DefaultHeuristicLower");
+                    var averageHeuristic = serializedObject.FindProperty("m_DefaultHeuristicAverage");
+                    var upperHeuristic = serializedObject.FindProperty("m_DefaultHeuristicUpper");
+                    lowerHeuristic.intValue = EditorGUILayout.IntField(lowerHeuristic.intValue);
+                    averageHeuristic.intValue = EditorGUILayout.IntField(averageHeuristic.intValue);
+                    upperHeuristic.intValue = EditorGUILayout.IntField(upperHeuristic.intValue);
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                if (AIPlannerPreferences.displayPlanDefinitionAdvancedSettings)
+                {
+                    var discountFactor = serializedObject.FindProperty("DiscountFactor");
+                    EditorGUILayout.PropertyField(discountFactor);
+                }
+
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingBottom);
+            }
 
             serializedObject.ApplyModifiedProperties();
 
@@ -107,7 +141,7 @@ namespace UnityEditor.AI.Planner.Editors
                 var displayName = value.objectReferenceValue.name;
 
                 string builtinModule;
-                if ((builtinModule = DomainAssetDatabase.GetBuiltinModuleName(value.objectReferenceValue)) != null)
+                if ((builtinModule = PlannerAssetDatabase.GetBuiltinModuleName(value.objectReferenceValue)) != null)
                 {
                     displayName = $"{displayName} <color=grey>({builtinModule})</color>";
                 }
@@ -136,7 +170,7 @@ namespace UnityEditor.AI.Planner.Editors
                 var displayName = value.objectReferenceValue.name;
 
                 string builtinModule;
-                if ((builtinModule = DomainAssetDatabase.GetBuiltinModuleName(value.objectReferenceValue)) != null)
+                if ((builtinModule = PlannerAssetDatabase.GetBuiltinModuleName(value.objectReferenceValue)) != null)
                 {
                     displayName = $"{displayName} <color=grey>({builtinModule})</color>";
                 }
@@ -156,12 +190,12 @@ namespace UnityEditor.AI.Planner.Editors
         {
             var menu = new GenericMenu();
 
-            foreach (var action in DomainAssetDatabase.ActionDefinitions)
+            foreach (var action in PlannerAssetDatabase.ActionDefinitions)
             {
                 var displayName = action.Name;
 
                 string builtinModule;
-                if ((builtinModule = DomainAssetDatabase.GetBuiltinModuleName(action)) != null)
+                if ((builtinModule = PlannerAssetDatabase.GetBuiltinModuleName(action)) != null)
                 {
                     displayName = $"{builtinModule}/{displayName}";
                 }
@@ -190,7 +224,7 @@ namespace UnityEditor.AI.Planner.Editors
             menu.AddItem(new GUIContent("New Action..."), false, () =>
             {
                 Object newAction;
-                if ((newAction = DomainAssetDatabase.CreateNewPlannerAsset<ActionDefinition>("Action")) != null)
+                if ((newAction = PlannerAssetDatabase.CreateNewPlannerAsset<ActionDefinition>("Action")) != null)
                 {
                     serializedObject.Update();
                     var newActionProperty = list.serializedProperty.InsertArrayElement();
@@ -206,12 +240,12 @@ namespace UnityEditor.AI.Planner.Editors
         {
             var menu = new GenericMenu();
 
-            foreach (var termination in DomainAssetDatabase.StateTerminationDefinitions)
+            foreach (var termination in PlannerAssetDatabase.StateTerminationDefinitions)
             {
                 var displayName = termination.Name;
 
                 string builtinModule;
-                if ((builtinModule = DomainAssetDatabase.GetBuiltinModuleName(termination)) != null)
+                if ((builtinModule = PlannerAssetDatabase.GetBuiltinModuleName(termination)) != null)
                 {
                     displayName = $"{builtinModule}/{displayName}";
                 }
@@ -240,7 +274,7 @@ namespace UnityEditor.AI.Planner.Editors
             menu.AddItem(new GUIContent("New Termination..."), false, () =>
             {
                 Object mewTermination;
-                if ((mewTermination = DomainAssetDatabase.CreateNewPlannerAsset<StateTerminationDefinition>("Termination")) != null)
+                if ((mewTermination = PlannerAssetDatabase.CreateNewPlannerAsset<StateTerminationDefinition>("Termination")) != null)
                 {
                     serializedObject.Update();
                     var newTerminationProperty = list.serializedProperty.InsertArrayElement();

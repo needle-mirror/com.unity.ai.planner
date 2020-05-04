@@ -8,7 +8,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
     {
         internal override bool IsValid(GameObject source, ITraitBasedObjectData traitBasedObject, QueryFilterHolder holder)
         {
-            return holder.ParameterGameObject == (traitBasedObject.ParentObject as GameObject);
+            var parent = traitBasedObject.ParentObject as GameObject;
+            return parent != null && holder.ParameterGameObject == parent;
         }
     }
 }

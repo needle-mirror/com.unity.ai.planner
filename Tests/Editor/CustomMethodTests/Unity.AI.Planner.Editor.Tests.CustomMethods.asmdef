@@ -1,0 +1,28 @@
+{
+    "name": "Unity.AI.Planner.Editor.Tests.CustomMethods",
+    "references": [
+        "Unity.AI.Planner",
+        "Unity.Entities",
+        "Unity.Jobs",
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Mathematics",
+        "Generated.AI.Planner.StateRepresentation",
+        "Unity.FullDotNet"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "DISABLE_COMPILATION"
+    ],
+    "versionDefines": []
+}

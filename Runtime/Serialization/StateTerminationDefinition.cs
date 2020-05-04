@@ -31,21 +31,12 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             set => m_CustomTerminalRewards = value.ToList();
         }
 
-        public string Namespace
-        {
-            get => m_Namespace;
-            set => m_Namespace = value;
-        }
-
         public float TerminalReward
         {
             get => m_TerminalReward;
         }
 
 #pragma warning disable 0649
-        [SerializeField]
-        string m_Namespace;
-
         [SerializeField]
         List<ParameterDefinition> m_Parameters = new List<ParameterDefinition>();
 

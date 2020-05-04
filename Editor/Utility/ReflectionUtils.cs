@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 
 namespace UnityEditor.AI.Planner.Utility
@@ -155,6 +156,22 @@ namespace UnityEditor.AI.Planner.Utility
                 // If a type can't be found, add a null entry to the list to ensure indexes match
                 if (!found)
                     resultList.Add(null);
+            }
+        }
+
+        internal static Type[] GetTypesFromAssembly(Assembly assembly)
+        {
+            if (assembly == null)
+                return new Type[]{};
+
+            try
+            {
+                return assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException e)
+            {
+                // Skip types that don't load properly -- suppress errors
+                return e.Types.Where(t => t != null).ToArray();
             }
         }
     }

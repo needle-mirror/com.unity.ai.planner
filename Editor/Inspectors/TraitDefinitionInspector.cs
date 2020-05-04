@@ -32,22 +32,23 @@ namespace UnityEditor.AI.Planner.Editors
                 "System.Single",
                 "System.Int32",
                 "System.Int64",
-                "Unity.Entities.NativeString64",
-                "Unity.Entities.NativeString512",
-                "Unity.Entities.NativeString4096",
+                "Unity.Collections.NativeString64",
+                "Unity.Collections.NativeString512",
+                "Unity.Collections.NativeString4096",
                 typeof(TraitBasedObjectId).FullName,
                 "Custom..."
             }
         };
 
-        private NoHeaderReorderableList m_FieldList;
+        NoHeaderReorderableList m_FieldList;
+        bool m_ExpandAssetUsage = true;
 
         void OnEnable()
         {
             m_FieldList = new NoHeaderReorderableList(serializedObject, serializedObject.FindProperty("m_Fields"),
                 DrawFieldListElement, 3);
 
-            DomainAssetDatabase.Refresh();
+            PlannerAssetDatabase.Refresh();
         }
 
         public override void OnInspectorGUI()
@@ -56,23 +57,39 @@ namespace UnityEditor.AI.Planner.Editors
 
             serializedObject.Update();
 
-            GUILayout.Label(EditorStyleHelper.fields, EditorStyles.boldLabel);
-            m_FieldList.AdjustElementHeight(m_FieldList.count == 0?1:3);
-            m_FieldList.DoLayoutList();
+            EditorGUILayout.Space();
 
-            GUILayout.Label(EditorStyleHelper.usages, EditorStyles.boldLabel);
-            EditorGUILayout.BeginVertical(GUI.skin.box);
-
-            GUI.enabled = false;
-            var used = IsTraitUsed(trait);
-            GUI.enabled = true;
-
-            if (!used)
+            m_FieldList.serializedProperty.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.fields,  m_FieldList.serializedProperty.isExpanded);
+            if (m_FieldList.serializedProperty.isExpanded)
             {
-                GUILayout.Label("None", EditorStyles.miniLabel);
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingTop);
+
+                m_FieldList.AdjustElementHeight(m_FieldList.count == 0?1:3);
+                m_FieldList.DoLayoutList();
+
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingBottom);
             }
 
-            GUILayout.EndVertical();
+            m_ExpandAssetUsage = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.usages,  m_ExpandAssetUsage);
+            if (m_ExpandAssetUsage)
+            {
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingTop);
+
+                EditorGUILayout.BeginVertical(GUI.skin.box);
+
+                GUI.enabled = false;
+                var used = IsTraitUsed(trait);
+                GUI.enabled = true;
+
+                if (!used)
+                {
+                    GUILayout.Label("None", EditorStyles.miniLabel);
+                }
+
+                GUILayout.EndVertical();
+
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingBottom);
+            }
 
             serializedObject.ApplyModifiedProperties();
 
@@ -82,7 +99,7 @@ namespace UnityEditor.AI.Planner.Editors
         static bool IsTraitUsed(TraitDefinition trait)
         {
             var used = false;
-            foreach (var action in DomainAssetDatabase.ActionDefinitions)
+            foreach (var action in PlannerAssetDatabase.ActionDefinitions)
             {
                 var usedByAction = action.Parameters.Any(param =>
                     param.RequiredTraits.Contains(trait) || param.ProhibitedTraits.Contains(trait));
@@ -98,7 +115,7 @@ namespace UnityEditor.AI.Planner.Editors
                 }
             }
 
-            foreach (var termination in DomainAssetDatabase.StateTerminationDefinitions)
+            foreach (var termination in PlannerAssetDatabase.StateTerminationDefinitions)
             {
                 var usedByAction = termination.Parameters.Any(param =>
                     param.RequiredTraits.Contains(trait) || param.ProhibitedTraits.Contains(trait));
@@ -127,13 +144,13 @@ namespace UnityEditor.AI.Planner.Editors
 
             rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
 
-            var domainEnums = DomainAssetDatabase.EnumDefinitions.ToList();
+            var domainEnums = PlannerAssetDatabase.EnumDefinitions.ToList();
             var typeNames = s_DefaultTypes[0].ToList();
             typeNames.InsertRange(typeNames.Count - 1, domainEnums.Select(e => $"Enums/{e.Name}"));
 
             var typeFullNames = s_DefaultTypes[1].ToList();
             typeFullNames.InsertRange(typeFullNames.Count - 1,
-                domainEnums.Select(e => $"{TypeResolver.DomainsNamespace}.Enums.{e.Name}"));
+                domainEnums.Select(e => $"{TypeResolver.TraitEnumsNamespace}{e.Name}"));
 
             var typeProperty = field.FindPropertyRelative("m_Type");
             var typeIndex = (!string.IsNullOrEmpty(typeProperty.stringValue))
@@ -150,7 +167,7 @@ namespace UnityEditor.AI.Planner.Editors
                 }
                 else
                 {
-                    fieldType = TypeResolver.GetType(typeProperty.stringValue);
+                    TypeResolver.TryGetType(typeProperty.stringValue, out fieldType);
                     typeProperty.stringValue = EditorGUI.TextField(rect, "Type", typeProperty.stringValue, fieldType == null
                         ? EditorStyleHelper.errorTextField
                         : EditorStyles.textField).Trim();
@@ -163,8 +180,7 @@ namespace UnityEditor.AI.Planner.Editors
             }
 
             rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-            fieldType = TypeResolver.GetType(typeProperty.stringValue);
-            if (fieldType != null)
+            if (TypeResolver.TryGetType(typeProperty.stringValue, out fieldType))
             {
                 var valueProperty = FieldValueDrawer.GetSerializedProperty(field.FindPropertyRelative("m_DefaultValue"), fieldType);
                 if (valueProperty == null)

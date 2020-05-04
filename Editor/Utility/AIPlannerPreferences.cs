@@ -22,6 +22,10 @@ namespace UnityEditor.AI.Planner
 
         const string k_PreferencesPath = "Library/AIPlannerPreferences.asset";
 
+        const string k_DisplayControllerAdvancedSettingsPrefs = "AI.Planner.DisplayControllerAdvancedSettings";
+        const string k_DisplayActionDefinitionAdvancedSettingsPrefs =  "AI.Planner.DisplayActionDefinitionAdvancedSettings";
+        const string k_DisplayPlanDefinitionAdvancedSettingsPrefs =  "AI.Planner.DisplayPlanDefinitionAdvancedSettings";
+
         static AIPlannerPreferences s_Preferences;
 
         [SerializeField]
@@ -29,6 +33,9 @@ namespace UnityEditor.AI.Planner
 
         [SerializeField]
         bool m_AutoSaveAssets = true;
+
+        [SerializeField]
+        bool m_ExpertMode = false;
 
         internal static AIPlannerPreferences GetOrCreatePreferences()
         {
@@ -42,6 +49,24 @@ namespace UnityEditor.AI.Planner
             }
 
             return s_Preferences;
+        }
+
+        public static bool displayControllerAdvancedSettings
+        {
+            get => EditorPrefs.GetBool(k_DisplayControllerAdvancedSettingsPrefs, GetOrCreatePreferences().m_ExpertMode);
+            set => EditorPrefs.SetBool(k_DisplayControllerAdvancedSettingsPrefs, value);
+        }
+
+        public static bool displayActionDefinitionAdvancedSettings
+        {
+            get => EditorPrefs.GetBool(k_DisplayActionDefinitionAdvancedSettingsPrefs, GetOrCreatePreferences().m_ExpertMode);
+            set => EditorPrefs.SetBool(k_DisplayActionDefinitionAdvancedSettingsPrefs, value);
+        }
+
+        public static bool displayPlanDefinitionAdvancedSettings
+        {
+            get => EditorPrefs.GetBool(k_DisplayPlanDefinitionAdvancedSettingsPrefs, GetOrCreatePreferences().m_ExpertMode);
+            set => EditorPrefs.SetBool(k_DisplayPlanDefinitionAdvancedSettingsPrefs, value);
         }
 
         static void SaveSettings()
@@ -80,6 +105,21 @@ namespace UnityEditor.AI.Planner
                             "Any planner assets you change will be saved immediately.");
 
                         EditorGUILayout.PropertyField(settings.FindProperty(nameof(m_AutoSaveAssets)), label);
+                    }
+
+                    // Expert mode
+                    {
+                        var label = new GUIContent("Expert mode", "Advanced settings are displayed by default.");
+
+                        EditorGUI.BeginChangeCheck();
+                        EditorGUILayout.PropertyField(settings.FindProperty(nameof(m_ExpertMode)), label);
+
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            EditorPrefs.DeleteKey(k_DisplayControllerAdvancedSettingsPrefs);
+                            EditorPrefs.DeleteKey(k_DisplayActionDefinitionAdvancedSettingsPrefs);
+                            EditorPrefs.DeleteKey(k_DisplayPlanDefinitionAdvancedSettingsPrefs);
+                        }
                     }
 
                     settings.ApplyModifiedProperties();

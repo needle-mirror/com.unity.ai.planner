@@ -3,7 +3,8 @@
     "references": [
         "Unity.AI.Planner",
         "Unity.AI.Planner.Editor",
-        "Unity.Entities"
+        "Unity.Entities",
+        "Generated.AI.Planner.StateRepresentation"
     ],
     "optionalUnityReferences": [
         "TestAssemblies"

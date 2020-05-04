@@ -3,5 +3,6 @@
 [assembly: InternalsVisibleTo("Unity.AI.Planner.Tests")]
 [assembly: InternalsVisibleTo("Unity.AI.Planner.Editor.Tests")]
 [assembly: InternalsVisibleTo("Unity.AI.Planner.Editor")]
-[assembly: InternalsVisibleTo("AI.Planner.Domains")]
-[assembly: InternalsVisibleTo("AI.Planner.Actions")]
+[assembly: InternalsVisibleTo("Generated.AI.Planner.StateRepresentation")]
+[assembly: InternalsVisibleTo("Generated.AI.Planner.Plans")]
+[assembly: InternalsVisibleTo("AI.Planner.Custom")]

@@ -195,7 +195,7 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
             var stateCopy = m_StateManager.CopyStateData(KeyDomainUtility.InitialState);
             var originalState = KeyDomainUtility.InitialState;
 
-            var types = new NativeArray<ComponentType>(1, Allocator.TempJob) { [0] = (ComponentType) typeof(Colored) };
+            var types = new NativeArray<ComponentType>(1, Allocator.TempJob) { [0] = ComponentType.ReadWrite<Colored>() };
             stateCopy.AddObject(types, out _, out _);
             types.Dispose();
 
@@ -218,9 +218,10 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
             moveActionDataContext.EntityCommandBuffer = moveActionECB.ToConcurrent();
 
             var move = new MoveAction(statesToExpand, moveActionDataContext);
-            move.Schedule(statesToExpand, default).Complete();
+            var jobHandle = JobHandle.CombineDependencies(move.Schedule(statesToExpand, default), m_StateManager.EntityManager.ExclusiveEntityTransactionDependency);
+            jobHandle.Complete();
 
-            moveActionECB.Playback(m_StateManager.EntityManager);
+            moveActionECB.Playback(m_StateManager.ExclusiveEntityTransaction);
             moveActionECB.Dispose();
             statesToExpand.Dispose();
 
@@ -230,7 +231,7 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
 
             var initialState = KeyDomainUtility.InitialState;
             var firstRoomIndex = initialState.GetTraitBasedObjectIndex(KeyDomainUtility.FirstRoom);
-            var actionKey = moveActionTransitions[0].StateTransitionInfoPair.StateTransition.ActionKey;
+            var actionKey = moveActionTransitions[0].TransitionInfo.StateTransition.ActionKey;
 
             Assert.AreEqual(firstRoomIndex, actionKey[MoveAction.k_RoomIndex]);
         }
@@ -246,9 +247,10 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
             unlockRoomDataContext.EntityCommandBuffer = unlockRoomECB.ToConcurrent();
 
             var unlockRoomAction = new UnlockRoomAction(statesToExpand, unlockRoomDataContext);
-            unlockRoomAction.Schedule(statesToExpand, 0).Complete();
+            var jobHandle = JobHandle.CombineDependencies(unlockRoomAction.Schedule(statesToExpand, default), m_StateManager.EntityManager.ExclusiveEntityTransactionDependency);
+            jobHandle.Complete();
 
-            unlockRoomECB.Playback(m_StateManager.EntityManager);
+            unlockRoomECB.Playback(m_StateManager.ExclusiveEntityTransaction);
             unlockRoomECB.Dispose();
             statesToExpand.Dispose();
 
@@ -291,7 +293,7 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
 
 
             var keyIndices = new NativeList<int>(Allocator.TempJob);
-            stateData.GetTraitBasedObjectIndices(keyIndices, typeof(Colored), typeof(Carriable));
+            stateData.GetTraitBasedObjectIndices(keyIndices, ComponentType.ReadWrite<Colored>(), ComponentType.ReadWrite<Carriable>());
 
             for (int i = 0; i < keyIndices.Length; i++)
             {
@@ -342,7 +344,7 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Performance
         {
            base.Setup();
            m_LargeStateKey = m_StateManager.CopyState(KeyDomainUtility.InitialStateKey);
-           m_RoomType = new NativeArray<ComponentType>(2, Allocator.TempJob) {[0] = typeof(Lockable), [1] = typeof(Colored)};
+           m_RoomType = new NativeArray<ComponentType>(2, Allocator.TempJob) {[0] = ComponentType.ReadWrite<Lockable>(), [1] = ComponentType.ReadWrite<Colored>()};
            Add500Rooms(m_StateManager.GetStateData(m_LargeStateKey, readWrite:true));
         }
 
@@ -489,7 +491,7 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Performance
         {
             StateData stateData = default;
             var objects = new NativeList<int>(Allocator.Temp);
-            var types = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = typeof(Colored), [1] = typeof(Lockable) };
+            var types = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = ComponentType.ReadWrite<Colored>(), [1] = ComponentType.ReadWrite<Lockable>() };
 
             Measure.Method(() =>
             {

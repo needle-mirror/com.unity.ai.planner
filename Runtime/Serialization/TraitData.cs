@@ -8,11 +8,23 @@ using UnityObject = UnityEngine.Object;
 
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
+    /// <summary>
+    /// Data class used to hold field data of a trait instance.
+    /// </summary>
     [Serializable]
-    class TraitData : ITraitData
+    public class TraitData : ITraitData
     {
         internal TraitDefinition TraitDefinition => m_TraitDefinition;
+
+        /// <summary>
+        /// Name of the trait definition
+        /// </summary>
         public string TraitDefinitionName => TraitDefinition != null ? TraitDefinition.Name : string.Empty;
+
+        /// <summary>
+        /// Has trait data been initialized
+        /// </summary>
+        public bool IsInitialized { get; private set; }
 
 #pragma warning disable 0649
         [SerializeField]
@@ -25,6 +37,16 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         Dictionary<string, FieldValue> m_Fields = new Dictionary<string, FieldValue>();
         Dictionary<string, Type> m_FieldTypes = new Dictionary<string, Type>();
 
+        internal TraitData() { }
+
+        internal TraitData(TraitDefinition definition)
+        {
+            m_TraitDefinition = definition;
+        }
+
+        /// <summary>
+        /// Initialize values for all Trait fields
+        /// </summary>
         public void InitializeFieldValues()
         {
             if (m_TraitDefinition == null)
@@ -38,7 +60,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 
             foreach (var f in m_TraitDefinition.Fields)
             {
-                m_FieldTypes.Add(f.Name, TypeResolver.GetType(f.Type));
+                m_FieldTypes.Add(f.Name, f.FieldType);
 
                 if (!m_FieldValues.Any(v => v.Name == f.Name))
                     m_FieldValues.Add(new FieldValue(f.Name, f.DefaultValue));
@@ -46,6 +68,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 
             foreach (var fv in m_FieldValues)
                 m_Fields.Add(fv.Name, fv);
+
+            IsInitialized = true;
         }
 
         T GetValue<T>(string fieldName)
@@ -53,6 +77,13 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             return (T)GetValue(fieldName);
         }
 
+        /// <summary>
+        /// Try to get a value from a field
+        /// </summary>
+        /// <param name="fieldName">Field name</param>
+        /// <param name="value">Value to be returned</param>
+        /// <typeparam name="T">Value type</typeparam>
+        /// <returns>Whether the value was found</returns>
         public bool TryGetValue<T>(string fieldName, out T value) where T: class
         {
             if (m_FieldTypes.TryGetValue(fieldName, out var fieldType))
@@ -74,6 +105,11 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             return false;
         }
 
+        /// <summary>
+        /// Set a value to a field
+        /// </summary>
+        /// <param name="fieldName">Field name</param>
+        /// <param name="value">Value</param>
         public void SetValue(string fieldName, object value)
         {
             if (value == null)
@@ -99,6 +135,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 fieldValue.BoolValue = (bool)value;
             else if (fieldType == typeof(float))
                 fieldValue.FloatValue = (float)value;
+            else if (fieldType == typeof(int))
+                fieldValue.IntValue = (int)value;
             else if (fieldType == typeof(long))
                 fieldValue.IntValue = (long)value;
             else if (fieldType == typeof(string))
@@ -107,6 +145,11 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 fieldValue.ObjectValue = (UnityObject)value;
         }
 
+        /// <summary>
+        /// Get a value from a field
+        /// </summary>
+        /// <param name="fieldName">Field name</param>
+        /// <returns>Specified field value</returns>
         public object GetValue(string fieldName)
         {
             object value = null;

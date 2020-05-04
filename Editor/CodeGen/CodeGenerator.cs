@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.AI.Planner.Utility;
 using Unity.Collections.LowLevel.Unsafe;
@@ -16,62 +17,78 @@ namespace UnityEditor.AI.Planner.CodeGen
         CodeRenderer m_CodeRenderer = new CodeRenderer();
         List<string> m_GeneratedFilePaths = new List<string>();
 
-        internal List<string> GenerateDomain(string outputPath)
+        internal List<string> GenerateStateRepresentation(string outputPath)
         {
             m_GeneratedFilePaths.Clear();
-            DomainAssetDatabase.Refresh();
 
             bool anyEnums = false;
-            foreach (var e in DomainAssetDatabase.EnumDefinitions)
+            foreach (var e in PlannerAssetDatabase.EnumDefinitions)
             {
-                GenerateEnum(e, TypeResolver.DomainsNamespace, outputPath);
+                GenerateEnum(e, outputPath);
                 anyEnums = true;
             }
 
-            foreach (var trait in DomainAssetDatabase.TraitDefinitions)
+            foreach (var trait in PlannerAssetDatabase.TraitDefinitions)
             {
-                var traitType = TypeResolver.GetType(trait.Name);
-                if (traitType != null && typeof(ICustomTrait).IsAssignableFrom(traitType)) // No codegen needed
+                if (TypeResolver.TryGetType(trait.FullyQualifiedName, out var traitType) && typeof(ICustomTrait).IsAssignableFrom(traitType)) // No codegen needed
                     continue;
 
-                GenerateTrait(trait, TypeResolver.DomainsNamespace, outputPath, anyEnums);
+                GenerateTrait(trait, outputPath, anyEnums);
             }
 
-            GeneratePlanningDomain(TypeResolver.DomainsNamespace, outputPath);
+            foreach (var plan in PlannerAssetDatabase.PlanDefinitions)
+            {
+                if (plan.ActionDefinitions == null || !plan.ActionDefinitions.Any())
+                {
+                    Debug.LogWarning($"Skipping {plan.Name} generation that doesn't contain any action.");
+                    continue;
+                }
 
-            var domainsNamespace = TypeResolver.DomainsNamespace;
-            SaveToFile($"{outputPath}/{domainsNamespace}/AssemblyInfo.cs", "using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"AI.Planner.Actions\")]");
+                GeneratePlanStateRepresentation(outputPath, plan);
+            }
+
+            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, "AssemblyInfo.cs"), $"using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"{TypeResolver.PlansQualifier}\")]");
 
             // Make a copy, so this is re-entrant
             return m_GeneratedFilePaths.ToList();
         }
 
-        internal List<string> GeneratePlans(string outputPath)
+        internal List<string> GeneratePlans(string outputPath, Assembly customAssembly)
         {
             m_GeneratedFilePaths.Clear();
-            DomainAssetDatabase.Refresh();
 
-            var actionsNamespace = TypeResolver.ActionsNamespace;
+            Type[] customTypes = ReflectionUtils.GetTypesFromAssembly(customAssembly);
 
-            var anyEnums = DomainAssetDatabase.EnumDefinitions.Any();
-            foreach (var plan in DomainAssetDatabase.PlanDefinitions)
+            var anyEnums = PlannerAssetDatabase.EnumDefinitions.Any();
+            foreach (var plan in PlannerAssetDatabase.PlanDefinitions)
             {
+                if (plan.ActionDefinitions == null || !plan.ActionDefinitions.Any())
+                {
+                    continue;
+                }
+
                 foreach (var action in plan.ActionDefinitions)
                 {
                     if (action != null)
-                        GenerateAction(action, plan.Name, TypeResolver.DomainsNamespace, actionsNamespace, outputPath, anyEnums);
+                        GenerateAction(action, plan.Name, customTypes, outputPath, anyEnums);
                 }
 
-                GenerateActionScheduler(plan, plan.Name, TypeResolver.ActionsNamespace, outputPath);
+                foreach (var termination in plan.StateTerminationDefinitions)
+                {
+                    if (termination != null)
+                        GenerateTermination(termination, plan.Name, customTypes, outputPath, anyEnums);
+                }
 
-                GeneratePlanner(plan, plan.Name, TypeResolver.ActionsNamespace, outputPath, anyEnums);
+                GenerateActionScheduler(plan, plan.Name, outputPath);
+
+                GeneratePlanner(plan, plan.Name, outputPath, anyEnums);
             }
 
             // Make a copy, so this is re-entrant
             return m_GeneratedFilePaths.ToList();
         }
 
-        void GenerateTrait(TraitDefinition trait, string domainNamespace, string outputPath, bool includeEnums = false)
+        void GenerateTrait(TraitDefinition trait, string outputPath, bool includeEnums = false)
         {
             var fields = trait.Fields.Select(p => new
             {
@@ -81,75 +98,74 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateTrait, new
             {
-                @namespace = domainNamespace,
+                @namespace = TypeResolver.StateRepresentationQualifier,
                 name = trait.Name,
                 fields = fields,
                 include_enums = includeEnums,
             });
 
-            SaveToFile($"{outputPath}/{domainNamespace}/Traits/{trait.Name}.cs", result);
+            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, "Traits", $"{trait.Name}.cs"), result);
         }
 
-        void GenerateEnum(EnumDefinition @enum, string domainNamespace, string outputPath)
+        void GenerateEnum(EnumDefinition @enum, string outputPath)
         {
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateEnum, new
             {
-                Namespace = domainNamespace,
+                @namespace = TypeResolver.StateRepresentationQualifier,
                 Name = @enum.Name,
                 Values = @enum.Values
             });
 
-            SaveToFile($"{outputPath}/{domainNamespace}/Traits/{@enum.Name}.cs", result);
+            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, "Traits", $"{@enum.Name}.cs"), result);
         }
 
-        void GeneratePlanningDomain(string domainNamespace, string outputPath)
+        void GeneratePlanStateRepresentation(string outputPath, PlanDefinition plan)
         {
-            var traits = DomainAssetDatabase.TraitDefinitions.Select(p => new
+            var traits = plan.GetTraitsUsed().Select(p => new
             {
                 name = p.Name,
                 relations = p.Fields.Where(f => f.Type.EndsWith("ObjectId")).Select(f => new { name = f.Name }),
                 attributes = p.Fields.Where(f => !f.Type.EndsWith("ObjectId")
                     && (f.FieldType == null // It's possible the type isn't available for reflection, so just assume it's blittable for now
-                    || UnsafeUtility.IsBlittable(f.FieldType))).Select(t => new
+                    || UnsafeUtility.IsUnmanaged(f.FieldType))).Select(t => new
                 {
                     field_type = t.Type,
                     field_name = t.Name
                 })
             });
 
-            foreach (var termination in DomainAssetDatabase.StateTerminationDefinitions)
-            {
-                GenerateTermination(termination, TypeResolver.DomainsNamespace, outputPath);
-            }
 
-            var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateDomain, new
+            var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateStateRepresentation, new
             {
-                domain_namespace = domainNamespace,
+                @namespace = $"{TypeResolver.StateRepresentationQualifier}.{plan.Name}",
                 trait_list = traits,
                 num_traits = traits.Count()
             });
 
-            SaveToFile($"{outputPath}/{domainNamespace}/PlanningDomainData.cs", result);
+            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, plan.Name, "PlanStateRepresentation.cs"), result);
         }
 
-        void GenerateTermination(StateTerminationDefinition termination, string domainNamespace, string outputPath)
+        void GenerateTermination(StateTerminationDefinition termination, string planName, Type[] customTypes, string outputPath, bool includeEnums)
         {
             var terminationName = termination.Name;
 
             var parameters = termination.Parameters.Select(p => new
             {
-                Name = p.Name,
+                @name = p.Name,
                 required_traits = p.RequiredTraits,
                 prohibited_traits = p.ProhibitedTraits,
             });
 
-            var terminationCriteria = termination.Criteria;
+            var terminationCriteria = termination.Criteria.Where(p => !p.IsSpecialOperator(Operation.SpecialOperators.Custom));
             var criteriaTraits = terminationCriteria.Where(c => c.OperandA.Trait != null).Select(c => c.OperandA.Trait.Name)
                 .Concat(terminationCriteria.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.Name))
                 .Distinct();
 
-            var parameterNames = parameters.Select(p => p.Name).ToList();
-            var criteria = termination.Criteria.Select(p => new
+            var customCriteriaList = termination.Criteria.Where(p => p.IsSpecialOperator(Operation.SpecialOperators.Custom));
+            var customCriteria = customCriteriaList.Select(p => p.CustomOperatorType);
+
+            var parameterNames = parameters.Select(p => p.@name).ToList();
+            var criteria = terminationCriteria.Select(p => new
             {
                 @operator = p.Operator,
                 operand_a = GetPreconditionOperandString(p.OperandA, parameterNames),
@@ -160,7 +176,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var customRewards = termination.CustomRewards.Select(c =>
             {
-                var customRewardType = TypeResolver.GetType(c.Typename);
+                var customRewardType = customTypes.FirstOrDefault(t => t.FullName == c.Typename);
                 if (customRewardType != null)
                 {
                     return new
@@ -170,13 +186,13 @@ namespace UnityEditor.AI.Planner.CodeGen
                         parameters = c.Parameters.Select((p, index) => new
                         {
                             index = parameterNames.IndexOf(p),
-                            type = TypeResolver.GetType(c.Typename).GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
+                            type = customRewardType.GetMethod("RewardModifier")?.GetParameters()[index].ParameterType
                         })
                     };
                 }
                 else
                 {
-                    Debug.LogWarning($"Couldn't resolve custom type {c.Typename} for termination {termination.Name}. Skipping for now, but try to re-generate.");
+                    Debug.LogError($"Couldn't resolve custom type {c.Typename} for termination {termination.Name}");
                 }
 
                 return null;
@@ -184,18 +200,22 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateTermination, new
             {
-                @namespace = domainNamespace,
+                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
+                plan_name = planName,
                 name = terminationName,
                 parameter_list = parameters,
                 criteria_traits = criteriaTraits.ToArray(),
                 criteria_list = criteria.ToArray(),
+                custom_criteria = customCriteria,
                 reward_value = termination.TerminalReward,
                 custom_rewards =  customRewards,
+                include_enums = includeEnums,
+                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
             });
-            SaveToFile($"{outputPath}/{domainNamespace}/{terminationName}.cs", result);
+            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, $"{terminationName}.cs"), result);
         }
 
-        void GenerateActionScheduler(PlanDefinition definition, string planningNamespace, string domainNamespace, string outputPath)
+        void GenerateActionScheduler(PlanDefinition definition, string planName, string outputPath)
         {
             int maxArgs = 0;
             foreach (var action in definition.ActionDefinitions)
@@ -206,20 +226,21 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateActionScheduler, new
             {
-                planning_name = definition.Name,
-                domain_namespace = $"{domainNamespace}.{planningNamespace}",
+                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
+                plan_name = definition.Name,
                 actions = definition.ActionDefinitions,
                 num_actions = definition.ActionDefinitions.Count(),
                 num_args = maxArgs,
+                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
             });
 
-            SaveToFile($"{outputPath}/{domainNamespace}/{planningNamespace}/ActionScheduler.cs", result);
+            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, "ActionScheduler.cs"), result);
         }
 
-        void GeneratePlanner(PlanDefinition definition, string planningNamespace, string domainNamespace, string outputPath, bool includeEnums = false)
+        void GeneratePlanner(PlanDefinition definition, string planName, string outputPath, bool includeEnums = false)
         {
             var customHeuristic = definition.CustomHeuristic;
-            var heuristicTypeName = string.IsNullOrEmpty(customHeuristic) ? "DefaultHeuristic" : customHeuristic;
+            var heuristicTypeName = string.IsNullOrEmpty(customHeuristic) ? "DefaultHeuristic" : $"global::{customHeuristic}";
 
             var defaultHeuristic = new
             {
@@ -230,33 +251,36 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplatePlanExecutor, new
             {
+                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
                 plan_name = definition.Name,
-                class_namespace = $"{domainNamespace}.{planningNamespace}",
                 actions = definition.ActionDefinitions,
                 traits = definition.GetTraitsUsed(),
                 heuristic = heuristicTypeName,
                 default_heuristic = defaultHeuristic,
-                terminations = definition.StateTerminationDefinitions.Where(t => t != null).Select(t => t.name),
+                terminations = definition.StateTerminationDefinitions.Where(t => t != null).Select(t => t.Name),
                 include_enums = includeEnums,
+                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
             });
 
-            SaveToFile($"{outputPath}/{domainNamespace}/{planningNamespace}/{definition.name}Executor.cs", result);
+            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, $"{definition.name}Executor.cs"), result);
         }
 
-        void GenerateAction(ActionDefinition action, string planName, string domainNamespace, string actionNamespace, string outputPath, bool includeEnums = false)
+        void GenerateAction(ActionDefinition action, string planName, Type[] customTypes, string outputPath, bool includeEnums = false)
         {
-            var parameters = action.Parameters.Select(p => new
+            var parameterNames = action.Parameters.Select(p => p.Name).ToList();
+            var parameters = action.Parameters.Select((p, i) => new
             {
-                Name = p.Name,
+                @name = p.Name,
                 required_traits = p.RequiredTraits,
                 prohibited_traits = p.ProhibitedTraits,
+                limit_count = p.LimitCount,
+                limit_comparer = ExtractLimitComparerInformation(p.LimitComparerType, parameterNames.IndexOf(p.LimitComparerReference), customTypes)
             });
 
-            var parameterNames = parameters.Select(p => p.Name).ToList();
-            var traitPreconditionList = action.Preconditions.Where(p => !p.Operator.Contains('.'));
+            var traitPreconditionList = action.Preconditions.Where(p => !p.IsSpecialOperator(Operation.SpecialOperators.Custom));
             var preconditions = traitPreconditionList.Select(p => new
             {
-                Operator = p.Operator,
+                @operator = p.Operator,
                 operand_a = GetPreconditionOperandString(p.OperandA, parameterNames),
                 operand_b = GetPreconditionOperandString(p.OperandB, parameterNames),
                 loop_index = Mathf.Max(parameterNames.FindIndex(name => name == p.OperandA.Parameter)
@@ -267,8 +291,8 @@ namespace UnityEditor.AI.Planner.CodeGen
                 .Concat(traitPreconditionList.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.Name))
                 .Distinct();
 
-            var customPreconditionList = action.Preconditions.Where(p => p.Operator.Contains('.'));
-            var customPreconditions = customPreconditionList.Select(p => p.Operator.Substring(p.Operator.IndexOf('.') + 1));
+            var customPreconditionList = action.Preconditions.Where(p => p.IsSpecialOperator(Operation.SpecialOperators.Custom));
+            var customPreconditions = customPreconditionList.Select(p => p.CustomOperatorType);
 
             var createdObjects = action.CreatedObjects.Select(c => new
             {
@@ -280,17 +304,17 @@ namespace UnityEditor.AI.Planner.CodeGen
             var requiredObjectBuffers = new HashSet<string>();
             var requiredTraitBuffers = new HashSet<string>();
 
-            var objectModifiers = action.ObjectModifiers.Select(p => BuildModifierLines(action, p.Operator, p.OperandA, p.OperandB, ref requiredObjectBuffers, ref requiredTraitBuffers));
+            var objectModifiers = action.ObjectModifiers.Select(p => BuildModifierLines(action, p, ref requiredObjectBuffers, ref requiredTraitBuffers));
 
             var customRewards = action.CustomRewards.Select(c =>
             {
-                var customRewardType = TypeResolver.GetType(c.Typename);
+                var customRewardType = customTypes.FirstOrDefault(t => t.FullName == c.Typename);
                 if (customRewardType != null)
                 {
                     return new
                     {
                         @operator = c.Operator,
-                        typename = c.Typename.Split(',')[0],
+                        typename = c.Typename,
                         parameters = c.Parameters.Select((p, index) => new
                         {
                             index = parameterNames.IndexOf(p),
@@ -300,7 +324,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 }
                 else
                 {
-                    Debug.LogWarning($"Couldn't resolve custom type {c.Typename} for termination {action.Name}. Skipping for now, but try to re-generate.");
+                    Debug.LogError($"Couldn't resolve custom type {c.Typename} for action {action.Name}.");
                 }
 
                 return null;
@@ -308,10 +332,9 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateAction, new
             {
+                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
                 plan_name = planName,
                 action_name = action.Name,
-                action_namespace = actionNamespace,
-                domain_namespace = domainNamespace,
                 parameter_list = parameters.ToList(),
                 precondition_list = preconditions.ToList(),
                 precondition_traits = preconditionTraits.ToList(),
@@ -325,29 +348,31 @@ namespace UnityEditor.AI.Planner.CodeGen
                 removed_objects = action.RemovedObjects,
                 required_object_buffers = requiredObjectBuffers.ToList(),
                 required_trait_buffers = requiredTraitBuffers.ToList(),
+                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
             });
 
-            SaveToFile($"{outputPath}/{actionNamespace}/{planName}/{action.Name}.cs", result);
+            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, $"{action.Name}.cs"), result);
         }
 
-        public string[] BuildModifierLines(ActionDefinition action, string @operator, OperandValue operandA, OperandValue operandB, ref HashSet<string> requiredObjectBuffers, ref HashSet<string> requiredTraitBuffers)
+        string[] BuildModifierLines(ActionDefinition action, Operation operation, ref HashSet<string> requiredObjectBuffers, ref HashSet<string> requiredTraitBuffers)
         {
             const string prefixNew = "new";
             const string prefixOriginal = "original";
 
             List<string> modifierLines = new List<string>();
 
-            string operatorType = @operator.Split('.')[0];
-            switch (operatorType)
-            {
-                case Operation.CustomOperator:
-                {
-                    var customClass = @operator.Split('.')[1];
+            var @operator = operation.Operator;
+            var operandA = operation.OperandA;
+            var operandB = operation.OperandB;
 
-                    modifierLines.Add($"new {customClass}().ApplyCustomActionEffectsToState(originalState, action, newState);");
+            switch (@operator)
+            {
+                case nameof(Operation.SpecialOperators.Custom):
+                {
+                    modifierLines.Add($"new global::{operation.CustomOperatorType}().ApplyCustomActionEffectsToState(originalState, action, newState);");
                 }
                     break;
-                case Operation.AddTraitOperator:
+                case nameof(Operation.SpecialOperators.Add):
                 {
                     if ((string.IsNullOrEmpty(operandA.Parameter) || operandB.Trait == null))
                     {
@@ -361,7 +386,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     modifierLines.Add($"newState.SetTraitOnObject<{trait}>(default({trait}), ref original{parameter}Object);");
                 }
                     break;
-                case Operation.RemoveTraitOperator:
+                case nameof(Operation.SpecialOperators.Remove):
                 {
                     if ((string.IsNullOrEmpty(operandA.Parameter) || operandB.Trait == null))
                     {
@@ -444,6 +469,62 @@ namespace UnityEditor.AI.Planner.CodeGen
             return modifierLines.ToArray();
         }
 
+        static object ExtractLimitComparerInformation(string comparerTypeName, int parameterReferenceIndex, Type[] customTypes)
+        {
+            if (string.IsNullOrEmpty(comparerTypeName))
+                return null;
+
+            var comparerType = customTypes.FirstOrDefault(t => t.FullName == comparerTypeName);
+            if (comparerType == null)
+                return null;
+
+            var parameterComparerType = comparerType.GetInterfaces().FirstOrDefault(i => i.Name == typeof(IParameterComparer<>).Name);
+            if (parameterComparerType == null)
+                return null;
+
+            var parameterComparerWithReferenceType = comparerType.GetInterfaces().FirstOrDefault(i => i.Name == typeof(IParameterComparerWithReference<,>).Name);
+            if (parameterComparerWithReferenceType == null)
+            {
+                return new
+                {
+                    type = comparerTypeName,
+                    trait = "",
+                    reference_index = -1,
+                };
+            }
+
+            if (parameterReferenceIndex < 0)
+            {
+                Debug.LogWarning($"Missing a reference for the parameter comparer type {comparerTypeName}.");
+                return null;
+            }
+
+            return new
+            {
+                type = comparerTypeName,
+                trait = parameterComparerWithReferenceType.GetGenericArguments()[1].Name,
+                reference_index = parameterReferenceIndex,
+            };
+        }
+
+        internal void GenerateAsmRef(string path, string assemblyName)
+        {
+            File.WriteAllText($"{Path.Combine(path, assemblyName)}.asmref", m_CodeRenderer.RenderTemplate(
+                PlannerResources.instance.TemplateAsmRef, new
+                {
+                    assembly = assemblyName
+                }));
+        }
+
+        internal void GeneratePackage(string path, string assemblyName)
+        {
+            File.WriteAllText(Path.Combine(path,"package.json"), m_CodeRenderer.RenderTemplate(
+                PlannerResources.instance.TemplatePackage, new
+                {
+                    assembly = assemblyName.Split('.').Last()
+                }));
+        }
+
         void SaveToFile(string filePath, string text)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(filePath));
@@ -452,18 +533,15 @@ namespace UnityEditor.AI.Planner.CodeGen
             m_GeneratedFilePaths.Add(filePath);
         }
 
-        string GetPreconditionOperandString(OperandValue operand, List<string> parameterNames)
+        static string GetPreconditionOperandString(OperandValue operand, List<string> parameterNames)
         {
             if (operand.Trait == null)
             {
                 if (operand.Enum != null)
-                {
                     return $"{operand.Enum.Name}.{operand.Value}";
-                }
-                else if (parameterNames.Contains(operand.Parameter))
-                {
+
+                if (parameterNames.Contains(operand.Parameter))
                     return $"stateData.GetTraitBasedObjectId({operand.Parameter}Index)";
-                }
 
                 return operand.Value;
             }

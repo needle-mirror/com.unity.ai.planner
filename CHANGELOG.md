@@ -7,25 +7,91 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 <!-- 
 Notes about changelog:
 * It's okay to have a section at the top to capture all changes until the next release. This will pass package validation.
-## [Unreleased] 
-### Added
-### Changed
-### Deprecated
-### Removed
-### Fixed
-### Security
+[Unreleased]
+
+Subsections: 
+Added
+Changed
+Deprecated
+Removed
+Fixed
+Security
 
 * It's okay to only have the preview version without the .n at the end and to continue updating the release notes until final release.
 [X.Y.Z-preview] - date
 or
 [X.Y.Z] - date
  -->
- 
+
+## [0.2.3-preview.1] - 2020-05-05
+### Added
+* `*=` as an `ActionDefinition` effect operator
+* A limit and a sorting method can be set to action parameters to reduce the search space
+* Before code generation occurs an asset validation is performed to verify serialized data
+* Display a progress bar during planner code compilation
+* Allow expanding action nodes manually in plan visualizer
+* Expert-mode setting that displays planner advanced options by default
+* Add custom criteria on termination state definition
+* Add to DecisionController public access to plan and execution information (readonly)
+* Users can cap the number of updates a plan receives
+* Additional unit tests for planning and plan execution
+* Add and remove trait methods on `TraitComponent`
+* Add documentation for action callbacks
+* Add documentation for world queries
+
+### Changed
+* Rename AI.Planner.Domains to Generated.AI.Planner.StateRepresentation
+* Rename AI.Planner.Actions to Generated.AI.Planner.Plans
+* Custom planner methods need to be included in a folder with an AsmDef reference that points to AI.Planner.Custom
+* Update Scriban to version 2.1.1
+* Display action's parameters in plan visualizer
+* Update trait-based state data methods to use NativeString64 for name parameters
+* Change serialization of custom methods
+* Add scrollview on trait popup selection
+* Add method to check if a trait is set on a trait object in a state representation
+* ActionComplete has been renamed PlanExecutorStateUpdateMode
+* Updated state string representation to enhance readability
+* Plan pruning has moved off of the main thread and into a job
+* Package test domain (KeyDomain) now has fully Burst-compatible jobs 
+* Rename AutoUpdate to AutoExecutePlan in the DecisionController
+* Update Entities dependency to 0.9.1-preview.15
+* Plan depth on the plan visualizer now corresponds to full state transitions, not individual state and action nodes
+
+### Fixed
+* Fix JobTempAlloc console warnings by enforcing the 4-frame permitted lifetime constraint as a workaround
+* Fix NativeString namespace in trait fields
+* Fix int32 assignation on `TraitComponent`
+* Fix errors with custom methods during first code generation
+* Fix Burst compatibility with actions that create objects
+* Fix stripping of bool fields from state data equality and hashing.
+* Fix custom reward code generation on termination state
+* Fix custom methods namespace conflicts with generated code
+* Fix enumeration usage in termination state
+* Fix native list not disposed on termination state 
+* Fix callback serialization after an action is removed from the plan
+* Fix compilation endless loop on Windows
+* Fix world query preview result when the list is reordered
+* Fix custom reward parameter serialization upon adding a new custom reward to an action
+* PlanVisualizer now correctly looks up the current state in the plan. If the current state is not found in the plan, it will display the executor state
+* Fixed state hash code calculation to new ignore state-specific object IDs
+* Fix terminal state value for non-terminal states with no valid actions
+* Fix trait gizmo when field data are not initialized
+* Fix missing traits from add/remove modifier in plan state representation
+* Fix TraitComponent default values changed after inspecting a DecisionController in edit mode
+* Fix ICustomTrait implementation using AsmRef
+* Fix error from non-existent entity when rendering the plan visualizer while a past state node is selected
+* Fix error in computation of the maximum depth of the current plan
+
+### Removed
+* stateUpdated event on DecisionController
+* IDecisionController interface, in favor of accessing DecisionController instances directly 
+* Local object data on DecisionController
+
 ## [0.2.2-preview] - 2020-01-16
 ### Fixed
 * Fix filepath concatenation when generating code. 
 * Fix loss of existing player loop when initializing the plan executor. 
- 
+
 ## [0.2.1-preview] - 2019-12-20
 ### Added
 * IsIdle to `IDecisionController` to reflect when the controller is not planning and not executing actions.

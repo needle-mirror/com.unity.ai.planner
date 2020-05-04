@@ -21,15 +21,15 @@ namespace KeyDomain
         public static ComponentType[] RoomArchetype;
 
         public static StateEntityKey InitialStateKey;
-        public static StateData InitialState => s_StateManager.GetStateData(InitialStateKey);
-        static StateManager s_StateManager;
+        public static StateData InitialState => StateManager.GetStateData(InitialStateKey);
+        public static StateManager StateManager;
 
         public static void Initialize(World world)
         {
-            RoomArchetype = new ComponentType[]{ typeof(Lockable), typeof(Colored), typeof(TraitBasedObjectId) };
+            RoomArchetype = new ComponentType[]{ ComponentType.ReadWrite<Lockable>(), ComponentType.ReadWrite<Colored>(), ComponentType.ReadWrite<TraitBasedObjectId>() };
 
-            s_StateManager = world.GetOrCreateSystem<StateManager>();
-            var stateData = s_StateManager.CreateStateData();
+            StateManager = world.GetOrCreateSystem<StateManager>();
+            var stateData = StateManager.CreateStateData();
 
             (BlackKey, BlackKeyId) = CreateKey(stateData, ColorValue.Black);
             (WhiteKey, WhiteKeyId) = CreateKey(stateData, ColorValue.White);
@@ -37,12 +37,12 @@ namespace KeyDomain
             (FirstRoom, FirstRoomId) = CreateRoom(stateData, ColorValue.White);
             (Agent, AgentId) = CreateAgent(stateData, BlackKeyId, StartRoomId);
 
-            InitialStateKey = s_StateManager.GetStateDataKey(stateData);
+            InitialStateKey = StateManager.GetStateDataKey(stateData);
         }
 
         public static (TraitBasedObject, ObjectId) CreateRoom(StateData testState, ColorValue color, bool locked = true)
         {
-            using (var roomType =  new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = typeof(Lockable),  [1] = typeof(Colored) })
+            using (var roomType =  new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = ComponentType.ReadWrite<Lockable>(),  [1] = ComponentType.ReadWrite<Colored>() })
             {
                 testState.AddObject(roomType, out var room, out var roomId);
 
@@ -58,7 +58,7 @@ namespace KeyDomain
 
         public static (TraitBasedObject, ObjectId) CreateKey(StateData testState, ColorValue color)
         {
-            using (var keyType = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = typeof(Carriable), [1] = typeof(Colored) })
+            using (var keyType = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = ComponentType.ReadWrite<Carriable>(), [1] = ComponentType.ReadWrite<Colored>() })
             {
                 testState.AddObject(keyType, out var key, out var keyId);
 
@@ -74,7 +74,7 @@ namespace KeyDomain
 
         public static (TraitBasedObject, ObjectId) CreateAgent(StateData testState, ObjectId keyId, ObjectId roomId)
         {
-            using (var agentType = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = typeof(Carrier), [1] = typeof(Localized) })
+            using (var agentType = new NativeArray<ComponentType>(2, Allocator.TempJob) { [0] = ComponentType.ReadWrite<Carrier>(), [1] = ComponentType.ReadWrite<Localized>() })
             {
                 testState.AddObject(agentType, out var agent, out var agentId);
                 var carriers = testState.CarrierBuffer;

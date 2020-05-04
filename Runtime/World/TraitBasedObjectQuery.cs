@@ -62,9 +62,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         {
             if (m_FilterTypeCache == null)
             {
-                var type = TypeResolver.GetType(m_TypeName);
-
-                if (type == null)
+                if (!TypeResolver.TryGetType(m_TypeName, out var type))
                    return null;
 
                 m_FilterTypeCache = Activator.CreateInstance(type) as BaseQueryFilter;
@@ -73,13 +71,9 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             return m_FilterTypeCache;
         }
 
-        internal void ResetType()
+        internal void ResetCache()
         {
             m_FilterTypeCache = null;
-            m_ParameterString = string.Empty;
-            m_ParameterInt = 0;
-            m_ParameterFloat = 0;
-            m_ParameterTraits?.Clear();
         }
     }
 
@@ -90,6 +84,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         [SerializeField]
         List<QueryFilterHolder> m_Filters;
 #pragma warning restore 0649
+
+        internal List<QueryFilterHolder> Filters => m_Filters;
 
         internal void AddValidObjects(ITraitBasedObjectData traitHolder, GameObject agentObject, ref List<ITraitBasedObjectData> objectList)
         {

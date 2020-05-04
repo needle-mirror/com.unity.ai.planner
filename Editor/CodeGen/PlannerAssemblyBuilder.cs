@@ -4,27 +4,35 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using Unity.AI.Planner.Utility;
+using UnityEditor.AI.Planner.Utility;
 using UnityEditor.Compilation;
+using UnityEditorInternal;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.CodeGen
 {
     class PlannerAssemblyBuilder
     {
+        const string k_TitleBuildPopup = "Build Planner";
+
         const string k_BuildMenuTitle = "AI/Planner/Generate assemblies";
 
-        const string k_DomainsAssemblyName = "AI.Planner.Domains.dll";
-        const string k_ActionsAssemblyName = "AI.Planner.Actions.dll";
+        const string k_StateRepresentationAssemblyFileName = TypeResolver.StateRepresentationQualifier + ".dll";
+        const string k_PlansAssemblyFileName =  TypeResolver.PlansQualifier + ".dll";
+        const string k_CustomCodeAssemblyFileName =  TypeResolver.CustomAssemblyName + ".dll";
 
-        const string k_CustomAssemblyReference = "Unity.AI.Planner.Custom";
+        static readonly string k_TempOutputPath = Path.Combine("Temp", "PlannerAssembly");
+        static readonly string k_TempOutputStateRepresentationAssembly = Path.Combine(k_TempOutputPath, k_StateRepresentationAssemblyFileName);
+        static readonly string k_TempOutputActionsAssembly = Path.Combine(k_TempOutputPath, k_PlansAssemblyFileName);
+        static readonly string k_TempOutputCustomCodeAssembly = Path.Combine(k_TempOutputPath, k_CustomCodeAssemblyFileName);
 
-        const string k_TempOutputPath = "Temp/PlannerAssembly/";
-        const string k_TempOutputDomainsAssembly = k_TempOutputPath + k_DomainsAssemblyName;
-        const string k_TempOutputActionsAssembly = k_TempOutputPath + k_ActionsAssemblyName;
-
-        const string k_GeneratedProjectPath = "Packages";
-        static readonly string k_GeneratedPackagesPath = Path.Combine(k_GeneratedProjectPath, "com.");
+        internal static readonly string[] predefinedReferences = {
+                "Library/ScriptAssemblies/Unity.Collections.dll",
+                "Library/ScriptAssemblies/Unity.Entities.dll",
+                "Library/ScriptAssemblies/Unity.Properties.dll",
+                "Library/ScriptAssemblies/Unity.Jobs.dll",
+                "Library/ScriptAssemblies/Unity.AI.Planner.dll"
+            };
 
         [InitializeOnLoadMethod]
         public static void AttachAutoBuild()
@@ -44,35 +52,52 @@ namespace UnityEditor.AI.Planner.CodeGen
                     return;
                 }
 
-                if (playMode == PlayModeStateChange.ExitingEditMode)
+                if (playMode == PlayModeStateChange.ExitingEditMode && !EditorApplication.isCompiling)
                 {
-                    var actionsAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == TypeResolver.ActionsNamespace);
-                    DateTime lastBuildTime = DateTime.MinValue;
-                    if (actionsAssembly != null)
-                        lastBuildTime = File.GetLastWriteTimeUtc(actionsAssembly.outputPath);
+                    if (!PlannerAssetDatabase.HasValidPlanDefinition())
+                        return;
 
-                    var assetTypes = new[]
-                    {
-                        nameof(TraitDefinition),
-                        nameof(EnumDefinition),
-                        nameof(ActionDefinition),
-                        nameof(StateTerminationDefinition),
-                        nameof(PlanDefinition),
-                    };
+                    var assetChangedPath = string.Empty;
 
-                    var filter = string.Join(" ", assetTypes.Select(t => $"t:{t}"));
-                    var assets = AssetDatabase.FindAssets(filter);
-                    foreach (var a in assets)
+                    bool stateRepresentationNeedBuild = !PlannerAssetDatabase.StateRepresentationPackageExists();
+                    if (!stateRepresentationNeedBuild)
                     {
-                        var assetPath = AssetDatabase.GUIDToAssetPath(a);
-                        var assetLastWriteTime = File.GetLastWriteTimeUtc(assetPath);
-                        if (assetLastWriteTime.CompareTo(lastBuildTime) > 0)
+                        DateTime lastStateRepresentationBuildTime = GetAssemblyBuildTime(TypeResolver.StateRepresentationQualifier);
+
+                        stateRepresentationNeedBuild = PlannerAssetDatabase.TryFindNewerAsset(PlannerAssetDatabase.stateRepresentationAssetTypeNames, lastStateRepresentationBuildTime, ref assetChangedPath);
+                        if (stateRepresentationNeedBuild)
+                            Debug.Log($"Rebuilding AI Planner State Representation assembly because {assetChangedPath} is newer");
+                    }
+                    else
+                    {
+                        Debug.Log($"Rebuilding AI Planner assemblies because AI Planner State Representation package cannot be found");
+                    }
+
+                    bool planNeedBuild = !PlannerAssetDatabase.PlansPackageExists();
+                    if (!planNeedBuild)
+                    {
+                        DateTime lastPlanBuildTime = GetAssemblyBuildTime(TypeResolver.PlansQualifier);
+                        planNeedBuild = PlannerAssetDatabase.TryFindNewerAsset(PlannerAssetDatabase.planAssetTypeNames, lastPlanBuildTime, ref assetChangedPath);
+                        if (planNeedBuild)
+                            Debug.Log($"Rebuilding AI Plan assembly because {assetChangedPath} is newer");
+                    }
+                    else
+                    {
+                        Debug.Log($"Rebuilding AI Planner assemblies because AI Plan package cannot be found");
+                    }
+
+                    if (stateRepresentationNeedBuild || planNeedBuild)
+                    {
+                        EditorApplication.ExitPlaymode();
+
+                        try
                         {
-                            Debug.Log($"Rebuilding AI Planner assemblies because {assetPath} is newer");
-                            EditorApplication.ExitPlaymode();
-                            Build();
-                            CompilationPipeline.compilationFinished += context =>  EditorApplication.EnterPlaymode();
-                            break;
+                            if (Build(stateRepresentationNeedBuild))
+                                CompilationPipeline.compilationFinished += context => EditorApplication.EnterPlaymode();
+                        }
+                        finally
+                        {
+                            EditorUtility.ClearProgressBar();
                         }
                     }
                 }
@@ -88,118 +113,224 @@ namespace UnityEditor.AI.Planner.CodeGen
         [MenuItem(k_BuildMenuTitle)]
         public static void Build()
         {
-            var codeGenerator = new CodeGenerator();
-
-            var domainsNamespace = TypeResolver.DomainsNamespace;
-            var domainsAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == domainsNamespace);
-
-            var excludeReferences = new List<Assembly>();
-            if (domainsAssembly != null)
-                excludeReferences.Add(domainsAssembly);
-
-            // Build domains assembly first, since others depend on it
-            var domainPaths = codeGenerator.GenerateDomain(k_TempOutputPath);
-            var domainAssemblyBuilt = BuildAssembly(domainPaths.ToArray(), k_TempOutputDomainsAssembly,
-                excludeReferences.Select(a => a.outputPath).ToArray());
-
-            if (domainAssemblyBuilt)
+            try
             {
-                // Now build actions assembly, which will depend on the domains assembly
-                var actionsNamespace = TypeResolver.ActionsNamespace;
-                var actionsAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == actionsNamespace);
-                if (actionsAssembly != null)
-                    excludeReferences.Add(actionsAssembly);
+                Build(true);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
 
-                var planPaths = codeGenerator.GeneratePlans(k_TempOutputPath);
+        static bool Build(bool rebuildStateRepresentation)
+        {
+            EditorUtility.DisplayProgressBar(k_TitleBuildPopup, "Refresh Planner database", 0.1f);
+            PlannerAssetDatabase.Refresh();
 
-                var dependentAssemblies = new List<string>();
-                var additionalReferences = new List<string>();
-                additionalReferences.Add(k_TempOutputDomainsAssembly);
+            var codeGenerator = new CodeGenerator();
+            var validator = new AssetValidator();
+            validator.errorLogged += (errorMessage, asset) => Debug.LogError($"<b>{AssetDatabase.GetAssetPath(asset)}</b>: {errorMessage}");
 
-                // Collect any custom user assemblies
-                var assemblies = CompilationPipeline.GetAssemblies(AssembliesType.Player);
-                foreach (var assembly in assemblies)
+            bool stateRepresentationAssemblyValid = true;
+            if (rebuildStateRepresentation || !File.Exists(k_TempOutputStateRepresentationAssembly))
+            {
+                EditorUtility.DisplayProgressBar(k_TitleBuildPopup, "State Representation assembly compilation", 0.4f);
+                if (!validator.CheckStateRepresentationAssetsValidity())
                 {
-                    if (assembly.name.Contains("CSharp") || assembly.name == actionsNamespace)
-                        continue;
-
-                    var assemblyReferences = assembly.assemblyReferences;
-                    if (assemblyReferences.Any(a => a.name == k_CustomAssemblyReference))
-                    {
-                        additionalReferences.Add(assembly.outputPath);
-                        dependentAssemblies.Add(assembly.name);
-                    }
+                    Debug.LogError("All Planner asset errors have to be fixed to generate AI State Representation assembly.");
+                    return false;
                 }
 
-                var actionsAssemblyBuilt = BuildAssembly(planPaths.ToArray(), k_TempOutputActionsAssembly,
-                    excludeReferences.Select(a => a.outputPath).ToArray(), additionalReferences.ToArray());
+                stateRepresentationAssemblyValid = CreateStateRepresentationPackage(codeGenerator);
+            }
 
-                var generatedDomainsPath = $"{k_GeneratedPackagesPath}{domainsNamespace.ToLower()}.generated";
-                if (actionsAssemblyBuilt || !Directory.Exists(generatedDomainsPath))
+            if (stateRepresentationAssemblyValid)
+            {
+                EditorUtility.DisplayProgressBar(k_TitleBuildPopup, "Plan assembly compilation", 0.6f);
+
+                var customAssembly = BuildCustomCodeAssembly();
+                if (customAssembly == null)
                 {
-                    // Copy generated files for the domain over to the packages folder
-                    var domainsSourceDir = Path.Combine(generatedDomainsPath, TypeResolver.DomainsNamespace);
-                    if (Directory.Exists(domainsSourceDir))
-                    {
-                        Directory.Delete(domainsSourceDir, true);
-                        File.Delete($"{domainsSourceDir}.asmdef");
-                    }
-                    Directory.CreateDirectory(generatedDomainsPath);
-
-                    var codeRenderer = new CodeRenderer();
-                    foreach (string file in domainPaths)
-                    {
-                        var newFilePath = file.Replace(k_TempOutputPath, generatedDomainsPath);
-                        Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
-                        File.Copy(file, newFilePath, true);
-                    }
-                    File.WriteAllText($"{Path.Combine(generatedDomainsPath, domainsNamespace)}.asmdef", codeRenderer.RenderTemplate(
-                        PlannerResources.instance.TemplateDomainsAsmDef, new
-                        {
-                            @namespace = domainsNamespace
-                        }));
-                    File.WriteAllText(Path.Combine(generatedDomainsPath,"package.json"), codeRenderer.RenderTemplate(
-                        PlannerResources.instance.TemplatePackage, new
-                        {
-                            assembly = domainsNamespace.Split('.').Last()
-                        }));
-
-                    if (actionsAssemblyBuilt)
-                    {
-                        // Copy generated files for the action over to the packages folder
-                        var generatedActionsPath = $"{k_GeneratedPackagesPath}{actionsNamespace.ToLower()}.generated";
-                        var actionsSourceDir = $"{Path.Combine(generatedActionsPath, TypeResolver.ActionsNamespace)}";
-                        if (Directory.Exists(actionsSourceDir))
-                        {
-                            Directory.Delete(actionsSourceDir, true);
-                            File.Delete($"{actionsSourceDir}.asmdef");
-                        }
-                        Directory.CreateDirectory(generatedActionsPath);
-
-                        foreach (string file in planPaths)
-                        {
-                            var newFilePath = file.Replace(k_TempOutputPath, generatedActionsPath);
-                            Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
-                            File.Copy(file, newFilePath, true);
-                        }
-
-                        File.WriteAllText($"{Path.Combine(generatedActionsPath, actionsNamespace)}.asmdef", codeRenderer.RenderTemplate(
-                            PlannerResources.instance.TemplateActionsAsmDef, new
-                            {
-                                @namespace = actionsNamespace,
-                                domains_namespace = domainsNamespace,
-                                additional_references = dependentAssemblies
-                            }));
-
-                        File.WriteAllText(Path.Combine(generatedActionsPath, "package.json"), codeRenderer.RenderTemplate(
-                            PlannerResources.instance.TemplatePackage, new
-                            {
-                                assembly = actionsNamespace.Split('.').Last()
-                            }));
-                    }
+                    Debug.LogError("Custom code errors have to be fixed to generate AI Plans assembly.");
+                    return false;
                 }
+
+
+                if (!validator.CheckPlansAssetsValidity(customAssembly))
+                {
+                    Debug.LogError("All Planner asset errors have to be fixed to generate AI Plans assembly.");
+                    return false;
+                }
+
+                CreatePlansPackage(codeGenerator, customAssembly);
 
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ImportRecursive);
+                return true;
+            }
+
+            return false;
+        }
+
+        static System.Reflection.Assembly BuildCustomCodeAssembly()
+        {
+            var currentLoadedAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == TypeResolver.CustomAssemblyName);
+
+            var excludeReferences = new List<Assembly>();
+            if (currentLoadedAssembly != null)
+                excludeReferences.Add(currentLoadedAssembly);
+
+            var customCodeFilesPath = new List<string>();
+            string tempCustomDirectory = Path.Combine(k_TempOutputPath, TypeResolver.CustomAssemblyName);
+            Directory.CreateDirectory(tempCustomDirectory);
+            var assemblyInfoPath = Path.Combine(tempCustomDirectory, "AssemblyInfo.cs");
+            File.WriteAllText(assemblyInfoPath, $"using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"{TypeResolver.PlansQualifier}\")]");
+            customCodeFilesPath.Add(assemblyInfoPath);
+
+            // Reference .cs files from all AsmRef pointing to AI.Planner.Custom assembly
+            ReferenceSourceFromAsmRef(TypeResolver.CustomAssemblyName, customCodeFilesPath);
+
+            // Add a reference to the previously generated StateRepresentation Assembly
+            var additionalReferences = new[] { k_TempOutputStateRepresentationAssembly };
+
+            if (BuildAssembly(customCodeFilesPath.ToArray(), k_TempOutputCustomCodeAssembly,  excludeReferences.Select(a => a.outputPath).ToArray(), additionalReferences))
+            {
+                // Pre-load referenced assemblies in the reflection context
+                System.Reflection.Assembly.ReflectionOnlyLoadFrom(k_TempOutputStateRepresentationAssembly);
+                foreach (var reference in predefinedReferences)
+                {
+                    System.Reflection.Assembly.ReflectionOnlyLoadFrom(reference);
+                }
+
+                AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += ResolveReflectionAssemblyDependency;
+                return System.Reflection.Assembly.ReflectionOnlyLoadFrom(k_TempOutputCustomCodeAssembly);
+            }
+
+            return null;
+        }
+
+        static void ReferenceSourceFromAsmRef(string assemblyName, List<string> sourcePaths)
+        {
+            var assemblyDefinitionPath = CompilationPipeline.GetAssemblyDefinitionFilePathFromAssemblyName(assemblyName);
+
+            var assemblyReference = AssetDatabase.FindAssets($"t: {nameof(AssemblyDefinitionReferenceAsset)}");
+            foreach (var asmRefGuid in assemblyReference)
+            {
+                var assetPath = AssetDatabase.GUIDToAssetPath(asmRefGuid);
+
+                // Skip sources from generated package
+                if (assetPath.Contains(TypeResolver.PlansQualifier.ToLower()) || assetPath.Contains(TypeResolver.StateRepresentationQualifier.ToLower()))
+                    continue;
+
+                var reference = AssetDatabase.LoadAssetAtPath<AssemblyDefinitionReferenceAsset>(assetPath);
+                if (reference.text.Contains($"reference\": \"{assemblyName}\"")
+                    || reference.text.Contains($"reference\": \"GUID:{AssetDatabase.AssetPathToGUID(assemblyDefinitionPath)}\""))
+                {
+                    ReferenceSourceFromAssetPath(assetPath, sourcePaths);
+                }
+            }
+        }
+
+        internal static void ReferenceSourceFromAssetPath(string path, List<string> sourcePaths)
+        {
+            var dir = new DirectoryInfo(Path.Combine(Application.dataPath, $"../{Path.GetDirectoryName(path)}"));
+            var info = dir.GetFiles("*.cs", SearchOption.AllDirectories);
+
+            foreach (var file in info)
+            {
+                sourcePaths.Add(file.FullName);
+            }
+        }
+
+        static bool CreateStateRepresentationPackage(CodeGenerator codeGenerator)
+        {
+            var assemblyName = TypeResolver.StateRepresentationQualifier;
+            var currentLoadedAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == assemblyName);
+
+            var excludeReferences = new List<Assembly>();
+            if (currentLoadedAssembly != null)
+                excludeReferences.Add(currentLoadedAssembly);
+
+            var generatedFilesPath = codeGenerator.GenerateStateRepresentation(k_TempOutputPath);
+
+            var sourcePaths = new List<string>();
+            sourcePaths.AddRange(generatedFilesPath);
+
+            // Reference .cs files from all AsmRef pointing to Generated.AI.Planner.StateRepresentation assembly
+            ReferenceSourceFromAsmRef(TypeResolver.StateRepresentationQualifier, sourcePaths);
+
+            var assemblyBuilt = BuildAssembly(sourcePaths.ToArray(), k_TempOutputStateRepresentationAssembly, excludeReferences.Select(a => a.outputPath).ToArray());
+            if (assemblyBuilt)
+            {
+                var generatedStateRepresentationPath = PlannerAssetDatabase.stateRepresentationPackagePath;
+
+                // Copy generated files for the StateRepresentation over to the packages folder
+                var sourceDir = Path.Combine(generatedStateRepresentationPath, TypeResolver.StateRepresentationQualifier);
+                if (Directory.Exists(sourceDir))
+                {
+                    Directory.Delete(sourceDir, true);
+                    File.Delete($"{sourceDir}.asmref");
+                }
+                Directory.CreateDirectory(generatedStateRepresentationPath);
+
+                foreach (string file in generatedFilesPath)
+                {
+                    var newFilePath = file.Replace(k_TempOutputPath, generatedStateRepresentationPath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
+                    File.Copy(file, newFilePath, true);
+                }
+                codeGenerator.GenerateAsmRef(generatedStateRepresentationPath, TypeResolver.StateRepresentationQualifier);
+                codeGenerator.GeneratePackage(generatedStateRepresentationPath, TypeResolver.StateRepresentationQualifier);
+            }
+
+            return assemblyBuilt;
+        }
+
+        static void CreatePlansPackage(CodeGenerator codeGenerator, System.Reflection.Assembly customAssembly)
+        {
+            var assemblyName = TypeResolver.PlansQualifier;
+            var currentLoadedAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == assemblyName);
+
+            var excludeReferences = new List<Assembly>();
+            if (currentLoadedAssembly != null)
+                excludeReferences.Add(currentLoadedAssembly);
+
+            var generatedFilesPath = codeGenerator.GeneratePlans(k_TempOutputPath, customAssembly);
+
+            var sourcePaths = new List<string>();
+            sourcePaths.AddRange(generatedFilesPath);
+
+            // Reference .cs files from all AsmRef pointing to Generated.AI.Planner.Plans assembly
+            ReferenceSourceFromAsmRef(TypeResolver.PlansQualifier, sourcePaths);
+
+            var additionalReferences = new List<string>();
+            additionalReferences.Add(k_TempOutputStateRepresentationAssembly);
+            additionalReferences.Add(k_TempOutputCustomCodeAssembly);
+
+            var assemblyBuilt = BuildAssembly(sourcePaths.ToArray(), k_TempOutputActionsAssembly,
+                excludeReferences.Select(a => a.outputPath).ToArray(), additionalReferences.ToArray());
+
+            if (assemblyBuilt)
+            {
+                // Copy generated files for the action over to the packages folder
+                var generatedPlansPath = PlannerAssetDatabase.plansPackagePath;
+                var actionsSourceDir = $"{Path.Combine(generatedPlansPath, assemblyName)}";
+                if (Directory.Exists(actionsSourceDir))
+                {
+                    Directory.Delete(actionsSourceDir, true);
+                    File.Delete($"{actionsSourceDir}.asmref");
+                }
+
+                Directory.CreateDirectory(generatedPlansPath);
+
+                foreach (string file in generatedFilesPath)
+                {
+                    var newFilePath = file.Replace(k_TempOutputPath, generatedPlansPath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
+                    File.Copy(file, newFilePath, true);
+                }
+                codeGenerator.GenerateAsmRef(generatedPlansPath, TypeResolver.PlansQualifier);
+                codeGenerator.GeneratePackage(generatedPlansPath, TypeResolver.PlansQualifier);
             }
         }
 
@@ -210,15 +341,6 @@ namespace UnityEditor.AI.Planner.CodeGen
                 return false;
 
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
-
-            var predefinedReferences = new[]
-            {
-                "Library/ScriptAssemblies/Unity.Collections.dll",
-                "Library/ScriptAssemblies/Unity.Entities.dll",
-                "Library/ScriptAssemblies/Unity.Properties.dll",
-                "Library/ScriptAssemblies/Unity.Jobs.dll",
-                "Library/ScriptAssemblies/Unity.AI.Planner.dll"
-            };
 
             additionalReferences = additionalReferences == null ? predefinedReferences : predefinedReferences.Concat(additionalReferences).ToArray();
             var assemblyBuilder = new AssemblyBuilder(outputPath, paths)
@@ -270,6 +392,18 @@ namespace UnityEditor.AI.Planner.CodeGen
                 Thread.Sleep(10);
 
             return buildSucceed;
+        }
+
+
+        static DateTime GetAssemblyBuildTime(string assemblyName)
+        {
+            var assembly = CompilationPipeline.GetAssemblies(AssembliesType.PlayerWithoutTestAssemblies).FirstOrDefault(a => a.name == assemblyName);
+            return assembly != null ? File.GetLastWriteTimeUtc(assembly.outputPath) : DateTime.MinValue;
+        }
+
+        internal static System.Reflection.Assembly ResolveReflectionAssemblyDependency(object sender, ResolveEventArgs args)
+        {
+            return System.Reflection.Assembly.ReflectionOnlyLoad(args.Name);
         }
     }
 }

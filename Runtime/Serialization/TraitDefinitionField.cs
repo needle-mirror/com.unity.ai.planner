@@ -50,7 +50,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             get
             {
                 if (m_FieldType == null)
-                    m_FieldType = TypeResolver.GetType(Type);
+                    TypeResolver.TryGetType(Type, out m_FieldType);
 
                 return m_FieldType;
             }

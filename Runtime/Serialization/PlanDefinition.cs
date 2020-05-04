@@ -42,13 +42,13 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public int DefaultHeuristicAverage => m_DefaultHeuristicAverage;
         public int DefaultHeuristicUpper => m_DefaultHeuristicUpper;
 
-        public IEnumerable<ActionDefinition> ActionDefinitions
+        internal IEnumerable<ActionDefinition> ActionDefinitions
         {
             get => m_ActionDefinitions;
             set => m_ActionDefinitions = value.ToList();
         }
 
-        public IEnumerable<StateTerminationDefinition> StateTerminationDefinitions
+        internal IEnumerable<StateTerminationDefinition> StateTerminationDefinitions
         {
             get => m_StateTerminationDefinitions;
             set => m_StateTerminationDefinitions = value.ToList();
@@ -60,57 +60,73 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             set { m_CustomHeuristic = value; }
         }
 
-        Dictionary<string, TraitDefinition> m_traitDefinitions = null;
+        Dictionary<string, TraitDefinition> m_TraitDefinitions = null;
 
-        public void InitializeTraits()
+        void InitializeTraits()
         {
-            m_traitDefinitions = GetTraitsUsed().ToDictionary(t => t.Name, t => t);
+            m_TraitDefinitions = GetTraitsUsed().ToDictionary(t => t.Name, t => t);
         }
 
         internal IEnumerable<TraitDefinition> GetTraitsUsed()
         {
             var traitList = new List<TraitDefinition>();
-            foreach (var actionDefinition in ActionDefinitions)
+
+            if (ActionDefinitions != null)
             {
-                if (!actionDefinition)
-                    continue;
-
-                foreach (var param in actionDefinition.Parameters)
+                foreach (var actionDefinition in ActionDefinitions)
                 {
-                    traitList.AddRange(param.RequiredTraits);
-                    traitList.AddRange(param.ProhibitedTraits);
-                }
+                    if (!actionDefinition)
+                        continue;
 
-                foreach (var param in actionDefinition.CreatedObjects)
-                {
-                    traitList.AddRange(param.RequiredTraits);
-                    traitList.AddRange(param.ProhibitedTraits);
+                    foreach (var param in actionDefinition.Parameters)
+                    {
+                        traitList.AddRange(param.RequiredTraits);
+                        traitList.AddRange(param.ProhibitedTraits);
+                    }
+
+                    foreach (var param in actionDefinition.CreatedObjects)
+                    {
+                        traitList.AddRange(param.RequiredTraits);
+                        traitList.AddRange(param.ProhibitedTraits);
+                    }
+
+                    foreach (var modifier in actionDefinition.ObjectModifiers)
+                    {
+                        if (modifier.IsSpecialOperator(Operation.SpecialOperators.Add)
+                        || modifier.IsSpecialOperator(Operation.SpecialOperators.Remove))
+                        {
+                            traitList.Add(modifier.OperandB.Trait);
+                        }
+                    }
                 }
             }
 
-            foreach (var stateTerminationDefinition in StateTerminationDefinitions)
+            if (StateTerminationDefinitions != null)
             {
-                if (!stateTerminationDefinition)
-                    continue;
-
-                foreach (var param in stateTerminationDefinition.Parameters)
+                foreach (var stateTerminationDefinition in StateTerminationDefinitions)
                 {
-                    traitList.AddRange(param.RequiredTraits);
-                    traitList.AddRange(param.ProhibitedTraits);
+                    if (!stateTerminationDefinition)
+                        continue;
+
+                    foreach (var param in stateTerminationDefinition.Parameters)
+                    {
+                        traitList.AddRange(param.RequiredTraits);
+                        traitList.AddRange(param.ProhibitedTraits);
+                    }
                 }
             }
 
             return traitList.Distinct();
         }
 
-        public TraitDefinition GetTrait(string traitName)
+        internal TraitDefinition GetTrait(string traitName)
         {
-            if (m_traitDefinitions == null)
+            if (m_TraitDefinitions == null)
             {
                 InitializeTraits();
             }
 
-            return !m_traitDefinitions.ContainsKey(traitName) ? null : m_traitDefinitions[traitName];
+            return !m_TraitDefinitions.ContainsKey(traitName) ? null : m_TraitDefinitions[traitName];
         }
     }
 }

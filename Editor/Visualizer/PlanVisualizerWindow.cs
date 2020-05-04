@@ -1,13 +1,13 @@
 using System;
 using GraphVisualizer;
+using Unity.AI.Planner;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {
     class PlanVisualizerWindow : EditorWindow, IHasCustomMenu
     {
-        IGraphRenderer m_Renderer;
+        PlanGraphRenderer m_Renderer;
         IGraphLayout m_Layout;
 
         [NonSerialized]
@@ -113,10 +113,10 @@ namespace UnityEditor.AI.Planner.Visualizer
             var decisionControllers = go.GetComponents<UnityEngine.AI.Planner.Controller.DecisionController>();
             foreach (var decisionController in decisionControllers)
             {
-                if (!decisionController.enabled || decisionController.PlanExecutor == null)
+                if (!decisionController.enabled || decisionController.m_PlanExecutor == null)
                     continue;
 
-                executor = decisionController.PlanExecutor;
+                executor = decisionController.m_PlanExecutor;
                 return true;
             }
 
@@ -159,7 +159,6 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         void OnGUI()
         {
-            m_PlanExecutor?.PlannerScheduler?.CurrentJobHandle.Complete();
             GraphOnGUI();
             DrawGraph();
         }
@@ -210,23 +209,23 @@ namespace UnityEditor.AI.Planner.Visualizer
             var toolbarHeight = EditorStyles.toolbar.fixedHeight;
             var graphRect = new Rect(0, toolbarHeight, position.width, position.height - toolbarHeight);
 
-            m_Renderer.Draw(m_Layout, graphRect, m_GraphSettings);
+            m_Renderer.Draw(m_Layout, graphRect, m_GraphSettings, m_Visualizer);
         }
 
         void GraphOnGUI()
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             GUILayout.Label("Max Depth:");
-            m_MaxDepth = EditorGUILayout.IntSlider(m_MaxDepth, 1, 6);
+            m_MaxDepth = EditorGUILayout.IntSlider(m_MaxDepth, 1, 4);
             EditorGUILayout.Space();
             GUILayout.Label("Show Top Actions:");
-            m_MaxChildrenNodes = EditorGUILayout.IntSlider(m_MaxChildrenNodes, 1, 16);
+            m_MaxChildrenNodes = EditorGUILayout.IntSlider(m_MaxChildrenNodes, 1, 8);
             GUILayout.FlexibleSpace();
-            if (m_PlanExecutor != null)
+            if (m_PlanExecutor?.Plan != null)
             {
                 EditorGUILayout.Space();
-                GUILayout.Label($"Max Plan Depth: {m_PlanExecutor.MaxPlanDepthFromCurrentState()}");
-                GUILayout.Label($"Plan Size: {m_PlanExecutor.Plan.Size}");
+                GUILayout.Label($"Max Plan Depth: {m_PlanExecutor?.Plan?.MaxPlanDepth}");
+                GUILayout.Label($"Plan Size: {m_PlanExecutor?.Plan?.Size}");
             }
 
             EditorGUILayout.EndHorizontal();

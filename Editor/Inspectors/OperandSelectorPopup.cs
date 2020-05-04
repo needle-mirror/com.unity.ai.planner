@@ -15,7 +15,7 @@ namespace UnityEditor.AI.Planner.Editors
         const string k_SectionParameter = "Parameter";
         const string k_SectionNone = "None";
 
-        List<ParameterDefinition> m_Parameters;
+        IList<ParameterDefinition> m_Parameters;
         List<string> m_ParameterValues;
         SerializedProperty m_Property;
 
@@ -29,7 +29,7 @@ namespace UnityEditor.AI.Planner.Editors
 
         Action<SerializedProperty> m_OnExpectedTypeChanged;
 
-        public OperandSelectorPopup(SerializedProperty property, List<ParameterDefinition> parameters, bool allowParameter, bool allowTrait, Action<SerializedProperty> onExpectedTypeChanged = null, Type expectedType = null, string expectedUnknownType = default)
+        public OperandSelectorPopup(SerializedProperty property, IList<ParameterDefinition> parameters, bool allowParameter, bool allowTrait, Action<SerializedProperty> onExpectedTypeChanged = null, Type expectedType = null, string expectedUnknownType = default)
         {
             m_Property = property;
 
@@ -97,7 +97,7 @@ namespace UnityEditor.AI.Planner.Editors
 
                 if (parameterIndex >= 0)
                 {
-                    var parameterDefinition = m_Parameters.Find(p => p.Name == m_ParameterValues[parameterIndex]);
+                    var parameterDefinition = m_Parameters.FirstOrDefault(p => p.Name == m_ParameterValues[parameterIndex]);
                     if (parameterDefinition != null)
                     {
                         var traits = parameterDefinition.RequiredTraits;
@@ -178,8 +178,8 @@ namespace UnityEditor.AI.Planner.Editors
                     fixedValue = $"{m_EditingOperand.Enum.Name}.{fixedValue}";
                 }
 
-                var enumShortName = m_ExpectedUnknownType.Substring(TypeResolver.DomainEnumsNamespace.Length, m_ExpectedUnknownType.Length - TypeResolver.DomainEnumsNamespace.Length);
-                var enumDefinition = DomainAssetDatabase.EnumDefinitions.FirstOrDefault(d => d.Name == enumShortName);
+                var enumShortName = m_ExpectedUnknownType.Substring(TypeResolver.TraitEnumsNamespace.Length, m_ExpectedUnknownType.Length - TypeResolver.TraitEnumsNamespace.Length);
+                var enumDefinition = PlannerAssetDatabase.EnumDefinitions.FirstOrDefault(d => d.Name == enumShortName);
                 if (enumDefinition != null)
                 {
                     var values = enumDefinition.Values.Select(e => $"{enumShortName}.{e}").ToList();
@@ -203,7 +203,7 @@ namespace UnityEditor.AI.Planner.Editors
             {
                 EditorGUI.BeginChangeCheck();
 
-                var value = fixedValue == TraitUtility.emptyTraitBasedObjectId;
+                var value = fixedValue == TraitGUIUtility.emptyTraitBasedObjectId;
                 BeginSection(k_SectionNone, value);
                 value = EditorGUILayout.Toggle(value);
 
@@ -213,7 +213,7 @@ namespace UnityEditor.AI.Planner.Editors
 
                     if (value)
                     {
-                        m_EditingOperand.Value = TraitUtility.emptyTraitBasedObjectId;
+                        m_EditingOperand.Value = TraitGUIUtility.emptyTraitBasedObjectId;
                     }
                     else
                     {
@@ -311,7 +311,7 @@ namespace UnityEditor.AI.Planner.Editors
                 return true;
             }
 
-            return m_ExpectedType == typeof(Enum) && field.Type.StartsWith(TypeResolver.DomainEnumsNamespace);
+            return m_ExpectedType == typeof(Enum) && field.Type.StartsWith(TypeResolver.TraitEnumsNamespace);
         }
 
         static void BeginSection(string title, bool sectionInUse)
@@ -328,7 +328,7 @@ namespace UnityEditor.AI.Planner.Editors
         public override void OnClose()
         {
             string oldUnknownType = default;
-            var oldType = TraitUtility.GetOperandValuePropertyType(m_Property, ref oldUnknownType);
+            var oldType = TraitGUIUtility.GetOperandValuePropertyType(m_Property, ref oldUnknownType);
 
             m_Property.FindPropertyRelative("m_Parameter").stringValue = m_EditingOperand.Parameter;
             m_Property.FindPropertyRelative("m_Trait").objectReferenceValue = m_EditingOperand.Trait;
@@ -338,7 +338,7 @@ namespace UnityEditor.AI.Planner.Editors
             m_Property.serializedObject.ApplyModifiedProperties();
 
             string newUnknownType = default;
-            var newType = TraitUtility.GetOperandValuePropertyType(m_Property, ref newUnknownType);
+            var newType = TraitGUIUtility.GetOperandValuePropertyType(m_Property, ref newUnknownType);
 
             if (newType != oldType || newUnknownType != oldUnknownType)
             {

@@ -10,9 +10,24 @@ namespace Unity.AI.Planner
     interface IPlannerScheduler
     {
         /// <summary>
-        /// Settings governing the scheduling of the search jobs.
+        /// The current plan request for which the planning jobs are scheduled.
         /// </summary>
-        PlannerSearchSettings SearchSettings { get; set; }
+        IPlanRequest CurrentPlanRequest { get; }
+
+        /// <summary>
+        /// Initiates and returns a new plan request.
+        /// </summary>
+        /// <param name="rootState">The root or initial state of the plan</param>
+        /// <param name="onRequestComplete">A callback to be invoked once the request has completed</param>
+        /// <param name="searchSettings">Settings to configure the planning process</param>
+        /// <returns>Returns the plan request to run</returns>
+        IPlanRequest RequestPlan(IStateKey rootState, Action<IPlan> onRequestComplete = null, PlannerSearchSettings searchSettings = null);
+
+        /// <summary>
+        /// Sets the starting state of the current plan request to the specified state.
+        /// </summary>
+        /// <param name="newRootState">The key for the new root state of the plan.</param>
+        void UpdatePlanRequestRootState(IStateKey newRootState);
 
         /// <summary>
         /// The job handle for the current planning jobs.
@@ -23,7 +38,7 @@ namespace Unity.AI.Planner
         /// Schedules a single iteration of the search process.
         /// </summary>
         /// <param name="inputDeps"></param>
-        /// /// <param name="forceComplete">Option to force the completion of the previously scheduled planning jobs.</param>
+        /// <param name="forceComplete">Option to force the completion of the previously scheduled planning jobs.</param>
         /// <returns></returns>
         JobHandle Schedule(JobHandle inputDeps, bool forceComplete);
     }

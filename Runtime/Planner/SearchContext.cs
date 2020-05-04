@@ -1,10 +1,11 @@
 using System;
+using System.Collections.Generic;
 using Unity.Collections;
-using UnityEngine;
+using Unity.Jobs;
 
 namespace Unity.AI.Planner
 {
-    class SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> : ISearchContext<TStateKey, TActionKey>
+    class SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
         where TStateManager : IStateManager<TStateKey, TStateData, TStateDataContext>
@@ -12,60 +13,36 @@ namespace Unity.AI.Planner
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
     {
         // Info for search
-        public TStateKey RootStateKey { get; set; }
+        public TStateKey RootStateKey { get; internal set; }
         public NativeHashMap<TStateKey, int> StateDepthLookup;
         public NativeMultiHashMap<int, TStateKey> BinnedStateKeyLookup;
         public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph;
 
-        TStateManager m_StateManager;
+        internal TStateManager m_StateManager;
+        internal JobHandle m_PlanningJobHandle;
+        internal int m_FramesSinceComplete;
 
-        public SearchContext(TStateKey rootStateKey, TStateManager stateManager, int stateCapacity = 1, int actionCapacity = 1)
+        public SearchContext(TStateManager stateManager, int stateCapacity = 1, int actionCapacity = 1, int transitionCapacity = 1)
         {
-            RootStateKey = rootStateKey;
             m_StateManager = stateManager;
 
             StateDepthLookup = new NativeHashMap<TStateKey, int>(stateCapacity, Allocator.Persistent);
-            StateDepthLookup.TryAdd(rootStateKey, 0);
-
-            BinnedStateKeyLookup = new NativeMultiHashMap<int, TStateKey>(1, Allocator.Persistent);
-            BinnedStateKeyLookup.Add(rootStateKey.GetHashCode(), rootStateKey);
-
-            PolicyGraph = new PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo>(stateCapacity, actionCapacity);
-            PolicyGraph.StateInfoLookup.TryAdd(rootStateKey, default);
+            BinnedStateKeyLookup = new NativeMultiHashMap<int, TStateKey>(stateCapacity, Allocator.Persistent);
+            PolicyGraph = new PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo>(stateCapacity, actionCapacity, transitionCapacity);
         }
 
         public void UpdateRootState(TStateKey stateKey)
         {
-            RootStateKey = stateKey;
+            var newRoot = FindMatchingStateInPlan(stateKey, out var planKey) ? planKey : m_StateManager.CopyState(stateKey);
 
             // If it's not in the plan, add it to the binned keys, state info lookup, and depth map
-            if (!PolicyGraph.StateInfoLookup.TryAdd(stateKey, default))
+            if (PolicyGraph.StateInfoLookup.TryAdd(newRoot, new StateInfo { PolicyValue = new BoundedValue(float.MinValue, 0, float.MaxValue), SubgraphComplete = false }))
             {
-                BinnedStateKeyLookup.Add(stateKey.GetHashCode(), stateKey);
-                StateDepthLookup.TryAdd(stateKey, 0);
-            }
-        }
-
-        public void RegisterRoot(TStateKey stateKey)
-        {
-            if (!RootStateKey.Equals(default))
-            {
-                Debug.LogError("Root state has already been registered.");
-                return;
+                BinnedStateKeyLookup.Add(newRoot.GetHashCode(), newRoot);
+                StateDepthLookup.TryAdd(newRoot, 0);
             }
 
-            RootStateKey = stateKey;
-        }
-
-        public bool RootsConverged(float tolerance)
-        {
-            if (!PolicyGraph.StateInfoLookup.TryGetValue(RootStateKey, out var rootInfo))
-            {
-                Debug.LogError("Root state does not exist in policy graph.");
-                return false;
-            }
-
-            return rootInfo.PolicyValue.Range <= tolerance;
+            RootStateKey = newRoot;
         }
 
         public void DecrementSearchDepths()
@@ -80,9 +57,13 @@ namespace Unity.AI.Planner
             }
         }
 
-        public void Prune()
+        internal void Prune()
         {
-            var minimumReachableDepthMap = PolicyGraph.GetReachableDepthMap(RootStateKey, Allocator.Temp);
+            var minimumReachableDepthMap = new NativeHashMap<TStateKey, int>(PolicyGraph.Size, Allocator.Temp);
+            using (var queue = new NativeQueue<StateHorizonPair<TStateKey>>(Allocator.Temp))
+            {
+                PolicyGraph.GetReachableDepthMap(RootStateKey, minimumReachableDepthMap, queue);
+            }
             var stateKeyArray = PolicyGraph.StateInfoLookup.GetKeyArray(Allocator.Temp);
 
             foreach (var stateKey in stateKeyArray)
@@ -103,48 +84,60 @@ namespace Unity.AI.Planner
             minimumReachableDepthMap.Dispose();
         }
 
-        public void Reset(TStateKey newRootKey)
+        public bool RootsConverged(float tolerance)
         {
-            RootStateKey = newRootKey;
-            StateDepthLookup.Clear();
-            BinnedStateKeyLookup.Clear();
-            PolicyGraph.Dispose();
-            PolicyGraph = new PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo>(1, 1);
-            PolicyGraph.StateInfoLookup.TryAdd(RootStateKey, default);
+            if (!PolicyGraph.StateInfoLookup.TryGetValue(RootStateKey, out var rootInfo))
+                throw new KeyNotFoundException($"Root state {RootStateKey} is not contained within the policy graph.");
+
+            return rootInfo.PolicyValue.Range <= tolerance;
         }
 
-        public TStateKey GetNextState(TStateKey stateKey, TActionKey actionKey)
+        public bool IsTerminal(TStateKey stateKey)
         {
-            return PolicyGraph.ResultingStateLookup.TryGetFirstValue(new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey), out var resultKey, out _) ? resultKey : default;
+            return PolicyGraph.StateInfoLookup.TryGetValue(stateKey, out var stateInfo)
+                && stateInfo.SubgraphComplete
+                && !PolicyGraph.ActionLookup.TryGetFirstValue(stateKey, out _, out _);
         }
 
-        ~SearchContext()
+        public bool FindMatchingStateInPlan(TStateKey stateKey, out TStateKey planStateKey)
         {
-            Dispose();
-        }
-
-        public void Dispose()
-        {
-            if (m_StateManager != null)
+            if (PolicyGraph.StateInfoLookup.ContainsKey(stateKey))
             {
-                using (var stateKeys = PolicyGraph.StateInfoLookup.GetKeyArray(Allocator.TempJob))
-                {
-                    foreach (var stateKey in stateKeys)
-                    {
-                        m_StateManager.DestroyState(stateKey);
-                    }
-                }
-
-                m_StateManager = default;
+                planStateKey = stateKey;
+                return true;
             }
 
+            var stateData = m_StateManager.GetStateData(stateKey, false); // todo might pass in state data from a different state manager
+            var stateHashCode = stateKey.GetHashCode();
+
+            if (BinnedStateKeyLookup.TryGetFirstValue(stateHashCode, out planStateKey, out var iterator))
+            {
+                do
+                {
+                    var planStateData = m_StateManager.GetStateData(planStateKey, false);
+                    if (m_StateManager.Equals(planStateData, stateData))
+                        return true;
+                } while (BinnedStateKeyLookup.TryGetNextValue(out planStateKey, ref iterator));
+            }
+
+            return false;
+        }
+
+        public void Dispose(JobHandle jobHandle = default)
+        {
             if (StateDepthLookup.IsCreated)
-                StateDepthLookup.Dispose();
+                StateDepthLookup.Dispose(jobHandle);
 
             if (BinnedStateKeyLookup.IsCreated)
-                BinnedStateKeyLookup.Dispose();
+                BinnedStateKeyLookup.Dispose(jobHandle);
 
-            PolicyGraph.Dispose();
+            PolicyGraph.Dispose(jobHandle);
+        }
+
+        public void CompletePlanningJobs()
+        {
+            m_PlanningJobHandle.Complete();
+            m_FramesSinceComplete = 0;
         }
     }
 }

@@ -18,11 +18,17 @@ MonoBehaviour:
     - {fileID: 11400000, guid: d59d07249ce0f0943929b1d4b761af33, type: 2}
     - {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
     m_ProhibitedTraits: []
+    m_LimitCount: 0
+    m_LimitComparerType: 
+    m_LimitComparerReference: 
   - m_Name: Destination
     m_RequiredTraits:
     - {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
     m_ProhibitedTraits:
     - {fileID: 11400000, guid: d59d07249ce0f0943929b1d4b761af33, type: 2}
+    m_LimitCount: 0
+    m_LimitComparerType: 
+    m_LimitComparerReference: 
   m_Preconditions:
   - m_Operator: '!='
     m_OperandA:
@@ -56,7 +62,7 @@ MonoBehaviour:
   m_Reward: 0
   m_CustomRewards:
   - m_Operator: -=
-    m_Typename: Unity.AI.Planner.Navigation.LocationDistance,Unity.AI.Planner
+    m_Typename: Unity.AI.Planner.Navigation.LocationDistance
     m_Parameters:
     - Mover
     - Destination

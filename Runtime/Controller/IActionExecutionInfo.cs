@@ -3,9 +3,19 @@ using System.Collections.Generic;
 
 namespace Unity.AI.Planner.Controller
 {
-    enum ActionComplete
+    /// <summary>
+    /// Modes designating how a plan executor will acquire a new, current state
+    /// </summary>
+    public enum PlanExecutorStateUpdateMode
     {
+        /// <summary>
+        /// Use the predicted resulting state for the last executed action. Only works for deterministic planning domains.
+        /// </summary>
         UseNextPlanState,
+
+        /// <summary>
+        /// Query the game world for a new state.
+        /// </summary>
         UseWorldState,
     }
 
@@ -14,6 +24,7 @@ namespace Unity.AI.Planner.Controller
         object InvokeMethod(object[] arguments);
         Type GetParameterType(int argumentIndex);
         IEnumerable<string> GetArgumentValues();
-        ActionComplete OnActionComplete { get; }
+        PlanExecutorStateUpdateMode PlanExecutorStateUpdateMode { get; }
+        bool IsValidForAction(string actionName);
     }
 }

@@ -1,13 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using AI.Planner.Domains;
 using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
-using UnityEngine.AI.Planner.Controller;
+using Unity.AI.Planner.Controller;
+using UnityEngine;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using {{ state_representation_qualifier }};
+using {{ state_representation_qualifier }}.{{ plan_name }};
 
-namespace {{ class_namespace }}
+namespace {{ namespace }}
 {
     public struct DefaultHeuristic : IHeuristic<StateData>
     {
@@ -39,7 +41,7 @@ namespace {{ class_namespace }}
         }
     }
 
-    class {{ plan_name }}Executor : BasePlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ heuristic }}, TerminationEvaluator, StateManager, ActionKey, DestroyStatesJobScheduler>
+    class {{ plan_name }}Executor : BaseTraitBasedPlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ heuristic }}, TerminationEvaluator, StateManager, ActionKey, DestroyStatesJobScheduler>
     {
         static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
         {
@@ -54,15 +56,15 @@ namespace {{ class_namespace }}
             return name;
         }
 
-        protected override void RegisterOnDestroyCallback()
+        public override void Initialize(MonoBehaviour actor, PlanDefinition planDefinition, IActionExecutionInfo[] actionExecutionInfos)
         {
+            base.Initialize(actor, planDefinition, actionExecutionInfos);
             m_StateManager.Destroying += () => PlannerScheduler.CurrentJobHandle.Complete();
         }
 
-        public override void Act(DecisionController controller)
+        protected override void Act(ActionKey actionKey)
         {
-            var actionKey = GetBestAction();
-            var stateData = m_StateManager.GetStateData(CurrentStateKey, false);
+            var stateData = m_StateManager.GetStateData(CurrentPlanState, false);
             var actionName = string.Empty;
 
             switch (actionKey.ActionGuid)
@@ -74,7 +76,7 @@ namespace {{ class_namespace }}
             {{- end}}
             }
 
-            var executeInfos = controller.GetExecutionInfo(actionName);
+            var executeInfos = GetExecutionInfo(actionName);
             if (executeInfos == null)
                 return;
 
@@ -89,38 +91,41 @@ namespace {{ class_namespace }}
                 var traitBasedObjectName = split[0];
 
                 if (string.IsNullOrEmpty(traitBasedObjectName))
-                    throw new ArgumentException($"An argument to the '{actionName}' callback on '{controller.name}' DecisionController is invalid");
+                    throw new ArgumentException($"An argument to the '{actionName}' callback on '{m_Actor?.name}' DecisionController is invalid");
 
                 switch (actionName)
                 {
-                {{- for action in actions }}
+                    {{- for action in actions }}
                     case nameof({{action.name}}):
                         parameterIndex = {{action.name}}.GetIndexForParameterName(traitBasedObjectName);
                         break;
-                {{- end}}
+                    {{- end}}
                 }
 
+                if (parameterIndex == -1)
+                    throw new ArgumentException($"Argument '{traitBasedObjectName}' to the '{actionName}' callback on '{m_Actor?.name}' DecisionController is invalid");
+
                 var traitBasedObjectIndex = actionKey[parameterIndex];
-                if (split.Length > 1)
+                if (split.Length > 1) // argument is a trait
                 {
                     switch (split[1])
                     {
-                {{- for trait in traits }}
+                        {{- for trait in traits }}
                         case nameof({{trait.name}}):
-                            var trait{{trait.name}} = stateData.GetTraitOnObjectAtIndex<{{ trait.fully_qualified_name }}>(traitBasedObjectIndex);
+                            var trait{{trait.name}} = stateData.GetTraitOnObjectAtIndex<{{ trait.name }}>(traitBasedObjectIndex);
                             arguments[i] = split.Length == 3 ? trait{{trait.name}}.GetField(split[2]) : trait{{trait.name}};
                             break;
-                {{- end}}
+                        {{- end}}
                     }
                 }
-                else
+                else // argument is an object
                 {
                     var planStateId = stateData.GetTraitBasedObjectId(traitBasedObjectIndex);
                     ITraitBasedObjectData dataSource;
                     if (m_PlanStateToGameStateIdLookup.TryGetValue(planStateId.Id, out var gameStateId))
-                        dataSource = m_DomainData.GetDataSource(new TraitBasedObjectId { Id = gameStateId });
+                        dataSource = m_StateConverter.GetDataSource(new TraitBasedObjectId { Id = gameStateId });
                     else
-                        dataSource = m_DomainData.GetDataSource(planStateId);
+                        dataSource = m_StateConverter.GetDataSource(planStateId);
 
                     Type expectedType = executeInfos.GetParameterType(i);
                     if (typeof(ITraitBasedObjectData).IsAssignableFrom(expectedType))
@@ -131,12 +136,12 @@ namespace {{ class_namespace }}
                     {
                         arguments[i] = null;
                         var obj = dataSource.ParentObject;
-                        if (obj != null && obj is UnityEngine.GameObject gameObject)
+                        if (obj != null && obj is GameObject gameObject)
                         {
-                            if (expectedType == typeof(UnityEngine.GameObject))
+                            if (expectedType == typeof(GameObject))
                                 arguments[i] = gameObject;
 
-                            if (typeof(UnityEngine.Component).IsAssignableFrom(expectedType))
+                            if (typeof(Component).IsAssignableFrom(expectedType))
                                 arguments[i] = gameObject == null ? null : gameObject.GetComponent(expectedType);
                         }
                     }
@@ -146,7 +151,36 @@ namespace {{ class_namespace }}
             }
 
             CurrentActionKey = actionKey;
-            controller.StartAction(executeInfos, arguments);
+            StartAction(executeInfos, arguments);
+        }
+
+        public override IActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey)
+        {
+            string[] parameterNames = {};
+            var stateData = m_StateManager.GetStateData((StateEntityKey)stateKey, false);
+
+            switch (((IActionKeyWithGuid)actionKey).ActionGuid)
+            {
+                {{- for action in actions }}
+                 case var actionGuid when actionGuid == ActionScheduler.{{action.name}}Guid:
+                    parameterNames = {{action.name}}.parameterNames;
+                        break;
+                {{- end}}
+            }
+
+            var parameterInfo = new IActionParameterInfo[parameterNames.Length];
+            for (var i = 0; i < parameterNames.Length; i++)
+            {
+                var traitBasedObjectId = stateData.GetTraitBasedObjectId(((ActionKey)actionKey)[i]);
+
+#if DEBUG
+                parameterInfo[i] = new ActionParameterInfo { ParameterName = parameterNames[i], TraitObjectName = traitBasedObjectId.Name.ToString(), TraitObjectId = traitBasedObjectId.Id };
+#else
+                parameterInfo[i] = new ActionParameterInfo { ParameterName = parameterNames[i], TraitObjectName = traitBasedObjectId.ToString(), TraitObjectId = traitBasedObjectId.Id };
+#endif
+            }
+
+            return parameterInfo;
         }
     }
 }

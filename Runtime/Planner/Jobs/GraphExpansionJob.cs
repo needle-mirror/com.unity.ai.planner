@@ -21,8 +21,8 @@ namespace Unity.AI.Planner.Jobs
             var capacityNeeded = InputStateExpansionInfo.Count;
             PolicyGraph.ExpandBy(capacityNeeded, capacityNeeded);
 
-            if (BinnedStateKeys.Length + capacityNeeded > BinnedStateKeys.Capacity)
-                BinnedStateKeys.Capacity = Math.Max(BinnedStateKeys.Length + capacityNeeded, BinnedStateKeys.Capacity * 2);
+            if (BinnedStateKeys.Count() + capacityNeeded > BinnedStateKeys.Capacity)
+                BinnedStateKeys.Capacity = Math.Max(BinnedStateKeys.Count() + capacityNeeded, BinnedStateKeys.Capacity * 2);
 
             while (InputStateExpansionInfo.TryDequeue(out var item))
             {

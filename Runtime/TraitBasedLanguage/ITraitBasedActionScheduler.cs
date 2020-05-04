@@ -15,7 +15,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     /// <typeparam name="TActionKey">ActionKey type</typeparam>
     interface ITraitBasedActionScheduler<TObject, TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey> :
         IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey>
-        where TStateKey : struct, IEquatable<TStateKey>, IStateKey
+        where TStateKey : struct, IEquatable<TStateKey>
         where TStateData : struct, ITraitBasedStateData<TObject>
         where TStateDataContext : struct, ITraitBasedStateDataContext<TObject, TStateKey, TStateData>
         where TStateManager : ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext>

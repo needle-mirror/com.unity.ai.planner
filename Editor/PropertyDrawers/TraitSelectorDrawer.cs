@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor.AI.Planner.Utility;
@@ -10,9 +11,10 @@ namespace UnityEditor.AI.Planner.Editors
     {
         SerializedProperty m_Property;
         IEnumerable<TraitDefinition> m_InvalidTraits;
+        List<TraitDefinition> m_TraitsSelected = new List<TraitDefinition>();
         string m_Title;
         float m_Height;
-        List<TraitDefinition> m_TraitsSelected = new List<TraitDefinition>();
+        Vector2 m_ScrollPosition;
 
         public TraitSelectorPopup(string title, SerializedProperty property, IEnumerable<TraitDefinition> invalidTraits = null)
         {
@@ -20,7 +22,7 @@ namespace UnityEditor.AI.Planner.Editors
             m_Title = title;
             m_InvalidTraits = invalidTraits;
 
-            m_Height = DomainAssetDatabase.TraitDefinitions.Count() * EditorGUIUtility.singleLineHeight + 60;
+            m_Height = Math.Min(Screen.height, PlannerAssetDatabase.TraitDefinitions.Count() * 20 + 30);
 
             m_Property.ForEachArrayElement(t =>
             {
@@ -40,8 +42,9 @@ namespace UnityEditor.AI.Planner.Editors
         public override void OnGUI(Rect rect)
         {
             GUILayout.Label(m_Title, EditorStyles.boldLabel);
+            m_ScrollPosition = EditorGUILayout.BeginScrollView(m_ScrollPosition, false, false, GUILayout.Height(rect.height));
 
-            foreach (var trait in DomainAssetDatabase.TraitDefinitions)
+            foreach (var trait in PlannerAssetDatabase.TraitDefinitions)
             {
                 bool selected = m_TraitsSelected.Contains(trait);
 
@@ -71,6 +74,9 @@ namespace UnityEditor.AI.Planner.Editors
 
                 }
             }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.EndScrollView();
         }
 
         bool IsValid(TraitDefinition trait)
@@ -107,7 +113,7 @@ namespace UnityEditor.AI.Planner.Editors
         }
     }
 
-    class TraitSelectorDrawer
+    static class TraitSelectorDrawer
     {
         public static void DrawSelector(SerializedProperty traits, Rect rect, string title, GUIStyle style, GUIStyle buttonStyle, GUIStyle altButtonStyle, IEnumerable<TraitDefinition> invalidTraits = null)
         {

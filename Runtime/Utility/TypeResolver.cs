@@ -11,43 +11,37 @@ namespace Unity.AI.Planner.Utility
         const string k_ValidateTypePattern = @"^[0-9]+|\s";
 
         public const string PlannerAssemblyName = "Unity.AI.Planner";
-        public const string DomainsAssemblyName = "AI.Planner.Domains";
-        public const string ActionsAssemblyName = "AI.Planner.Actions";
-        public const string DomainsNamespace = "AI.Planner.Domains";
-        public const string DomainEnumsNamespace = "AI.Planner.Domains.Enums.";
-        public const string ActionsNamespace = "AI.Planner.Actions";
+        public const string CustomAssemblyName = "AI.Planner.Custom";
 
-        static Dictionary<string, Type> m_TypeCache = new Dictionary<string, Type>();
+        public const string StateRepresentationQualifier = "Generated.AI.Planner.StateRepresentation";
+        public const string PlansQualifier = "Generated.AI.Planner.Plans";
 
-        public static Type GetType(string typeName)
+        public const string TraitEnumsNamespace = StateRepresentationQualifier + ".Enums.";
+
+        static Dictionary<string, Type> s_TypeCache = new Dictionary<string, Type>();
+
+        public static bool TryGetType(string qualifiedTypeName, out Type type)
         {
-            if (m_TypeCache.TryGetValue(typeName, out Type type))
-                return type;
-
-            if (!typeName.Contains("."))
-            {
-                type = Type.GetType($"{DomainsNamespace}.{typeName},{DomainsAssemblyName}");
-                if (type == null)
-                    type = Type.GetType($"{ActionsNamespace}.{typeName},{ActionsAssemblyName}");
-                if (type == null)
-                    type = Type.GetType($"{typeof(ICustomTrait).Namespace}.{typeName},{PlannerAssemblyName}");
-            }
+            if (s_TypeCache.TryGetValue(qualifiedTypeName, out type))
+                return true;
 
             if (type == null)
-                type = Type.GetType($"{typeName},Assembly-CSharp");
+                type = Type.GetType($"{qualifiedTypeName},Assembly-CSharp");
             if (type == null)
-                type = Type.GetType($"{typeName},{DomainsAssemblyName}");
+                type = Type.GetType($"{qualifiedTypeName},{StateRepresentationQualifier}");
             if (type == null)
-                type = Type.GetType($"{typeName},{PlannerAssemblyName}");
+                type = Type.GetType($"{qualifiedTypeName},{PlansQualifier}");
             if (type == null)
-                type = Type.GetType($"{typeName},UnityEngine");
+                type = Type.GetType($"{qualifiedTypeName},{PlannerAssemblyName}");
             if (type == null)
-                type = Type.GetType(typeName);
+                type = Type.GetType($"{qualifiedTypeName},UnityEngine");
+            if (type == null)
+                type = Type.GetType(qualifiedTypeName);
 
             if (type != null)
-                m_TypeCache.Add(typeName, type);
+                s_TypeCache.Add(qualifiedTypeName, type);
 
-            return type;
+            return type != null;
         }
 
         public static string ToTypeNameCase(string name)

@@ -36,7 +36,7 @@ namespace UnityEditor.AI.Planner.Editors
 
             var foldoutRect = titleRect;
             foldoutRect.width = 12;
-            foldoutRect.x += 12;
+            foldoutRect.x += 14;
 
             bool newObjectExpanded;
             if (readOnly)

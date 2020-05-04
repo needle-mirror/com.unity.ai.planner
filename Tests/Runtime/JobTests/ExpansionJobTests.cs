@@ -2,7 +2,6 @@
 using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.PerformanceTesting;
 
 namespace Unity.AI.Planner.Tests.Unit
 {
@@ -22,7 +21,7 @@ namespace Unity.AI.Planner.Tests.Unit
         [SetUp]
         public void SetupPartialPolicyGraph()
         {
-            m_PolicyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(10, 10);
+            m_PolicyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(10, 10, 10);
 
             var builder = new PolicyGraphBuilder<int, int>() { PolicyGraph = m_PolicyGraph };
             var stateContext = builder.AddState(k_RootState);
@@ -42,7 +41,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
         NativeMultiHashMap<int, int> GetBinnedStateKeys()
         {
-            var binned = new NativeMultiHashMap<int, int>(m_PolicyGraph.StateInfoLookup.Length, Allocator.Persistent);
+            var binned = new NativeMultiHashMap<int, int>(m_PolicyGraph.StateInfoLookup.Count(), Allocator.Persistent);
             using (var stateKeys = m_PolicyGraph.StateInfoLookup.GetKeyArray(Allocator.Temp))
             {
                 foreach (var stateKey in stateKeys)
@@ -234,18 +233,18 @@ namespace Unity.AI.Planner.Tests.Unit
                 StatesToDestroy = newStatesToDestroy.AsParallelWriter(),
             };
 
-            var stateTransitionInfosBefore = stateTransitionInfoLookup.Length;
-            var resultingStateLookupBefore = resultingStateLookup.Length;
-            var predecessorGraphBefore = predecessorGraph.Length;
+            var stateTransitionInfosBefore = stateTransitionInfoLookup.Count();
+            var resultingStateLookupBefore = resultingStateLookup.Count();
+            var predecessorGraphBefore = predecessorGraph.Count();
 
             expansionJob.Schedule(statesToProcess, default).Complete();
 
             // No new action results, states, predecessor links, etc.
             Assert.AreEqual(0, newStatesQueue.Count);
             Assert.AreEqual(0, newStatesToDestroy.Count);
-            Assert.AreEqual(stateTransitionInfosBefore, stateTransitionInfoLookup.Length);
-            Assert.AreEqual(resultingStateLookupBefore, resultingStateLookup.Length);
-            Assert.AreEqual(predecessorGraphBefore, predecessorGraph.Length);
+            Assert.AreEqual(stateTransitionInfosBefore, stateTransitionInfoLookup.Count());
+            Assert.AreEqual(resultingStateLookupBefore, resultingStateLookup.Count());
+            Assert.AreEqual(predecessorGraphBefore, predecessorGraph.Count());
 
             statesToProcess.Dispose();
             binnedStateKeys.Dispose();
@@ -258,6 +257,8 @@ namespace Unity.AI.Planner.Tests.Unit
 #if ENABLE_PERFORMANCE_TESTS
 namespace Unity.AI.Planner.Tests.Performance
 {
+    using Unity.PerformanceTesting;
+
     // Test performance going wide; probably doesn't need to be deep
     [Category("Performance")]
     public class ExpansionJobPerformanceTests

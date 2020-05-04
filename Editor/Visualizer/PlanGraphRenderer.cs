@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEditor.AI.Planner.Visualizer;
 using UnityEngine;
 
-class PlanGraphRenderer : IGraphRenderer
+class PlanGraphRenderer
 {
     internal class GraphOnlyRenderer : DefaultGraphRenderer
     {
@@ -30,10 +30,6 @@ class PlanGraphRenderer : IGraphRenderer
 
     static readonly float s_BorderSize = 15;
     static readonly float s_InspectorFixedWidth = 100;
-
-    static readonly float s_DefaultMaximumNormalizedNodeSize = 0.8f;
-    static readonly float s_DefaultMaximumNodeSizeInPixels = 100.0f;
-    static readonly float s_DefaultAspectRatio = 1.5f;
     static readonly Color s_InspectorBackground = new Color(0, 0, 0, 0.1f);
 
     GraphOnlyRenderer m_GraphOnlyRenderer;
@@ -46,7 +42,7 @@ class PlanGraphRenderer : IGraphRenderer
         m_GraphOnlySettings = new GraphSettings { showInspector = false, showLegend = false };
     }
 
-    void DrawInspector(GraphSettings graphSettings, Rect inspectorArea)
+    void DrawInspector(Rect inspectorArea, IPlanVisualizer visualizer)
     {
         EditorGUI.DrawRect(inspectorArea, s_InspectorBackground);
 
@@ -58,25 +54,22 @@ class PlanGraphRenderer : IGraphRenderer
         GUILayout.BeginArea(inspectorArea);
         GUILayout.BeginVertical();
 
-        if (graphSettings.showInspector)
+        if (m_GraphOnlyRenderer.SelectedNode != null)
         {
-            if (m_GraphOnlyRenderer.SelectedNode != null)
+            var node = m_GraphOnlyRenderer.SelectedNode;
+            using (var scrollView = new EditorGUILayout.ScrollViewScope(m_ScrollPos))
             {
-                var node = m_GraphOnlyRenderer.SelectedNode;
-                using (var scrollView = new EditorGUILayout.ScrollViewScope(m_ScrollPos))
-                {
-                    m_ScrollPos = scrollView.scrollPosition;
+                m_ScrollPos = scrollView.scrollPosition;
 
-                    if (node is BaseNode baseNode && !baseNode.ExpansionNode)
-                    {
-                        baseNode.DrawInspector();
-                    }
+                if (node is BaseNode baseNode && !baseNode.ExpansionNode)
+                {
+                    baseNode.DrawInspector(visualizer);
                 }
             }
-            else
-            {
-                GUILayout.Label("Click on a node\nto display its details.");
-            }
+        }
+        else
+        {
+            GUILayout.Label("Click on a node\nto display its details.");
         }
 
         GUILayout.FlexibleSpace();
@@ -84,18 +77,7 @@ class PlanGraphRenderer : IGraphRenderer
         GUILayout.EndArea();
     }
 
-    public void Draw(IGraphLayout graphLayout, Rect drawingArea)
-    {
-        GraphSettings defaults;
-        defaults.maximumNormalizedNodeSize = s_DefaultMaximumNormalizedNodeSize;
-        defaults.maximumNodeSizeInPixels = s_DefaultMaximumNodeSizeInPixels;
-        defaults.aspectRatio = s_DefaultAspectRatio;
-        defaults.showInspector = false;
-        defaults.showLegend = false;
-        Draw(graphLayout, drawingArea, defaults);
-    }
-
-    public void Draw(IGraphLayout graphLayout, Rect totalDrawingArea, GraphSettings graphSettings)
+    public void Draw(IGraphLayout graphLayout, Rect totalDrawingArea, GraphSettings graphSettings, IPlanVisualizer visualizer)
     {
         var drawingArea = new Rect(totalDrawingArea);
 
@@ -109,7 +91,7 @@ class PlanGraphRenderer : IGraphRenderer
             inspectorArea.x = drawingArea.xMax - inspectorArea.width;
             drawingArea.width -= inspectorArea.width;
 
-            DrawInspector(graphSettings, inspectorArea);
+            DrawInspector(inspectorArea, visualizer);
         }
 
         m_GraphOnlySettings.maximumNormalizedNodeSize = graphSettings.maximumNormalizedNodeSize;

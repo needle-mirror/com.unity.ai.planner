@@ -23,16 +23,19 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public IEnumerable<Operation> Preconditions
         {
             get => m_Preconditions;
+            set => m_Preconditions = value.ToList();
         }
 
         public IEnumerable<ParameterDefinition> CreatedObjects
         {
             get => m_CreatedObjects;
+            set => m_CreatedObjects = value.ToList();
         }
 
         public IEnumerable<Operation> ObjectModifiers
         {
             get => m_ObjectModifiers;
+            set => m_ObjectModifiers = value.ToList();
         }
 
         public IEnumerable<string> RemovedObjects
@@ -89,9 +92,23 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
     [Serializable]
     class CustomRewardData
     {
-        public string Operator => m_Operator;
-        public string Typename => m_Typename;
-        public string[] Parameters => m_Parameters;
+        public string Operator
+        {
+            get => m_Operator;
+            set => m_Operator = value;
+        }
+
+        public string Typename
+        {
+            get => m_Typename;
+            set => m_Typename = value;
+        }
+
+        public string[] Parameters
+        {
+            get => m_Parameters;
+            set => m_Parameters = value;
+        }
 
 #pragma warning disable 0649
         [SerializeField]

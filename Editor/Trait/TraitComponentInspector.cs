@@ -18,7 +18,7 @@ namespace UnityEditor.AI.Planner.Editors
             m_TraitFields = traitFields;
             m_Title = title;
 
-            m_Height = DomainAssetDatabase.TraitDefinitions.Count() * EditorGUIUtility.singleLineHeight + 60;
+            m_Height = PlannerAssetDatabase.TraitDefinitions.Count() * EditorGUIUtility.singleLineHeight + 60;
         }
 
         public override Vector2 GetWindowSize()
@@ -55,7 +55,7 @@ namespace UnityEditor.AI.Planner.Editors
                 m_TraitFields.DeleteArrayElementAtIndex(i);
             }
 
-            foreach (var trait in DomainAssetDatabase.TraitDefinitions)
+            foreach (var trait in PlannerAssetDatabase.TraitDefinitions)
             {
                 bool selected = traitsSelected.ContainsKey(trait);
                 bool newSelected = EditorGUILayout.Toggle(trait.name, selected);
@@ -110,7 +110,7 @@ namespace UnityEditor.AI.Planner.Editors
     {
         void OnEnable()
         {
-            DomainAssetDatabase.Refresh();
+            PlannerAssetDatabase.Refresh();
         }
 
         public override void OnInspectorGUI()

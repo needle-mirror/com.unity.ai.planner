@@ -84,9 +84,12 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
     [Serializable]
     class Operation
     {
-        public const string AddTraitOperator = "ADD";
-        public const string RemoveTraitOperator = "REMOVE";
-        public const string CustomOperator = "CUSTOM";
+        internal enum SpecialOperators
+        {
+            Add,
+            Remove,
+            Custom
+        }
 
         public OperandValue OperandA
         {
@@ -104,10 +107,18 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             get => m_OperandB;
         }
 
-#pragma warning disable 0649
+        public string CustomOperatorType
+        {
+            get => m_CustomOperatorType;
+            set => m_CustomOperatorType = value;
+        }
 
+#pragma warning disable 0649
         [SerializeField]
         string m_Operator;
+
+        [SerializeField]
+        string m_CustomOperatorType;
 
         [SerializeField]
         OperandValue m_OperandA;
@@ -115,6 +126,11 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         [SerializeField]
         OperandValue m_OperandB;
 #pragma warning restore 0649
+
+        internal bool IsSpecialOperator(SpecialOperators op)
+        {
+            return m_Operator.Equals(op.ToString());
+        }
     }
 }
 #endif

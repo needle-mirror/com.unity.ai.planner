@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
+using UnityEngine;
 
 namespace KeyDomain
 {
@@ -14,13 +17,11 @@ namespace KeyDomain
         public int HashCode;
 
         public bool Equals(StateEntityKey other) => Entity == other.Entity;
-        public override bool Equals(object other) => (other is StateEntityKey otherKey) && Equals(otherKey);
-        public static bool operator==(StateEntityKey x, StateEntityKey y) => x.Entity == y.Entity;
-        public static bool operator!=(StateEntityKey x, StateEntityKey y) => x.Entity != y.Entity;
+        public bool Equals(IStateKey other) => (other is StateEntityKey otherKey) && Equals(otherKey);
 
         public override int GetHashCode() => HashCode;
 
-        public override string ToString() => $"StateEntityKey ({Entity} {HashCode})";
+        public override string ToString() => $"StateEntityKey({Entity} {HashCode})";
         public string Label => Entity.ToString();
     }
 
@@ -30,7 +31,7 @@ namespace KeyDomain
         {
             terminalReward = 0f;
             var endObjects = new NativeList<int>(1, Allocator.Temp);
-            state.GetTraitBasedObjectIndices(endObjects, (ComponentType) typeof(End));
+            state.GetTraitBasedObjectIndices(endObjects, ComponentType.ReadWrite<End>());
 
             return endObjects.Length > 0;
         }
@@ -47,21 +48,28 @@ namespace KeyDomain
     static class TraitArrayIndex<T>
         where T : struct, ITrait
     {
-        public static int Index = -1;
+        public static readonly int Index = -1;
+
+        static TraitArrayIndex()
+        {
+            var typeIndex = TypeManager.GetTypeIndex<T>();
+            if (typeIndex == TypeManager.GetTypeIndex<Colored>())
+                Index = 0;
+            else if (typeIndex == TypeManager.GetTypeIndex<Carrier>())
+                Index = 1;
+            else if (typeIndex == TypeManager.GetTypeIndex<Carriable>())
+                Index = 2;
+            else if (typeIndex == TypeManager.GetTypeIndex<Localized>())
+                Index = 3;
+            else if (typeIndex == TypeManager.GetTypeIndex<Lockable>())
+                Index = 4;
+            else if (typeIndex == TypeManager.GetTypeIndex<End>())
+                Index = 5;
+        }
     }
 
     struct TraitBasedObject : ITraitBasedObject
     {
-        static TraitBasedObject()
-        {
-            TraitArrayIndex<Colored>.Index = 0;
-            TraitArrayIndex<Carrier>.Index = 1;
-            TraitArrayIndex<Carriable>.Index = 2;
-            TraitArrayIndex<Localized>.Index = 3;
-            TraitArrayIndex<Lockable>.Index = 4;
-            TraitArrayIndex<End>.Index = 5;
-        }
-
         public int Length => 6;
 
         public byte this[int i]
@@ -112,7 +120,7 @@ namespace KeyDomain
             }
         }
 
-        public static byte Unset = Byte.MaxValue;
+        public static readonly byte Unset = Byte.MaxValue;
 
         public static TraitBasedObject Default => new TraitBasedObject()
         {
@@ -131,12 +139,12 @@ namespace KeyDomain
         public byte LockableIndex;
         public byte EndIndex;
 
-        static ComponentType s_ColoredType = new ComponentType(typeof(Colored));
-        static ComponentType s_CarrierType = new ComponentType(typeof(Carrier));
-        static ComponentType s_CarriableType = new ComponentType(typeof(Carriable));
-        static ComponentType s_LocalizedType = new ComponentType(typeof(Localized));
-        static ComponentType s_LockableType = new ComponentType(typeof(Lockable));
-        static ComponentType s_EndType = new ComponentType(typeof(End));
+        static readonly int s_ColoredType =   TypeManager.GetTypeIndex<Colored>();
+        static readonly int s_CarrierType =   TypeManager.GetTypeIndex<Carrier>();
+        static readonly int s_CarriableType = TypeManager.GetTypeIndex<Carriable>();
+        static readonly int s_LocalizedType = TypeManager.GetTypeIndex<Localized>();
+        static readonly int s_LockableType =  TypeManager.GetTypeIndex<Lockable>();
+        static readonly int s_EndType =       TypeManager.GetTypeIndex<End>();
 
         public bool HasSameTraits(TraitBasedObject other)
         {
@@ -166,40 +174,34 @@ namespace KeyDomain
             for (int i = 0; i < componentTypes.Length; i++)
             {
                 var t = componentTypes[i];
-                if (t == s_ColoredType)
+                if (t.TypeIndex == s_ColoredType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && ColoredIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && ColoredIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ ColoredIndex == Unset)
                         return false;
                 }
-                else if (t == s_CarrierType)
+                else if (t.TypeIndex == s_CarrierType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && CarrierIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && CarrierIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ CarrierIndex == Unset)
                         return false;
                 }
-                else if (t == s_CarriableType)
+                else if (t.TypeIndex == s_CarriableType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && CarriableIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && CarriableIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ CarriableIndex == Unset)
                         return false;
                 }
-                else if (t == s_LocalizedType)
+                else if (t.TypeIndex == s_LocalizedType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && LocalizedIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && LocalizedIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ LocalizedIndex == Unset)
                         return false;
                 }
-                else if (t == s_LockableType)
+                else if (t.TypeIndex == s_LockableType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && LockableIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && LockableIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ LockableIndex == Unset)
                         return false;
                 }
-                else if (t == s_EndType)
+                else if (t.TypeIndex == s_EndType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && EndIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && EndIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ EndIndex == Unset)
                         return false;
                 }
                 else
@@ -216,40 +218,34 @@ namespace KeyDomain
             for (int i = 0; i < componentTypes.Length; i++)
             {
                 var t = componentTypes[i];
-                if (t == s_ColoredType)
+                if (t.TypeIndex == s_ColoredType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && ColoredIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && ColoredIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ ColoredIndex == Unset)
                         return false;
                 }
-                else if (t == s_CarrierType)
+                else if (t.TypeIndex == s_CarrierType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && CarrierIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && CarrierIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ CarrierIndex == Unset)
                         return false;
                 }
-                else if (t == s_CarriableType)
+                else if (t.TypeIndex == s_CarriableType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && CarriableIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && CarriableIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ CarriableIndex == Unset)
                         return false;
                 }
-                else if (t == s_LocalizedType)
+                else if (t.TypeIndex == s_LocalizedType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && LocalizedIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && LocalizedIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ LocalizedIndex == Unset)
                         return false;
                 }
-                else if (t == s_LockableType)
+                else if (t.TypeIndex == s_LockableType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && LockableIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && LockableIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ LockableIndex == Unset)
                         return false;
                 }
-                else if (t == s_EndType)
+                else if (t.TypeIndex == s_EndType)
                 {
-                    if ((t.AccessModeType == ComponentType.AccessMode.Exclude && EndIndex != Unset) ||
-                        (t.AccessModeType != ComponentType.AccessMode.Exclude && EndIndex == Unset))
+                    if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ EndIndex == Unset)
                         return false;
                 }
                 else
@@ -262,7 +258,7 @@ namespace KeyDomain
         }
     }
 
-    struct StateData : ITraitBasedStateData<TraitBasedObject>
+    struct StateData : ITraitBasedStateData<TraitBasedObject, StateData>
     {
         public Entity StateEntity;
         public DynamicBuffer<TraitBasedObject> TraitBasedObjects;
@@ -275,12 +271,12 @@ namespace KeyDomain
         public DynamicBuffer<Lockable> LockableBuffer;
         public DynamicBuffer<End> EndBuffer;
 
-        static ComponentType s_ColoredType = new ComponentType(typeof(Colored));
-        static ComponentType s_CarrierType = new ComponentType(typeof(Carrier));
-        static ComponentType s_CarriableType = new ComponentType(typeof(Carriable));
-        static ComponentType s_LocalizedType = new ComponentType(typeof(Localized));
-        static ComponentType s_LockableType = new ComponentType(typeof(Lockable));
-        static ComponentType s_EndType = new ComponentType(typeof(End));
+        static readonly int s_ColoredType =   TypeManager.GetTypeIndex<Colored>();
+        static readonly int s_CarrierType =   TypeManager.GetTypeIndex<Carrier>();
+        static readonly int s_CarriableType = TypeManager.GetTypeIndex<Carriable>();
+        static readonly int s_LocalizedType = TypeManager.GetTypeIndex<Localized>();
+        static readonly int s_LockableType =  TypeManager.GetTypeIndex<Lockable>();
+        static readonly int s_EndType =       TypeManager.GetTypeIndex<End>();
 
         public StateData(JobComponentSystem system, Entity stateEntity, bool readWrite = false)
         {
@@ -343,42 +339,41 @@ namespace KeyDomain
             };
         }
 
-        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, TraitBasedObjectId traitBasedObjectId, string name = null)
+        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, TraitBasedObjectId traitBasedObjectId, NativeString64 name = default)
         {
             traitBasedObject = TraitBasedObject.Default;
 #if DEBUG
-            if (!string.IsNullOrEmpty(name))
-                traitBasedObjectId.Name.CopyFrom(name);
+            traitBasedObjectId.Name.CopyFrom(name);
 #endif
 
             foreach (var t in types)
             {
-                if (t == s_ColoredType)
+                if (t.TypeIndex == s_ColoredType)
                 {
                     ColoredBuffer.Add(default);
                     traitBasedObject.ColoredIndex = (byte) (ColoredBuffer.Length - 1);
                 }
-                else if (t == s_CarrierType)
+                else if (t.TypeIndex == s_CarrierType)
                 {
                     CarrierBuffer.Add(default);
                     traitBasedObject.CarrierIndex = (byte) (CarrierBuffer.Length - 1);
                 }
-                else if (t == s_CarriableType)
+                else if (t.TypeIndex == s_CarriableType)
                 {
                     CarriableBuffer.Add(default);
                     traitBasedObject.CarriableIndex = (byte) (CarriableBuffer.Length - 1);
                 }
-                else if (t == s_LocalizedType)
+                else if (t.TypeIndex == s_LocalizedType)
                 {
                     LocalizedBuffer.Add(default);
                     traitBasedObject.LocalizedIndex = (byte) (LocalizedBuffer.Length - 1);
                 }
-                else if (t == s_LockableType)
+                else if (t.TypeIndex == s_LockableType)
                 {
                     LockableBuffer.Add(default);
                     traitBasedObject.LockableIndex = (byte) (LockableBuffer.Length - 1);
                 }
-                else if (t == s_EndType)
+                else if (t.TypeIndex == s_EndType)
                 {
                     EndBuffer.Add(default);
                     traitBasedObject.EndIndex = (byte) (EndBuffer.Length - 1);
@@ -389,49 +384,48 @@ namespace KeyDomain
             TraitBasedObjects.Add(traitBasedObject);
         }
 
-        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, string name = null)
+        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, NativeString64 name = default)
         {
             traitBasedObjectId = new TraitBasedObjectId() { Id = ObjectId.GetNext() };
             AddObject(types, out traitBasedObject, traitBasedObjectId, name);
         }
 
-        public void AddTraitBasedObject(ComponentType[] types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, string name = null)
+        public void AddTraitBasedObject(ComponentType[] types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, NativeString64 name = default)
         {
             traitBasedObject = TraitBasedObject.Default;
             traitBasedObjectId = new TraitBasedObjectId() { Id = ObjectId.GetNext() };
 #if DEBUG
-            if (!string.IsNullOrEmpty(name))
-                traitBasedObjectId.Name.CopyFrom(name);
+            traitBasedObjectId.Name.CopyFrom(name);
 #endif
 
             foreach (var t in types)
             {
-                if (t == s_ColoredType)
+                if (t.TypeIndex == s_ColoredType)
                 {
                     ColoredBuffer.Add(default);
                     traitBasedObject.ColoredIndex = (byte) (ColoredBuffer.Length - 1);
                 }
-                else if (t == s_CarrierType)
+                else if (t.TypeIndex == s_CarrierType)
                 {
                     CarrierBuffer.Add(default);
                     traitBasedObject.CarrierIndex = (byte) (CarrierBuffer.Length - 1);
                 }
-                else if (t == s_CarriableType)
+                else if (t.TypeIndex == s_CarriableType)
                 {
                     CarriableBuffer.Add(default);
                     traitBasedObject.CarriableIndex = (byte) (CarriableBuffer.Length - 1);
                 }
-                else if (t == s_LocalizedType)
+                else if (t.TypeIndex == s_LocalizedType)
                 {
                     LocalizedBuffer.Add(default);
                     traitBasedObject.LocalizedIndex = (byte) (LocalizedBuffer.Length - 1);
                 }
-                else if (t == s_LockableType)
+                else if (t.TypeIndex == s_LockableType)
                 {
                     LockableBuffer.Add(default);
                     traitBasedObject.LockableIndex = (byte) (LockableBuffer.Length - 1);
                 }
-                else if (t == s_EndType)
+                else if (t.TypeIndex == s_EndType)
                 {
                     EndBuffer.Add(default);
                     traitBasedObject.EndIndex = (byte) (EndBuffer.Length - 1);
@@ -471,6 +465,16 @@ namespace KeyDomain
                 throw new ArgumentException($"Trait of type {typeof(TTrait)} does not exist on object {traitBasedObject}.");
 
             return GetBuffer<TTrait>()[traitBufferIndex];
+        }
+
+        public bool HasTraitOnObject<TTrait>(TraitBasedObject traitBasedObject) where TTrait : struct, ITrait
+        {
+            var traitBasedObjectTraitIndex = TraitArrayIndex<TTrait>.Index;
+            if (traitBasedObjectTraitIndex == -1)
+                throw new ArgumentException($"Trait {typeof(TTrait)} not supported in this plan");
+
+            var traitBufferIndex = traitBasedObject[traitBasedObjectTraitIndex];
+            return traitBufferIndex != TraitBasedObject.Unset;
         }
 
         public void SetTraitOnObject<TTrait>(TTrait trait, ref TraitBasedObject traitBasedObject) where TTrait : struct, ITrait
@@ -559,7 +563,6 @@ namespace KeyDomain
             return true;
         }
 
-
         public TTrait GetTraitOnObjectAtIndex<TTrait>(int traitBasedObjectIndex) where TTrait : struct, ITrait
         {
             var traitBasedObjectTraitIndex = TraitArrayIndex<TTrait>.Index;
@@ -572,6 +575,11 @@ namespace KeyDomain
                 throw new Exception($"Trait index for {typeof(TTrait)} is not set for object {traitBasedObject}");
 
             return GetBuffer<TTrait>()[traitBufferIndex];
+        }
+
+        public void SetTraitOnObjectAtIndex(ITrait trait, int traitBasedObjectIndex)
+        {
+            throw new NotImplementedException();
         }
 
         public void SetTraitOnObjectAtIndex<TTrait>(TTrait trait, int traitBasedObjectIndex) where TTrait : struct, ITrait
@@ -648,7 +656,6 @@ namespace KeyDomain
             return true;
         }
 
-
         public NativeArray<int> GetTraitBasedObjectIndices(NativeList<int> traitBasedObjects, NativeArray<ComponentType> traitFilter)
         {
             for (var i = 0; i < TraitBasedObjects.Length; i++)
@@ -698,6 +705,11 @@ namespace KeyDomain
             return objectIndex;
         }
 
+        public int GetTraitBasedObjectIndex(TraitBasedObjectId traitBasedObjectId)
+        {
+            throw new NotImplementedException();
+        }
+
         public TraitBasedObjectId GetTraitBasedObjectId(TraitBasedObject traitBasedObject)
         {
             var index = GetTraitBasedObjectIndex(traitBasedObject);
@@ -731,6 +743,7 @@ namespace KeyDomain
             return default;
         }
 
+        public bool Equals(IStateData other) => other is StateData otherData && Equals(otherData);
 
         public bool Equals(StateData rhsState)
         {
@@ -749,55 +762,9 @@ namespace KeyDomain
 
             // New below
             var objectMap = new ObjectCorrespondence(TraitBasedObjectIds, rhsState.TraitBasedObjectIds, Allocator.Temp);
-
-            bool statesEqual = true;
-            for (int lhsIndex = 0; lhsIndex < TraitBasedObjects.Length; lhsIndex++)
-            {
-                var lhsId = TraitBasedObjectIds[lhsIndex].Id;
-                if (objectMap.TryGetValue(lhsId, out _)) // already matched
-                    continue;
-
-                // todo lhsIndex to start? would require swapping rhs on assignments, though
-                bool matchFound = true;
-                for (var rhsIndex = 0; rhsIndex < rhsState.TraitBasedObjects.Length; rhsIndex++)
-                {
-                    var rhsId = rhsState.TraitBasedObjectIds[rhsIndex].Id;
-                    if (objectMap.ContainsRHS(rhsId)) // skip if already assigned todo optimize this
-                        continue;
-
-                    objectMap.BeginNewTraversal();
-                    objectMap.Add(lhsId, rhsId);
-
-                    // Traversal comparing all reachable objects
-                    matchFound = true;
-                    while (objectMap.Next(out var lhsIdToEvaluate, out var rhsIdToEvaluate))
-                    {
-                        // match objects, queueing as needed
-                        var lhsTraitBasedObject = TraitBasedObjects[objectMap.GetLHSIndex(lhsIdToEvaluate)];
-                        var rhsTraitBasedObject = rhsState.TraitBasedObjects[objectMap.GetRHSIndex(rhsIdToEvaluate)];
-
-                        if (!ObjectsMatchAttributes(lhsTraitBasedObject, rhsTraitBasedObject, rhsState) ||
-                            !CheckRelationsAndQueueObjects(lhsTraitBasedObject, rhsTraitBasedObject, rhsState, objectMap))
-                        {
-                            objectMap.RevertTraversalChanges();
-
-                            matchFound = false;
-                            break;
-                        }
-                    }
-
-                    if (matchFound)
-                        break;
-                }
-
-                if (!matchFound)
-                {
-                    statesEqual = false;
-                    break;
-                }
-            }
-
+            var statesEqual = TryGetObjectMapping(rhsState, objectMap);
             objectMap.Dispose();
+
             return statesEqual;
         }
 
@@ -901,6 +868,74 @@ namespace KeyDomain
             return true;
         }
 
+        bool ITraitBasedStateData<TraitBasedObject, StateData>.TryGetObjectMapping(StateData rhsState, ObjectCorrespondence objectMap)
+        {
+            // Easy check is to make sure each state has the same number of domain objects
+            if (TraitBasedObjects.Length != rhsState.TraitBasedObjects.Length
+                || ColoredBuffer.Length != rhsState.ColoredBuffer.Length
+                || CarrierBuffer.Length != rhsState.CarrierBuffer.Length
+                || CarriableBuffer.Length != rhsState.CarriableBuffer.Length
+                || LocalizedBuffer.Length != rhsState.LocalizedBuffer.Length
+                || LockableBuffer.Length != rhsState.LockableBuffer.Length
+                || EndBuffer.Length != rhsState.EndBuffer.Length )
+                return false;
+
+            return TryGetObjectMapping(rhsState, objectMap);
+        }
+
+        bool TryGetObjectMapping(StateData rhsState, ObjectCorrespondence objectMap)
+        {
+            objectMap.Initialize(TraitBasedObjectIds, rhsState.TraitBasedObjectIds);
+
+            bool statesEqual = true;
+            for (int lhsIndex = 0; lhsIndex < TraitBasedObjects.Length; lhsIndex++)
+            {
+                var lhsId = TraitBasedObjectIds[lhsIndex].Id;
+                if (objectMap.TryGetValue(lhsId, out _)) // already matched
+                    continue;
+
+                // todo lhsIndex to start? would require swapping rhs on assignments, though
+                bool matchFound = true;
+                for (var rhsIndex = 0; rhsIndex < rhsState.TraitBasedObjects.Length; rhsIndex++)
+                {
+                    var rhsId = rhsState.TraitBasedObjectIds[rhsIndex].Id;
+                    if (objectMap.ContainsRHS(rhsId)) // skip if already assigned todo optimize this
+                        continue;
+
+                    objectMap.BeginNewTraversal();
+                    objectMap.Add(lhsId, rhsId);
+
+                    // Traversal comparing all reachable objects
+                    matchFound = true;
+                    while (objectMap.Next(out var lhsIdToEvaluate, out var rhsIdToEvaluate))
+                    {
+                        // match objects, queueing as needed
+                        var lhsTraitBasedObject = TraitBasedObjects[objectMap.GetLHSIndex(lhsIdToEvaluate)];
+                        var rhsTraitBasedObject = rhsState.TraitBasedObjects[objectMap.GetRHSIndex(rhsIdToEvaluate)];
+
+                        if (!ObjectsMatchAttributes(lhsTraitBasedObject, rhsTraitBasedObject, rhsState) ||
+                            !CheckRelationsAndQueueObjects(lhsTraitBasedObject, rhsTraitBasedObject, rhsState, objectMap))
+                        {
+                            objectMap.RevertTraversalChanges();
+
+                            matchFound = false;
+                            break;
+                        }
+                    }
+
+                    if (matchFound)
+                        break;
+                }
+
+                if (!matchFound)
+                {
+                    statesEqual = false;
+                    break;
+                }
+            }
+
+            return statesEqual;
+        }
         public override int GetHashCode()
         {
             // h = 3860031 + (h+y)*2779 + (h*y*2)   // from How to Hash a Set by Richard O’Keefe
@@ -1078,22 +1113,40 @@ namespace KeyDomain
     [DisableAutoCreation]
     class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>
     {
-        EntityArchetype m_StateArchetype;
+        public ExclusiveEntityTransaction ExclusiveEntityTransaction;
+        public event Action Destroying;
 
-        public StateManager()
-        {
-            m_StateArchetype = default;
-        }
+        List<EntityCommandBuffer> m_EntityCommandBuffers;
+        EntityArchetype m_StateArchetype;
 
         protected override void OnCreate()
         {
             m_StateArchetype = EntityManager.CreateArchetype(typeof(State), typeof(TraitBasedObject), typeof(TraitBasedObjectId), typeof(HashCode),
                 typeof(Colored),typeof(Carrier),typeof(Carriable),typeof(Localized),typeof(Lockable),typeof(End));
+
+            BeginEntityExclusivity();
+            m_EntityCommandBuffers = new List<EntityCommandBuffer>();
         }
 
-        public StateData CreateStateData()
+        protected override void OnDestroy()
         {
+            Destroying?.Invoke();
+            EndEntityExclusivity();
+            base.OnDestroy();
+        }
+
+        public EntityCommandBuffer GetEntityCommandBuffer()
+        {
+            var ecb = new EntityCommandBuffer(Allocator.Persistent);
+            m_EntityCommandBuffers.Add(ecb);
+            return ecb;
+        }
+
+       public StateData CreateStateData()
+        {
+            EndEntityExclusivity();
             var stateEntity = EntityManager.CreateEntity(m_StateArchetype);
+            BeginEntityExclusivity();
             return new StateData(this, stateEntity, true);
         }
 
@@ -1104,7 +1157,13 @@ namespace KeyDomain
 
         public void DestroyState(StateEntityKey stateKey)
         {
-            EntityManager.DestroyEntity(stateKey.Entity);
+            var stateEntity = stateKey.Entity;
+            if (EntityManager != null && EntityManager.IsCreated && EntityManager.Exists(stateEntity))
+            {
+                EndEntityExclusivity();
+                EntityManager.DestroyEntity(stateEntity);
+                BeginEntityExclusivity();
+            }
         }
 
         public StateDataContext GetStateDataContext()
@@ -1119,18 +1178,22 @@ namespace KeyDomain
 
         public StateData CopyStateData(StateData stateData)
         {
+            EndEntityExclusivity();
             var copyStateEntity = EntityManager.Instantiate(stateData.StateEntity);
+            BeginEntityExclusivity();
             return new StateData(this, copyStateEntity, true);
         }
 
         public StateEntityKey CopyState(StateEntityKey stateKey)
         {
+            EndEntityExclusivity();
             var copyStateEntity = EntityManager.Instantiate(stateKey.Entity);
+            BeginEntityExclusivity();
             var stateData = GetStateData(stateKey);
             return new StateEntityKey { Entity = copyStateEntity, HashCode = stateData.GetHashCode()};
         }
 
-        protected override JobHandle OnUpdate(JobHandle inputDeps) => inputDeps;
+        protected override JobHandle OnUpdate(JobHandle inputDeps) => JobHandle.CombineDependencies(inputDeps, EntityManager.ExclusiveEntityTransactionDependency);
 
         public bool Equals(StateData x, StateData y)
         {
@@ -1142,9 +1205,51 @@ namespace KeyDomain
             return obj.GetHashCode();
         }
 
-        public IStateData GetStateData(IStateKey stateKey, bool readWrite)
+        void BeginEntityExclusivity()
         {
-            return GetStateData((StateEntityKey)stateKey, readWrite);
+            ExclusiveEntityTransaction = EntityManager.BeginExclusiveEntityTransaction();
+        }
+
+        void EndEntityExclusivity()
+        {
+            EntityManager.EndExclusiveEntityTransaction();
+
+            foreach (var ecb in m_EntityCommandBuffers)
+            {
+                if (ecb.IsCreated)
+                    ecb.Dispose();
+            }
+            m_EntityCommandBuffers.Clear();
+        }
+    }
+
+    struct DestroyStatesJobScheduler : IDestroyStatesScheduler<StateEntityKey, StateData, StateDataContext, StateManager>
+    {
+        public StateManager StateManager { private get; set; }
+        public NativeQueue<StateEntityKey> StatesToDestroy { private get; set; }
+
+        public JobHandle Schedule(JobHandle inputDeps)
+        {
+            var entityManager = StateManager.EntityManager;
+            inputDeps = JobHandle.CombineDependencies(inputDeps, entityManager.ExclusiveEntityTransactionDependency);
+
+            var stateDataContext = StateManager.GetStateDataContext();
+            var ecb = StateManager.GetEntityCommandBuffer();
+            stateDataContext.EntityCommandBuffer = ecb.ToConcurrent();
+            var destroyStatesJobHandle = new DestroyStatesJob<StateEntityKey, StateData, StateDataContext>()
+            {
+                StateDataContext = stateDataContext,
+                StatesToDestroy = StatesToDestroy
+            }.Schedule(inputDeps);
+
+            var playbackECBJobHandle = new PlaybackSingleECBJob()
+            {
+                ExclusiveEntityTransaction = StateManager.ExclusiveEntityTransaction,
+                EntityCommandBuffer = ecb
+            }.Schedule(destroyStatesJobHandle);
+
+            entityManager.ExclusiveEntityTransactionDependency = playbackECBJobHandle;
+            return playbackECBJobHandle;
         }
     }
 }

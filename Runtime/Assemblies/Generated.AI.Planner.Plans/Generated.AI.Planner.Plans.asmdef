@@ -1,0 +1,31 @@
+{
+    "name": "Generated.AI.Planner.Plans",
+    "references": [
+        "Unity.AI.Planner",
+        "Unity.Entities",
+        "Unity.Jobs",
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Mathematics",
+        "Generated.AI.Planner.StateRepresentation",
+        "AI.Planner.Custom",
+        "Unity.FullDotNet"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "PLANNER_STATE_REPRESENTATION_GENERATED"
+    ],
+    "versionDefines": [
+        {
+            "name": "generated.ai.planner.staterepresentation",
+            "expression": "0.0",
+            "define": "PLANNER_STATE_REPRESENTATION_GENERATED"
+        }
+    ],
+    "noEngineReferences": false
+}

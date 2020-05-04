@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {
@@ -7,6 +8,7 @@ namespace UnityEditor.AI.Planner.Visualizer
         int MaxDepth { get; set; }
         int MaxChildrenNodes { get; set; }
         IVisualizerNode RootNodeOverride { get; set; }
+        IList<object> ForcedExpandedNodes { get; }
 
         void Refresh();
     }

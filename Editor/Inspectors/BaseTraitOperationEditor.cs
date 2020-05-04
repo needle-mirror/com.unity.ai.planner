@@ -12,13 +12,7 @@ namespace UnityEditor.AI.Planner.Editors
     abstract class BaseTraitOperationEditor : SaveableInspector
     {
         const string k_DefaultParameter = "parameter";
-
-        static readonly string[] s_ReservedParameterNames = { };
-        static readonly string[] s_DefaultOperators = { "=" };
-        static readonly string[] s_NumberOperators = { "=", "+=", "-=" };
-        protected static readonly string[] s_RewardOperators = { "+=", "-=", "*="};
-        static readonly string[] s_DefaultComparison = { "==", "!=" };
-        static readonly string[] s_NumberComparison = { "==", "!=", "<", ">", "<=", ">=" };
+        static readonly string[] k_ReservedParameterNames = { };
 
         string m_FocusedControl;
 
@@ -57,7 +51,7 @@ namespace UnityEditor.AI.Planner.Editors
             return new List<string>();
         }
 
-        protected void RenameOperandParameterName(SerializedProperty property, string oldName, string newName, string operandName)
+        protected static void RenameOperandParameterName(SerializedProperty property, string oldName, string newName, string operandName)
         {
             var operand = property.FindPropertyRelative(operandName);
             var parameterValue = operand.FindPropertyRelative("m_Parameter");
@@ -68,60 +62,13 @@ namespace UnityEditor.AI.Planner.Editors
             }
         }
 
-        protected void DrawParameterSelectorField(Rect rect, SerializedProperty parameter, List<ParameterDefinition> parameters, Type expectedType = null)
+        protected Rect DrawNamedObjectElement(Rect rect, int index, SerializedProperty parameter, List<string> reservedNames, bool useProhibitedTraits = true)
         {
-            var content = new GUIContent(string.IsNullOrEmpty(parameter.stringValue) ? "..." : parameter.stringValue);
+            reservedNames.AddRange(k_ReservedParameterNames);
+            rect = DrawNamedObjectElement(rect, index, parameter.GetArrayElementAtIndex(index), reservedNames, parameter.name, useProhibitedTraits);
+            rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
 
-            if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
-            {
-                var popup = new ParameterSelectorPopup(parameter, parameters, expectedType);
-                PopupWindow.Show(rect, popup);
-            }
-        }
-
-        protected void DrawOperandSelectorField(Rect rect, SerializedProperty operand, List<ParameterDefinition> parameters, bool allowParameter, bool allowTrait, Action<SerializedProperty> onExpectedTypeChanged)
-        {
-            var content = TraitUtility.GetOperandDisplayContent(operand, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
-
-            if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
-            {
-                var popup = new OperandSelectorPopup(operand, parameters, allowParameter, allowTrait, onExpectedTypeChanged);
-                PopupWindow.Show(rect, popup);
-            }
-        }
-
-        protected void DrawOperandSelectorField(Rect rect, SerializedProperty operand, List<ParameterDefinition> parameters, Action<SerializedProperty> onExpectedTypeChanged)
-        {
-            DrawOperandSelectorField(rect, operand, parameters, null, default, onExpectedTypeChanged);
-        }
-
-        protected void DrawOperandSelectorField(Rect rect, SerializedProperty operand, List<ParameterDefinition> parameters, Type expectedType = null, string expectedUnknownType = default, Action<SerializedProperty> onExpectedTypeChanged = null)
-        {
-            var content = TraitUtility.GetOperandDisplayContent(operand, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
-
-            if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
-            {
-                var allowParameterSelection = expectedType != null && (typeof(TraitBasedObjectId).IsAssignableFrom(expectedType) || typeof(ITraitBasedObjectData).IsAssignableFrom(expectedType));
-                var allowTraitSelection = !allowParameterSelection && expectedType != null && typeof(ITrait).IsAssignableFrom(expectedType);
-
-                var popup = new OperandSelectorPopup(operand, parameters, allowParameterSelection, allowTraitSelection, onExpectedTypeChanged, expectedType, expectedUnknownType);
-                PopupWindow.Show(rect, popup);
-            }
-        }
-
-        protected void DrawNamedObjectElement(Rect rect, int index, SerializedProperty parameter, List<string> reservedNames, bool useProhibitedTraits = true)
-        {
-            reservedNames.AddRange(s_ReservedParameterNames);
-            var rectElement = DrawNamedObjectElement(rect, index, parameter.GetArrayElementAtIndex(index), reservedNames, parameter.name, useProhibitedTraits);
-
-            if (index < parameter.arraySize - 1)
-            {
-                rectElement.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing + 1;
-                rectElement.height = 1;
-                rectElement.width -= 2;
-
-                EditorGUI.DrawRect(rectElement, new Color(0.2f,0.2f,0.2f));
-            }
+            return rect;
         }
 
         Rect DrawNamedObjectElement(Rect rect, int index, SerializedProperty namedObject, List<string> reservedNames, string propertyName, bool useProhibitedTraits = true)
@@ -193,59 +140,6 @@ namespace UnityEditor.AI.Planner.Editors
             }
 
             return rectElement;
-        }
-
-        protected string[] GetComparisonOperators(SerializedProperty operand)
-        {
-            return IsNumberOperand(operand)?s_NumberComparison:s_DefaultComparison;
-        }
-
-        protected string[] GetAssignationOperators(SerializedProperty operand)
-        {
-            return IsNumberOperand(operand)?s_NumberOperators:s_DefaultOperators;
-        }
-
-        static bool IsNumberOperand(SerializedProperty operand)
-        {
-            var trait = operand.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition;
-            if (trait == null)
-                return false;
-
-            var fieldId = operand.FindPropertyRelative("m_TraitFieldId").intValue;
-
-            var field = trait.GetField(fieldId);
-            if (field != null)
-            {
-                var propertyType = field.FieldType;
-                if (propertyType != null && propertyType.IsPrimitive)
-                {
-                    switch (Type.GetTypeCode(propertyType))
-                    {
-                        case TypeCode.Int32:
-                        case TypeCode.Int64:
-                        case TypeCode.UInt32:
-                        case TypeCode.UInt64:
-                        case TypeCode.Single:
-                        case TypeCode.Double:
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        protected static void ClearOperandProperty(SerializedProperty operand)
-        {
-            operand.FindPropertyRelative("m_Parameter").stringValue = string.Empty;
-            operand.FindPropertyRelative("m_Trait").objectReferenceValue = null;
-            operand.FindPropertyRelative("m_TraitFieldId").intValue = 0;
-            operand.FindPropertyRelative("m_Enum").objectReferenceValue =  null;
-            operand.FindPropertyRelative("m_Value").stringValue = string.Empty;
-
-            operand.serializedObject.ApplyModifiedProperties();
         }
 
         protected virtual void OnUniqueNameChanged(string oldName, string newName)

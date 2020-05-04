@@ -21,7 +21,7 @@ namespace UnityEditor.AI.Planner.Editors
 
         void OnEnable()
         {
-            DomainAssetDatabase.Refresh();
+            PlannerAssetDatabase.Refresh();
             CacheQueryTypes();
             InitializeReorderableLists();
         }
@@ -39,7 +39,8 @@ namespace UnityEditor.AI.Planner.Editors
                 elementHeightCallback = SetQueryFilterHeight,
                 onAddDropdownCallback = ShowQueryFilterMenu,
                 drawElementBackgroundCallback = DrawElementBackground,
-                drawNoneElementCallback = DrawNoElement
+                drawNoneElementCallback = DrawNoElement,
+                onReorderCallback = ReorderQueryList,
             };
         }
 
@@ -50,7 +51,7 @@ namespace UnityEditor.AI.Planner.Editors
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("+", EditorStyles.miniButtonMid, GUILayout.Width(22)))
             {
-                var newPlan = DomainAssetDatabase.CreateNewPlannerAsset<PlanDefinition>("Plan");
+                var newPlan = PlannerAssetDatabase.CreateNewPlannerAsset<PlanDefinition>("Plan");
                 definition.objectReferenceValue = newPlan;
             }
             EditorGUILayout.PropertyField(definition, GUIContent.none);
@@ -74,9 +75,7 @@ namespace UnityEditor.AI.Planner.Editors
                 return;
             }
 
-            var displayAdvancedSettings = serializedObject.FindProperty("m_DisplayAdvancedSettings");
-
-            definition.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.settings, definition.isExpanded, displayAdvancedSettings.boolValue, value => displayAdvancedSettings.boolValue = value);
+            definition.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.settings, definition.isExpanded, AIPlannerPreferences.displayControllerAdvancedSettings, value => AIPlannerPreferences.displayControllerAdvancedSettings = value);
             if (definition.isExpanded)
             {
                 EditorGUI.BeginChangeCheck();
@@ -90,7 +89,7 @@ namespace UnityEditor.AI.Planner.Editors
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("m_AutoUpdate"));
                 serializedObject.ApplyModifiedProperties();
 
-                if (displayAdvancedSettings.boolValue)
+                if (AIPlannerPreferences.displayControllerAdvancedSettings)
                 {
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SearchSettings"));
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_ExecutionSettings"));
@@ -109,14 +108,20 @@ namespace UnityEditor.AI.Planner.Editors
                     var plan = definition.objectReferenceValue as PlanDefinition;
                     if (plan != null && plan.ActionDefinitions != null)
                     {
-                        int i = 0;
+                        // Remove actionInfo for actions not present in the plan
+                        for (int i = actionMappingArray.arraySize - 1; i >= 0; i--)
+                        {
+                            var actionInfoProperty = actionMappingArray.GetArrayElementAtIndex(i);
+                            var actionName = actionInfoProperty.FindPropertyRelative("m_ActionName").stringValue;
+
+                            if (plan.ActionDefinitions.FirstOrDefault(a => a.Name == actionName) == default)
+                                actionMappingArray.DeleteArrayElementAtIndex(i);
+                        }
+
                         foreach (var actionDefinition in plan.ActionDefinitions)
                         {
                             if (actionDefinition == null)
                                 continue;
-
-                            if (i > 0)
-                                EditorGUILayout.Space();
 
                             EditorGUILayout.BeginVertical("Box");
                             EditorGUILayout.LabelField(actionDefinition.Name, EditorStyleHelper.namedObjectLabel);
@@ -142,7 +147,19 @@ namespace UnityEditor.AI.Planner.Editors
                             }
                             else
                             {
+                                EditorGUI.BeginChangeCheck();
                                 sourceGameObjectProperty.objectReferenceValue = EditorGUILayout.ObjectField(EditorStyleHelper.onActionStart, sourceGameObjectProperty.objectReferenceValue, typeof(GameObject), true);
+
+                                if (EditorGUI.EndChangeCheck())
+                                {
+                                    if (sourceGameObjectProperty.objectReferenceValue == null)
+                                    {
+                                        // Reset serialized data, when source object reference is removed
+                                        actionMappingProperty.FindPropertyRelative("m_Source").objectReferenceValue = null;
+                                        actionMappingProperty.FindPropertyRelative("m_Method").stringValue = String.Empty;
+                                        actionMappingProperty.FindPropertyRelative("m_Arguments").ClearArray();
+                                    }
+                                }
 
                                 var sourceGameObject = sourceGameObjectProperty.objectReferenceValue as GameObject;
                                 if (sourceGameObject)
@@ -159,20 +176,23 @@ namespace UnityEditor.AI.Planner.Editors
                                             .SelectMany(c => c.GetType()
                                             .GetMethods(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public)
                                             .Where(m => !m.IsSpecialName)
-                                            .Select(m => ((Component)c, m))).ToArray();
+                                            .Select(m => ((Component)c, m))).Prepend((default, default)).ToArray();;
+                                        var methodsName = methods.Select(m => m.Item1 == default?"-":$"{m.Item1.GetType().Name}/{m.Item2.Name}");
 
                                         var methodProperty = actionMappingProperty.FindPropertyRelative("m_Method");
+                                        var arguments = actionMappingProperty.FindPropertyRelative("m_Arguments");
                                         var methodName = methodProperty.stringValue;
 
-                                        int selectIndex = Array.FindIndex(methods, m => m.Item1 == component && m.Item2.Name == methodName);
+                                        int selectIndex = Array.FindIndex(methods, m => m.Item1 == component && m.Item2?.Name == methodName);
                                         EditorGUI.BeginChangeCheck();
-                                        selectIndex = EditorGUILayout.Popup("Method", selectIndex, methods.Select(m => $"{m.Item1.GetType().Name}/{m.Item2.Name}").ToArray());
+                                        selectIndex = EditorGUILayout.Popup("Method", Math.Max(0, selectIndex), methodsName.ToArray());
 
                                         if (EditorGUI.EndChangeCheck())
                                         {
                                             var method = methods[selectIndex];
                                             sourceProperty.objectReferenceValue = method.Item1;
-                                            methodProperty.stringValue = method.Item2.Name;
+                                            methodProperty.stringValue = method.Item2?.Name;
+                                            arguments.ClearArray();
                                         }
 
                                         if (selectIndex >= 0)
@@ -184,7 +204,6 @@ namespace UnityEditor.AI.Planner.Editors
                                             {
                                                 const int operatorSize = 50;
 
-                                                var arguments = actionMappingProperty.FindPropertyRelative("m_Arguments");
                                                 var parameters = selectedMethod.GetParameters();
                                                 if (arguments.arraySize != parameters.Length)
                                                 {
@@ -212,13 +231,14 @@ namespace UnityEditor.AI.Planner.Editors
 
                                     EditorGUILayout.Space();
 
-                                    var actionCompleteProperty = actionMappingProperty.FindPropertyRelative("m_OnActionComplete");
+                                    var actionCompleteProperty = actionMappingProperty.FindPropertyRelative("m_PlanExecutorStateUpdateMode");
                                     EditorGUILayout.PropertyField(actionCompleteProperty, EditorStyleHelper.stateUpdate);
                                 }
                             }
 
                             EditorGUILayout.EndVertical();
-                            i++;
+
+                            EditorGUILayout.Space();
                         }
                     }
                 }
@@ -236,14 +256,23 @@ namespace UnityEditor.AI.Planner.Editors
                 var objectQuery = SerializedPropertyExtensions.GetValue<TraitBasedObjectQuery>(queryProperty);
 
                 var targetGameObject = (target as Component)?.gameObject;
-                var validTraitComponents = FindObjectsOfType<TraitComponent>().Where(objectData =>
+                var validTraitComponents = FindObjectsOfType<TraitComponent>().ToList();
+
+                for (int i = validTraitComponents.Count - 1; i >= 0; i--)
                 {
-                    objectData.Initialize();
-                    return objectQuery.IsValid(targetGameObject, objectData);
-                });
-                if (validTraitComponents.Any())
+                    // Make sure that the parent object is set on the trait component (used in FromGameObjectQuery)
+                    if (!EditorApplication.isPlaying)
+                        validTraitComponents[i].Initialize();
+
+                    if (!objectQuery.IsValid(targetGameObject, validTraitComponents[i]))
+                    {
+                        validTraitComponents.RemoveAt(i);
+                    }
+                }
+
+                if (validTraitComponents.Count > 0)
                 {
-                    bool showScrollView = validTraitComponents.Count() > previewObjectHeight / 22;
+                    bool showScrollView = validTraitComponents.Count > previewObjectHeight / 22;
                     if (showScrollView)
                         m_PreviewScrollviewPosition = EditorGUILayout.BeginScrollView(m_PreviewScrollviewPosition, false, false, GUILayout.Height(previewObjectHeight));
 
@@ -262,52 +291,14 @@ namespace UnityEditor.AI.Planner.Editors
                     EditorGUILayout.LabelField("None", EditorStyleHelper.italicGrayLabel);
                     EditorGUILayout.EndVertical();
                 }
-
-                EditorGUILayout.Space();
-                EditorGUILayout.LabelField(EditorStyleHelper.localObjects, EditorStyles.boldLabel);
-
-                var localObjectsProperty = serializedObject.FindProperty("m_LocalObjectData");
-                DrawTraitObjectList(localObjectsProperty, false);
             }
 
             serializedObject.ApplyModifiedProperties();
         }
 
-        void DrawTraitObjectList(SerializedProperty objectDataProperty, bool readOnly)
-        {
-            int index = 0;
-            objectDataProperty.ForEachArrayElement(traitBasedObjectData =>
-            {
-                DrawTraitObjectData(traitBasedObjectData, readOnly, index++, true);
-            });
-
-            if (!readOnly)
-            {
-                if (GUILayout.Button("Add object"))
-                {
-                    var newObject = objectDataProperty.InsertArrayElement();
-                    newObject.isExpanded = true;
-
-                    var newNameProperty = newObject.FindPropertyRelative("m_Name");
-                    newNameProperty.stringValue = "New Object";
-                    var newTaitDataProperty = newObject.FindPropertyRelative("m_TraitData");
-                    newTaitDataProperty.ClearArray();
-                }
-
-                if (Event.current.type == EventType.Repaint)
-                {
-                    if (m_DeleteItemRequest != -1)
-                    {
-                        objectDataProperty.DeleteArrayElementAtIndex(m_DeleteItemRequest);
-                        m_DeleteItemRequest = -1;
-                    }
-                }
-            }
-        }
-
         void DrawOperandSelectorField(Rect rect, SerializedProperty operand, List<ParameterDefinition> parameters, Type expectedType)
         {
-            var content = TraitUtility.GetOperandDisplayContent(operand, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
+            var content = TraitGUIUtility.GetOperandDisplayContent(operand, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
 
             if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
             {
@@ -462,19 +453,26 @@ namespace UnityEditor.AI.Planner.Editors
             return EditorGUIUtility.singleLineHeight * 1 + EditorGUIUtility.standardVerticalSpacing * 3;
         }
 
+        void ReorderQueryList(ReorderableList list)
+        {
+            var queryProperty = serializedObject.FindProperty("m_WorldObjectQuery");
+            var objectQuery = SerializedPropertyExtensions.GetValue<TraitBasedObjectQuery>(queryProperty);
+
+            foreach (var filter in objectQuery.Filters)
+            {
+                filter.ResetCache();
+            }
+        }
+
         void CacheQueryTypes()
         {
             m_QueryTypes = new Dictionary<string, Type>();
-            try
+            var queryTypes =  TypeCache.GetTypesDerivedFrom(typeof(BaseQueryFilter)).Where(t => !t.IsGenericType);
+
+            foreach (var t in queryTypes)
             {
-                var types = typeof(BaseQueryFilter).Assembly.GetTypes();
-                foreach (var t in types)
-                {
-                    if (t.IsClass && !t.IsAbstract && t.FullName != null && t.IsSubclassOf(typeof(BaseQueryFilter)))
-                        m_QueryTypes.Add(t.FullName, t);
-                }
+                  m_QueryTypes.Add(t.FullName, t);
             }
-            catch (ReflectionTypeLoadException) {}
         }
     }
 }

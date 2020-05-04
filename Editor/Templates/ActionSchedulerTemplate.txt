@@ -1,17 +1,14 @@
 using System;
-using System.Collections.Generic;
-using AI.Planner.Domains;
 using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
-{{- for actionNamespace in action_namespaces }}
-using {{ domain_namespace }}.{{ actionNamespace }};
-{{- end}}
+using {{ state_representation_qualifier }};
+using {{ state_representation_qualifier }}.{{ plan_name }};
 
-namespace {{ domain_namespace }}
+namespace {{ namespace }}
 {
     public struct ActionScheduler :
         ITraitBasedActionScheduler<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey>

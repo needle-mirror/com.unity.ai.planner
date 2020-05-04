@@ -19,7 +19,8 @@ MonoImporter:
   - m_TemplateAction: {fileID: 4900000, guid: be856d9a6578ead449421bf757269fd6, type: 3}
   - m_TemplateActionScheduler: {fileID: 4900000, guid: 5ba0b0a94e5371d468e82f478b480d3a,
       type: 3}
-  - m_TemplateDomain: {fileID: 4900000, guid: c4a40c415c32a464ea4174e5cacfef02, type: 3}
+  - m_TemplateStateRepresentation: {fileID: 4900000, guid: fe8dccd7274874ba0bbb2b7cdfba578d,
+      type: 3}
   - m_TemplateEnum: {fileID: 4900000, guid: b32b099a77c32674280102548f8c0dc4, type: 3}
   - m_TemplateTermination: {fileID: 4900000, guid: 9dff2e41acf2e1949b87e4013ebfbf28,
       type: 3}
@@ -27,10 +28,7 @@ MonoImporter:
   - m_TemplatePlanExecutor: {fileID: 4900000, guid: c0815597e284fbc4faa054f4b8273a9a,
       type: 3}
   - m_TemplatePackage: {fileID: 4900000, guid: ee17fffe131ff934b8e256d955fbeaba, type: 3}
-  - m_TemplateDomainsAsmDef: {fileID: 4900000, guid: 3355d92bb3263da42991d7d8f3a4e514,
-      type: 3}
-  - m_TemplateActionsAsmDef: {fileID: 4900000, guid: 90aff38792df6ce43b020363899dadbf,
-      type: 3}
+  - m_TemplateAsmRef: {fileID: 4900000, guid: 9e4892309f31f449a86295325205c63b, type: 3}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

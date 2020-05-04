@@ -18,10 +18,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 
         public object ParentObject => m_GameObject;
 
-        public IEnumerable<ITraitData> TraitData
-        {
-            get => m_TraitData;
-        }
+        public IList<TraitData> TraitData => m_TraitData;
 
 #pragma warning disable 0649
         [SerializeField]
@@ -31,26 +28,32 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         List<TraitData> m_TraitData = new List<TraitData>();
 #pragma warning restore 0649
 
-        Dictionary<Type, ITraitData> m_TraitDataByType = new Dictionary<Type, ITraitData>();
+        Dictionary<Type, TraitData> m_TraitDataByType = new Dictionary<Type, TraitData>();
         GameObject m_GameObject;
 
         internal void Initialize(GameObject gameObject)
         {
             m_GameObject = gameObject;
 
+#if UNITY_EDITOR
+            // Cached trait data is only used during play mode
+            if (!Application.isPlaying)
+                return;
+#endif
             m_TraitDataByType.Clear();
             foreach (var traitObjectData in m_TraitData)
             {
                 if (traitObjectData == null || traitObjectData.TraitDefinition == null)
                     continue;
 
-                var traitType = TypeResolver.GetType(traitObjectData.TraitDefinition.FullyQualifiedName);
-                if (traitType != null)
-                {
-                    traitObjectData.InitializeFieldValues();
-                    m_TraitDataByType.Add(traitType, traitObjectData);
-                }
+                InitializeTraitData(traitObjectData);
             }
+        }
+
+        public void AddTraitData(TraitData data)
+        {
+            m_TraitData.Add(data);
+            InitializeTraitData(data);
         }
 
         public ITraitData GetTraitData<TTrait>() where TTrait : ITrait
@@ -61,6 +64,30 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 #endif
             m_TraitDataByType.TryGetValue(typeof(TTrait), out var objectData);
             return objectData;
+        }
+
+        public void RemoveTraitData<TTrait>() where TTrait : ITrait
+        {
+            m_TraitData.RemoveAll(t => t.TraitDefinitionName == typeof(TTrait).Name);
+            m_TraitDataByType.Remove(typeof(TTrait));
+        }
+
+        public bool HasTraitData<TTrait>() where TTrait : ITrait
+        {
+            return m_TraitDataByType.ContainsKey(typeof(TTrait));
+        }
+
+        void InitializeTraitData(TraitData data)
+        {
+            if (TypeResolver.TryGetType(data.TraitDefinition.FullyQualifiedName, out var traitType))
+            {
+                data.InitializeFieldValues();
+                m_TraitDataByType.Add(traitType, data);
+            }
+            else
+            {
+                Debug.LogWarning($"Trait type not found: {data.TraitDefinition.FullyQualifiedName}");
+            }
         }
 
 #if UNITY_EDITOR

@@ -5,12 +5,13 @@ using Unity.Jobs;
 using Unity.AI.Planner;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.Burst;
-using AI.Planner.Domains;
+using {{ state_representation_qualifier }};
+using {{ state_representation_qualifier }}.{{ plan_name }};
 {{- if include_enums }}
-using {{ domain_namespace }}.Enums;
+using {{ state_representation_qualifier }}.Enums;
 {{- end }}
 
-namespace {{ action_namespace }}.{{ plan_name }}
+namespace {{ namespace }}
 {
     [BurstCompile]
     struct {{ action_name }} : IJobParallelForDefer
@@ -20,6 +21,12 @@ namespace {{ action_namespace }}.{{ plan_name }}
         const int k_{{ p.name }}Index = {{ for.index }};
         {{- end }}
         const int k_MaxArguments = {{ parameter_list.size }};
+
+        public static readonly string[] parameterNames = {
+        {{- for p in parameter_list }}
+            "{{ p.name }}",
+        {{- end }}
+        };
 
         [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
         StateDataContext m_StateDataContext;
@@ -51,7 +58,13 @@ namespace {{ action_namespace }}.{{ plan_name }}
             {{- for p in parameter_list }}
             var {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
             stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, {{ p.name }}Filter);
+            {{ if p.limit_comparer }}
+            var {{ p.name }}Comparer = new global::{{ p.limit_comparer.type }}() {StateData = stateData};
+            {{ if p.limit_comparer.reference_index < 0 }}
+            {{ p.name }}ObjectIndices.Sort({{ p.name }}Comparer);
             {{- end }}
+            {{- end }}
+            {{- end -}}
 
             {{- for p in precondition_traits }}
             var {{ p }}Buffer = stateData.{{ p }}Buffer;
@@ -59,15 +72,26 @@ namespace {{ action_namespace }}.{{ plan_name }}
 
             {{- for p in parameter_list }}
             {{ param_index = for.index }}
+            {{ if p.limit_count >  0}}
+            var valid{{ p.name }}Count = 0;
+            {{- end}}
+
             for (int i{{ param_index }} = 0; i{{ param_index }} < {{ p.name }}ObjectIndices.Length; i{{ param_index }}++)
             {
                 var {{ p.name }}Index = {{ p.name }}ObjectIndices[i{{ param_index }}];
                 var {{ p.name }}Object = stateData.TraitBasedObjects[{{ p.name }}Index];
 
-                {{- for p in precondition_list }}
-                {{ if param_index == p.loop_index }}
-                if (!({{ p.operand_a }} {{ p.operator }} {{ p.operand_b }}))
+                {{- for c in precondition_list }}
+                {{ if param_index == c.loop_index }}
+                if (!({{ c.operand_a }} {{ c.operator }} {{ c.operand_b }}))
                     continue;
+                {{- end }}
+                {{- end }}
+
+                {{- for cp in parameter_list }}
+                {{ if cp.limit_comparer && cp.limit_comparer.reference_index == param_index }}
+                {{ cp.name }}Comparer.ReferenceTrait = {{ cp.limit_comparer.trait }}Buffer[{{ p.name }}Object.{{ cp.limit_comparer.trait }}Index];
+                {{ cp.name }}ObjectIndices.Sort({{ cp.name }}Comparer);
                 {{- end }}
                 {{- end }}
             {{- end }}
@@ -81,13 +105,18 @@ namespace {{ action_namespace }}.{{ plan_name }}
 
 
                 {{- for customMethod in custom_preconditions }}
-                  if (!new {{ customMethod }}().CheckCustomPrecondition(stateData, actionKey))
+                  if (!new global::{{ customMethod }}().CheckCustomPrecondition(stateData, actionKey))
                     continue;
                 {{~ end ~}}
 
                 argumentPermutations.Add(actionKey);
 
-            {{- for p in parameter_list }}
+            {{- for p in parameter_list reversed }}
+            {{ if p.limit_count >  0}}
+            valid{{ p.name }}Count++;
+            if (valid{{ p.name }}Count >= {{ p.limit_count }})
+                break;
+            {{- end }}
             }
             {{- end }}
 
@@ -118,10 +147,13 @@ namespace {{ action_namespace }}.{{ plan_name }}
             {{- for c in created_objects }}
             TraitBasedObject new{{ c.name }}Object;
             TraitBasedObjectId new{{ c.name}}ObjectId;
-            using (var {{ c.name}}Types =  new NativeArray<ComponentType>({{ c.required_traits | array.size }}, Allocator.Temp) { {{- for r in c.required_traits -}} [{{for.index}}] = typeof({{r}}), {{ end }}})
+
+            var {{ c.name}}Types = new NativeArray<ComponentType>({{ c.required_traits | array.size }}, Allocator.Temp) { {{- for r in c.required_traits -}} [{{for.index}}] = ComponentType.ReadWrite<{{r}}>(), {{ end }}};
             {
                 newState.AddObject({{ c.name }}Types, out new{{ c.name }}Object, out new{{ c.name}}ObjectId);
             }
+            {{ c.name}}Types.Dispose();
+
             {{- end }}
 
             {{- for modifier in object_modifiers }}
@@ -162,7 +194,7 @@ namespace {{ action_namespace }}.{{ plan_name }}
                     {{- $args = $args + ", " }}
                 {{- end }}
                 {{- end }}
-                reward {{ r.operator }} new {{ r.typename }}().RewardModifier( {{ $args }});
+                reward {{ r.operator }} new global::{{ r.typename }}().RewardModifier( {{ $args }});
             }
             {{- end }}
 
@@ -171,7 +203,7 @@ namespace {{ action_namespace }}.{{ plan_name }}
 
         public void Execute(int jobIndex)
         {
-            m_StateDataContext.JobIndex = jobIndex; //todo check that all actions set the job index
+            m_StateDataContext.JobIndex = jobIndex;
 
             var stateEntityKey = m_StatesToExpand[jobIndex];
             var stateData = m_StateDataContext.GetStateData(stateEntityKey);

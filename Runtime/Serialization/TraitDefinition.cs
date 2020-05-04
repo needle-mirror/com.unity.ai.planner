@@ -7,41 +7,44 @@ using UnityEngine;
 
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
+    /// <summary>
+    /// Definition of a trait that can be used to specify the quality of an object
+    /// </summary>
     [Serializable]
     [HelpURL(Help.BaseURL + "/manual/DomainDefinition.html")]
     [CreateAssetMenu(fileName = "New Trait", menuName = "AI/Trait/Trait Definition")]
-    class TraitDefinition : ScriptableObject
+    public class TraitDefinition : ScriptableObject
     {
         const int k_DefaultUniqueId = 100;
 
-        public string Name
+        internal string Name
         {
             get
             {
-                if (m_CachedName == null)
+                if (string.IsNullOrEmpty(m_CachedName))
                 {
                     m_CachedName = name;
                     m_CachedResolvedName = TypeResolver.ToTypeNameCase(m_CachedName);
                     return m_CachedResolvedName;
                 }
 
-                if (name.Equals(m_CachedName))
-                    return m_CachedResolvedName ?? (m_CachedResolvedName = TypeResolver.ToTypeNameCase(name));
-
-                m_CachedName = name;
-                m_CachedResolvedName = TypeResolver.ToTypeNameCase(m_CachedName);
-                return m_CachedResolvedName;
+                return string.IsNullOrEmpty(m_CachedResolvedName) ?
+                    m_CachedResolvedName = TypeResolver.ToTypeNameCase(name)
+                    : m_CachedResolvedName;
             }
         }
 
         string m_CachedName;
         string m_CachedResolvedName;
 
+        /// <summary>
+        /// Fully qualified name of the trait type
+        /// </summary>
         public string FullyQualifiedName => string.IsNullOrEmpty(m_Namespace)
-            ? $"{TypeResolver.DomainsNamespace}.{Name}"
+            ? $"{TypeResolver.StateRepresentationQualifier}.{Name}"
             : $"{m_Namespace}.{Name}";
 
-        public IEnumerable<TraitDefinitionField> Fields
+        internal List<TraitDefinitionField> Fields
         {
             get => m_Fields;
             set => m_Fields = value.ToList();
@@ -58,17 +61,21 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         [SerializeField]
         int m_NextFieldUniqueId = k_DefaultUniqueId;
 
+        /// <summary>
+        /// Returns the name of the trait definition
+        /// </summary>
+        /// <returns>A string that represents the trait definition</returns>
         public override string ToString()
         {
             return Name;
         }
 
-        public TraitDefinitionField GetField(int fieldId)
+        internal TraitDefinitionField GetField(int fieldId)
         {
             return Fields.FirstOrDefault(f => f.UniqueId == fieldId);
         }
 
-        public string GetFieldName(int fieldId)
+        internal string GetFieldName(int fieldId)
         {
             return Fields.FirstOrDefault(f => f.UniqueId == fieldId)?.Name;
         }

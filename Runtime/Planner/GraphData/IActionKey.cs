@@ -3,7 +3,7 @@
     /// <summary>
     /// An interface that marks an implementation of an action key to access a specific instance of an action
     /// </summary>
-    internal interface IActionKey
+    public interface IActionKey
     {
     }
 }

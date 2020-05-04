@@ -89,9 +89,9 @@ namespace KeyDomain
             keyObjects.Dispose();
         }
 
-        NativeArray<(StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey)> ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
+        NativeArray<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>> ApplyEffects(ActionKey action, StateEntityKey originalStateEntityKey)
         {
-            var results = new NativeArray<(StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey)>(3, Allocator.Temp);
+            var results = new NativeArray<StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>>(3, Allocator.Temp);
 
             results[0] = CreateResultingState(originalStateEntityKey, action, ColorValue.Black, 0.4f, 1f, false);
             results[1] = CreateResultingState(originalStateEntityKey, action, ColorValue.White, 0.4f, 1f, false);
@@ -100,7 +100,7 @@ namespace KeyDomain
             return results;
         }
 
-        (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) CreateResultingState(StateEntityKey originalStateEntityKey, ActionKey action,
+        StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> CreateResultingState(StateEntityKey originalStateEntityKey, ActionKey action,
             ColorValue roomColor, float probability, float reward, bool endRoom)
         {
             var originalState = m_StateDataContext.GetStateData(originalStateEntityKey);
@@ -142,7 +142,7 @@ namespace KeyDomain
             var StateTransitionInfo = new StateTransitionInfo { Probability = probability, TransitionUtilityValue = reward };
             var resultingStateKey = m_StateDataContext.GetStateDataKey(newState);
 
-            return (originalStateEntityKey, action, StateTransitionInfo, resultingStateKey);
+            return new StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo>(originalStateEntityKey, action, resultingStateKey, StateTransitionInfo);
         }
 
         public void Execute(int jobIndex)
@@ -177,7 +177,7 @@ namespace KeyDomain
 
         public struct FixupReference : IBufferElementData
         {
-            public (StateEntityKey, ActionKey, StateTransitionInfo, StateEntityKey) TransitionInfo;
+            public StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> TransitionInfo;
         }
     }
 }

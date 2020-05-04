@@ -12,15 +12,24 @@ namespace UnityEditor.AI.Planner.Editors
         void OnEnable()
         {
             m_EnumList = new NoHeaderReorderableList(serializedObject, serializedObject.FindProperty("m_Values"), DrawEnumListElement, 1);
-            DomainAssetDatabase.Refresh();
+            PlannerAssetDatabase.Refresh();
         }
 
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
 
-            GUILayout.Label(EditorStyleHelper.values, EditorStyles.boldLabel);
-            m_EnumList.DoLayoutList();
+            EditorGUILayout.Space();
+
+            m_EnumList.serializedProperty.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.values,  m_EnumList.serializedProperty.isExpanded);
+            if (m_EnumList.serializedProperty.isExpanded)
+            {
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingTop);
+
+                m_EnumList.DoLayoutList();
+
+                GUILayout.Space(EditorStyleHelper.subHeaderPaddingBottom);
+            }
 
             serializedObject.ApplyModifiedProperties();
 

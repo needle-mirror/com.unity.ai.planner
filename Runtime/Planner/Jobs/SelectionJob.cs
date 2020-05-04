@@ -6,9 +6,19 @@ using Unity.Mathematics;
 
 namespace Unity.AI.Planner.Jobs
 {
-    enum SelectionJobMode
+    /// <summary>
+    /// Modes designating the strategy for selecting state nodes to expand in the plan.
+    /// </summary>
+    public enum SelectionJobMode
     {
+        /// <summary>
+        /// All budgeted state nodes will be selected in a job by a single worker.
+        /// </summary>
         Sequential,
+
+        /// <summary>
+        /// Budgeted state nodes will be selected in a parallel job by multiple workers.
+        /// </summary>
         Parallel
     }
 
@@ -289,7 +299,7 @@ namespace Unity.AI.Planner.Jobs
             SelectionInputBudgets.Add(Budget);
 
             // Resize container to avoid full hash map
-            int size = math.min(Budget, StateInfoLookup.Length);
+            int size = math.min(Budget, StateInfoLookup.Count());
             OutputStateBudgets.Capacity = math.max(OutputStateBudgets.Capacity, size);
             SelectedUnexpandedStates.Capacity = math.max(SelectedUnexpandedStates.Capacity, size);
             AllSelectedStates.Capacity = math.max(AllSelectedStates.Capacity, size);
@@ -477,7 +487,7 @@ namespace Unity.AI.Planner.Jobs
         {
             OutputStates.Clear();
             OutputBudgets.Clear();
-            if (InputStateBudgets.Length == 0)
+            if (InputStateBudgets.Count() == 0)
                 return;
 
             var stateKeys = InputStateBudgets.GetKeyArray(Allocator.Temp);

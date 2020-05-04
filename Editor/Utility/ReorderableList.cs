@@ -501,8 +501,8 @@ namespace UnityEditor.AI.Planner.Editors
             if (list.displayRemove)
                 x -= 25f;
             rect = new Rect(x, rect.y, xMax - x, rect.height);
-            Rect rect1 = new Rect(x + 4f, rect.y - 3f, 25f, 13f);
-            Rect position = new Rect(xMax - 29f, rect.y - 3f, 25f, 13f);
+            Rect rect1 = new Rect(x + 4f, rect.y, 25f, 13f);
+            Rect position = new Rect(xMax - 29f, rect.y, 25f, 13f);
             if (Event.current.type == EventType.Repaint)
                 s_Defaults.footerBackground.Draw(rect, false, false, false, false);
             if (list.displayAdd)

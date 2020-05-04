@@ -4,7 +4,7 @@ using System.Text;
 namespace Unity.AI.Planner.DomainLanguage.TraitBased
 {
     /// <summary>
-    /// A concrete action key for trait-based domains
+    /// A concrete action key for trait-based state representation
     /// </summary>
     public struct ActionKey : IEquatable<ActionKey>, IActionKeyWithGuid
     {
@@ -242,10 +242,11 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <returns>A string that represents the ActionKey</returns>
         public override string ToString()
         {
-            var sb = new StringBuilder();
-            sb.Append(ActionGuid.ToString());
+            var sb = new StringBuilder("ActionKey(");
+            sb.Append($"{ActionGuid.ToString()},");
             for (int i = 0; i < Length; i++)
-                sb.Append($" {this[i]}");
+                sb.Append($" {this[i]},");
+            sb.Append(")");
             return sb.ToString();
         }
     }

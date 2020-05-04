@@ -2,8 +2,10 @@ using Unity.AI.Planner;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.AI.Planner.DomainLanguage.TraitBased;
+using {{ state_representation_qualifier }};
+using {{ state_representation_qualifier }}.{{ plan_name }};
 {{- if include_enums }}
-using {{ namespace }}.Enums;
+using {{ state_representation_qualifier }}.Enums;
 {{- end }}
 
 namespace {{ namespace }}
@@ -15,9 +17,6 @@ namespace {{ namespace }}
             {{- for p in parameter_list }}
             var {{ p.name }}Filter = new NativeArray<ComponentType>({{p.required_traits.size + p.prohibited_traits.size}}, Allocator.Temp){ {{- for r in p.required_traits -}} [{{ for.index }}] = ComponentType.ReadWrite<{{ r }}>(),{{ end }}
                                                             {{- for e in p.prohibited_traits }} [{{ for.index + p.required_traits.size }}] = ComponentType.Exclude<{{ e }}>(),{{ end }}  };
-            {{- end }}
-
-            {{- for p in parameter_list }}
             var {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
             stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, {{ p.name }}Filter);
             {{- end }}
@@ -26,22 +25,34 @@ namespace {{ namespace }}
             var {{ c }}Buffer = stateData.{{ c }}Buffer;
             {{- end }}
 
-            {{- for p in parameter_list }}
-            {{ param_index = for.index }}
+            {{- for p in parameter_list
+                param_index = for.index
+
+                if (criteria_list | array.size > 0) || (custom_criteria | array.size > 0)
+            }}
             for (int i{{ param_index }} = 0; i{{ param_index }} < {{ p.name }}ObjectIndices.Length; i{{ param_index }}++)
             {
                 var {{ p.name }}Index = {{ p.name }}ObjectIndices[i{{ param_index }}];
                 var {{ p.name }}Object = stateData.TraitBasedObjects[{{ p.name }}Index];
-
+            {{ else }}
+            if ({{ p.name }}ObjectIndices.Length > 0)
+            {
+            {{ end }}
                 {{- for c in criteria_list }}
                 {{ if param_index == c.loop_index }}
                 if (!({{ c.operand_a }} {{ c.operator }} {{ c.operand_b }}))
                     continue;
                 {{- end }}
                 {{- end }}
+
+                {{- for customMethod in custom_criteria }}
+                    if (!new global::{{ customMethod }}().CheckCustomPrecondition(stateData))
+                        continue;
+                {{~ end ~}}
             {{- end }}
 
                 {{- for p in parameter_list }}
+                {{ p.name }}ObjectIndices.Dispose();
                 {{ p.name }}Filter.Dispose();
                 {{- end }}
                 return true;
@@ -51,8 +62,6 @@ namespace {{ namespace }}
 
             {{- for p in parameter_list }}
             {{ p.name }}ObjectIndices.Dispose();
-            {{- end }}
-            {{- for p in parameter_list }}
             {{ p.name }}Filter.Dispose();
             {{- end }}
 
@@ -65,20 +74,7 @@ namespace {{ namespace }}
 
             {{- for r in custom_rewards }}
             {
-                {{- if r.parameters.empty? }}
-                {{- $args = "originalState, action, newState" }}
-                {{- else }}
-                {{- $args = "" }}
-                {{- end }}
-
-                {{- for p in r.parameters }}
-                var param{{for.index}} = originalState.GetTraitOnObjectAtIndex<{{ p.type }}>(action[{{ p.index }}]);
-                {{- $args = $args + "param" + for.index }}
-                {{- if for.index != for.length - 1 }}
-                    {{- $args = $args + ", " }}
-                {{- end }}
-                {{- end }}
-                reward {{ r.operator }} new {{ r.typename }}().RewardModifier( {{ $args }});
+                reward {{ r.operator }} new global::{{ r.typename }}().RewardModifier(stateData);
             }
             {{- end }}
 

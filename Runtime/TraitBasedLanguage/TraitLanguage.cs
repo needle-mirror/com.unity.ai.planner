@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 
@@ -11,7 +12,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
     struct State : IComponentData { }
 
     /// <summary>
-    /// A unique identifier assigned to each domain object within a state
+    /// A unique identifier assigned to each trait-based object within a state
     /// </summary>
     public struct ObjectId : IEquatable<ObjectId>
     {
@@ -21,20 +22,20 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         public int Value;
 
         /// <summary>
-        /// The reserved ObjectId value specifying a reference to no domain object
+        /// The reserved ObjectId value specifying a reference to no trait-based object
         /// </summary>
         public static readonly ObjectId None = new ObjectId { Value = 0 };
 
-        static int s_ObjectIds = 1; // 0 is the same as default (uninitialized)
+        static readonly SharedStatic<int> k_ObjectIds = SharedStatic<int>.GetOrCreate<ObjectId>();
 
         /// <summary>
-        /// Provides a new domain object with an unassigned Id
+        /// Provides a new trait-based object with an unassigned Id
         /// </summary>
         /// <returns>Returns a new, unassigned Id</returns>
         public static ObjectId GetNext()
         {
-            Interlocked.Increment(ref s_ObjectIds);
-            return new ObjectId { Value = s_ObjectIds };
+            Interlocked.Increment(ref k_ObjectIds.Data);
+            return new ObjectId { Value = k_ObjectIds.Data };
         }
 
         /// <summary>
@@ -80,17 +81,17 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         /// <returns>A string that represents the ObjectId</returns>
         public override string ToString()
         {
-            return Equals(None) ? "None" : $"<< {Value} >>";
+            return Equals(None) ? "None" : $"{Value}";
         }
     }
 
     /// <summary>
-    /// The trait denoting that an entity represents a domain object
+    /// The trait denoting that an entity represents a trait-based object
     /// </summary>
     public struct TraitBasedObjectId : ITrait, IEquatable<TraitBasedObjectId>
     {
         /// <summary>
-        /// Default TraitBasedObjectId representing no Domain Object
+        /// Default TraitBasedObjectId representing no Object
         /// </summary>
         public static readonly TraitBasedObjectId None = new TraitBasedObjectId { Id = ObjectId.None };
 
@@ -195,9 +196,9 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
         public override string ToString()
         {
 #if DEBUG
-            return $"Domain Object: {Name} ({Id})";
+            return $"{Name} ({Id})";
 #else
-            return $"Domain Object: {Id}";
+            return $"Object ({Id})";
 #endif
         }
     }

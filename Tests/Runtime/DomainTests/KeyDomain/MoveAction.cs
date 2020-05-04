@@ -110,7 +110,7 @@ namespace KeyDomain
             var transitionInfo = new NativeArray<FixupReference>(argumentPermutations.Length, Allocator.Temp);
             for (var i = 0; i < argumentPermutations.Length; i++)
             {
-                transitionInfo[i] = new FixupReference { StateTransitionInfoPair = ApplyEffects(argumentPermutations[i], stateEntityKey) };
+                transitionInfo[i] = new FixupReference { TransitionInfo = ApplyEffects(argumentPermutations[i], stateEntityKey) };
             }
 
             // fixups
@@ -124,7 +124,7 @@ namespace KeyDomain
 
         public struct FixupReference : IBufferElementData
         {
-            public StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> StateTransitionInfoPair;
+            public StateTransitionInfoPair<StateEntityKey, ActionKey, StateTransitionInfo> TransitionInfo;
         }
     }
 }

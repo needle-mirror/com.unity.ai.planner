@@ -28,13 +28,13 @@ namespace UnityEditor.AI.Planner.Editors
                 GUILayout.BeginHorizontal();
                 GUILayout.Space(position.x + EditorStyleHelper.IndentPosition);
 
-                if (GUILayout.Button(new GUIContent("   " + traitDefinitionProperty.objectReferenceValue.name), EditorStyleHelper.requiredTraitLabel))
+                if (GUILayout.Button(new GUIContent($"   {traitDefinitionProperty.objectReferenceValue.name}"), EditorStyleHelper.requiredTraitLabel))
                 {
                     property.isExpanded = !property.isExpanded;
                 }
                 GUILayout.EndHorizontal();
                 var foldRect = GUILayoutUtility.GetLastRect();
-                foldRect.x += 12f;
+                foldRect.x += 15f;
 
                 if (traitDefinition.Fields.Any())
                     EditorGUI.Foldout(foldRect, property.isExpanded, string.Empty, true);

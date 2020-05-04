@@ -20,7 +20,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             m_TraitBasedObjects = new List<ITraitBasedObjectData>();
         }
 
-        internal IEnumerable<ITraitBasedObjectData> GetTraitBasedObjects(GameObject controllerObject, TraitBasedObjectQuery objectQuery = null)
+        internal List<ITraitBasedObjectData> GetTraitBasedObjects(GameObject controllerObject, TraitBasedObjectQuery objectQuery = null)
         {
             if (objectQuery == null)
             {

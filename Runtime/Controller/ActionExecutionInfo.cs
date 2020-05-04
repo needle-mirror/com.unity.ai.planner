@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using Unity.AI.Planner.Controller;
 using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using UnityEngine.Serialization;
 
 namespace UnityEngine.AI.Planner.Controller
 {
@@ -15,7 +16,7 @@ namespace UnityEngine.AI.Planner.Controller
         string m_ActionName;
 
         [SerializeField]
-        ActionComplete m_OnActionComplete;
+        PlanExecutorStateUpdateMode m_PlanExecutorStateUpdateMode;
 
         [SerializeField]
         string m_Method;
@@ -34,7 +35,7 @@ namespace UnityEngine.AI.Planner.Controller
 
         MethodInfo m_methodInfo;
 
-        public ActionComplete OnActionComplete => m_OnActionComplete;
+        public PlanExecutorStateUpdateMode PlanExecutorStateUpdateMode => m_PlanExecutorStateUpdateMode;
 
         MethodInfo MethodInfo
         {
@@ -50,7 +51,7 @@ namespace UnityEngine.AI.Planner.Controller
             }
         }
 
-        internal bool IsValidForAction(string actionName)
+        public bool IsValidForAction(string actionName)
         {
             return actionName == m_ActionName;
         }

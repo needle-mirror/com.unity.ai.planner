@@ -7,7 +7,7 @@ using UnityEngine;
 namespace UnityEditor.AI.Planner.Editors
 {
     // We're not actually creating a property drawer for FieldValue, but this is used to draw a FieldValue
-    class FieldValueDrawer
+    static class FieldValueDrawer
     {
         public static SerializedProperty GetSerializedProperty(SerializedProperty property, Type fieldType, bool allowObject = false)
         {

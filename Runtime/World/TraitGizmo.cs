@@ -1,20 +1,33 @@
-using System;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
 #if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEditor;
+using Unity.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
 {
+    class TraitGizmoMethod
+    {
+        internal Action<GameObject, ITraitData, bool> drawMethod;
+
+        public void Invoke(GameObject gameObject, ITraitData traitData, bool isSelected)
+        {
+            drawMethod?.Invoke(gameObject, traitData, isSelected);
+        }
+    }
+
     static class TraitGizmos
     {
-        static Dictionary<string, Type> s_DrawGizmoType = new Dictionary<string, Type>();
+        const string k_GizmoMethodName = "DrawGizmos";
 
-        public static bool HasCustomGizmoType(string traitName)
+        static Dictionary<string, TraitGizmoMethod> s_DrawGizmoMethods = new Dictionary<string, TraitGizmoMethod>();
+
+        internal static TraitGizmoMethod GetGizmoMethod(string traitName)
         {
-            if (s_DrawGizmoType.ContainsKey(traitName))
+            if (s_DrawGizmoMethods.ContainsKey(traitName))
             {
-                return true;
+                return s_DrawGizmoMethods[traitName];
             }
 
             var types = TypeCache.GetTypesWithAttribute<TraitGizmoAttribute>();
@@ -25,28 +38,26 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 {
                     if (gizmo.m_TraitType.Name == traitName)
                     {
-                        s_DrawGizmoType.Add(traitName, type);
-                        return true;
+                        MethodInfo info = type.GetMethod(k_GizmoMethodName);
+                        if (info == null)
+                        {
+                            Debug.LogError($"Fail to find {k_GizmoMethodName} method in type {type.Name}.");
+                            continue;
+                        }
+
+                        var gizmoInstance = Activator.CreateInstance(type);
+                        var delegateMethod = (Action<GameObject, ITraitData, bool>)Delegate.CreateDelegate(typeof(Action<GameObject, ITraitData, bool>), gizmoInstance, info);
+
+                        var gizmoMethod = new TraitGizmoMethod { drawMethod = delegateMethod };
+
+                        s_DrawGizmoMethods.Add(traitName, new TraitGizmoMethod { drawMethod = delegateMethod });
+                        return gizmoMethod;
                     }
                 }
             }
 
-            return false;
-        }
-
-        public static void DrawGizmo(string traitName, GameObject gameObject, ITraitData traitData, bool isSelected)
-        {
-            if (s_DrawGizmoType.TryGetValue(traitName, out Type gizmoType))
-            {
-                System.Reflection.MethodInfo info = gizmoType.GetMethod("DrawGizmos");
-                if (info == null)
-                {
-                    Debug.LogError("Fail to find - draw method");
-                }
-
-                var o = Activator.CreateInstance(gizmoType);
-                info.Invoke(o, new object[]{ gameObject, traitData, isSelected} );
-            }
+            s_DrawGizmoMethods.Add(traitName, null);
+            return null;
         }
     }
 }

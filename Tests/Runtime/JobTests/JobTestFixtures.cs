@@ -173,17 +173,44 @@ namespace Unity.AI.Planner.Tests
         }
     }
 
-    struct DefaultHeuristic : IHeuristic<int>
+    struct DefaultHeuristic<TStateData> : IHeuristic<TStateData>
+        where TStateData: struct
     {
-        public BoundedValue Evaluate(int stateData) => default;
+        public BoundedValue Evaluate(TStateData stateData) => default;
     }
 
-    struct DefaultTerminalStateEvaluator : ITerminationEvaluator<int>
+    struct DefaultTerminalStateEvaluator<TStateData> : ITerminationEvaluator<TStateData>
+        where TStateData : struct
     {
-        public bool IsTerminal(int stateData, out float terminalReward)
+        public bool IsTerminal(TStateData stateData, out float terminalReward)
         {
             terminalReward = 0f;
             return false;
+        }
+    }
+
+    struct TestManualOverrideHeuristic<TStateData> : IHeuristic<TStateData>
+        where TStateData: struct
+    {
+#pragma warning disable 649
+        public BoundedValue HeuristicReturnValue;
+#pragma warning restore 649
+
+        public BoundedValue Evaluate(TStateData stateData) => HeuristicReturnValue;
+    }
+
+    struct TestManualOverrideTerminationEvaluator<TStateData> : ITerminationEvaluator<TStateData>
+        where TStateData : struct
+    {
+#pragma warning disable 649
+        public bool TerminationReturnValue;
+        public float TerminalRewardValue;
+#pragma warning restore 649
+
+        public bool IsTerminal(TStateData stateData, out float terminalReward)
+        {
+            terminalReward = TerminalRewardValue;
+            return TerminationReturnValue;
         }
     }
 }

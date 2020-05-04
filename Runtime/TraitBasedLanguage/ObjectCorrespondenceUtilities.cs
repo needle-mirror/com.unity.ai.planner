@@ -115,7 +115,7 @@ namespace Unity.AI.Planner.DomainLanguage.TraitBased
 
         public NativeHashMap<ObjectId, ObjectId> GetCorrespondence(Allocator allocator)
         {
-            var copy = new NativeHashMap<ObjectId, ObjectId>(m_Matches.Length, allocator);
+            var copy = new NativeHashMap<ObjectId, ObjectId>(m_Matches.Count(), allocator);
 
             using(var keys = m_Matches.GetKeyArray(Allocator.TempJob))
             using(var values = m_Matches.GetValueArray(Allocator.TempJob))

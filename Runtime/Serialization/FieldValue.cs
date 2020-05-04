@@ -77,6 +77,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 return BoolValue;
             if (fieldType == typeof(float))
                 return FloatValue;
+            if (fieldType == typeof(int))
+                return (int)IntValue;
             if (fieldType == typeof(long))
                 return IntValue;
             if (fieldType == typeof(string))
