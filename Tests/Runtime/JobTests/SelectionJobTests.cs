@@ -4,7 +4,7 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 
-using TestSearchContext = Unity.AI.Planner.SearchContext<int, int, Unity.AI.Planner.Tests.TestStateManager, int, Unity.AI.Planner.Tests.TestStateDataContext>;
+using TestPlanData = Unity.AI.Planner.PlanData<int, int, Unity.AI.Planner.Tests.TestStateManager, int, Unity.AI.Planner.Tests.TestStateDataContext>;
 
 namespace Unity.AI.Planner.Tests.Unit
 {
@@ -23,8 +23,8 @@ namespace Unity.AI.Planner.Tests.Unit
         const int actionOne = 1;
         const int actionTwo = 2;
 
-        PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> m_PolicyGraph;
-        PolicyGraphBuilder<int,int> m_Builder;
+        PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> m_PlanGraph;
+        PlanGraphBuilder<int,int> m_Builder;
         NativeList<int> m_SelectedUnexpandedStates;
         NativeMultiHashMap<int, int> m_SelectedStateHorizons;
         NativeHashMap<int, int> m_DepthMap;
@@ -38,10 +38,10 @@ namespace Unity.AI.Planner.Tests.Unit
         {
             if (!m_DepthMap.IsCreated)
             {
-                m_DepthMap = new NativeHashMap<int, int>(m_PolicyGraph.Size, Allocator.TempJob);
+                m_DepthMap = new NativeHashMap<int, int>(m_PlanGraph.Size, Allocator.TempJob);
                 using (var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.Temp))
                 {
-                    m_PolicyGraph.GetReachableDepthMap(rootState, m_DepthMap, queue);
+                    m_PlanGraph.GetReachableDepthMap(rootState, m_DepthMap, queue);
                 }
             }
 
@@ -60,14 +60,14 @@ namespace Unity.AI.Planner.Tests.Unit
         {
             var selectJob = new SelectionJob<int, int>()
             {
-                SearchBudget = 1,
+                StateExpansionBudget = 1,
                 RootStateKey = rootState,
                 StateDepthLookup = m_DepthMap,
-                StateInfoLookup = m_PolicyGraph.StateInfoLookup,
-                ActionLookup = m_PolicyGraph.ActionLookup,
-                ActionInfoLookup = m_PolicyGraph.ActionInfoLookup,
-                ResultingStateLookup = m_PolicyGraph.ResultingStateLookup,
-                StateTransitionInfoLookup = m_PolicyGraph.StateTransitionInfoLookup,
+                StateInfoLookup = m_PlanGraph.StateInfoLookup,
+                ActionLookup = m_PlanGraph.ActionLookup,
+                ActionInfoLookup = m_PlanGraph.ActionInfoLookup,
+                ResultingStateLookup = m_PlanGraph.ResultingStateLookup,
+                StateTransitionInfoLookup = m_PlanGraph.StateTransitionInfoLookup,
 
                 SelectedUnexpandedStates = m_SelectedUnexpandedStates,
                 AllSelectedStates = m_SelectedStateHorizons
@@ -99,11 +99,11 @@ namespace Unity.AI.Planner.Tests.Unit
                 jobHandle = new ParallelSelectionJob<int, int>()
                 {
                     StateDepthLookup = m_DepthMap,
-                    StateInfoLookup = m_PolicyGraph.StateInfoLookup,
-                    ActionInfoLookup = m_PolicyGraph.ActionInfoLookup,
-                    ActionLookup = m_PolicyGraph.ActionLookup,
-                    ResultingStateLookup = m_PolicyGraph.ResultingStateLookup,
-                    StateTransitionInfoLookup = m_PolicyGraph.StateTransitionInfoLookup,
+                    StateInfoLookup = m_PlanGraph.StateInfoLookup,
+                    ActionInfoLookup = m_PlanGraph.ActionInfoLookup,
+                    ActionLookup = m_PlanGraph.ActionLookup,
+                    ResultingStateLookup = m_PlanGraph.ResultingStateLookup,
+                    StateTransitionInfoLookup = m_PlanGraph.StateTransitionInfoLookup,
 
                     Horizon = iteration,
                     InputStates = inputStates.AsDeferredJobArray(),
@@ -142,8 +142,8 @@ namespace Unity.AI.Planner.Tests.Unit
         {
             m_SelectedUnexpandedStates = new NativeList<int>(1, Allocator.TempJob);
             m_SelectedStateHorizons = new NativeMultiHashMap<int, int>(1, Allocator.TempJob);
-            m_PolicyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(1, 1, 1);
-            m_Builder = new PolicyGraphBuilder<int, int> { PolicyGraph = m_PolicyGraph };
+            m_PlanGraph = new PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(1, 1, 1);
+            m_Builder = new PlanGraphBuilder<int, int> { planGraph = m_PlanGraph };
         }
 
         [TearDown]
@@ -151,7 +151,7 @@ namespace Unity.AI.Planner.Tests.Unit
         {
             m_SelectedUnexpandedStates.Dispose();
             m_SelectedStateHorizons.Dispose();
-            m_PolicyGraph.Dispose();
+            m_PlanGraph.Dispose();
 
             if (m_DepthMap.IsCreated)
                 m_DepthMap.Dispose();
@@ -173,7 +173,7 @@ namespace Unity.AI.Planner.Tests.Unit
                 +-----------------+
             */
             // Setup
-            // Add root state to policy graph
+            // Add root state to plan graph
             m_Builder.AddState(rootState);
 
             // Act
@@ -266,7 +266,7 @@ namespace Unity.AI.Planner.Tests.Unit
                 +---------------+
             */
             // Setup
-            var rootStateContext = m_Builder.AddState(rootState, complete: true);
+            var rootStateContext = m_Builder.AddState(rootState, subplanComplete: true);
             rootStateContext.AddAction(actionOne, complete: true).AddResultingState(stateOne, complete: true);
             rootStateContext.AddAction(actionTwo, complete: true).AddResultingState(stateTwo, complete: true);
 
@@ -426,7 +426,7 @@ namespace Unity.AI.Planner.Tests.Unit
         }
 
         [Test]
-        public void SelectsMaximalActionValue()
+        public void SelectsMaximalCumulativeReward()
         {
             /*
             DOT format: (Visual editor for convenience: http://magjac.com/graphviz-visual-editor/)
@@ -453,7 +453,7 @@ namespace Unity.AI.Planner.Tests.Unit
             // Setup
             var stateContext = m_Builder.AddState(rootState);
             stateContext.AddAction(actionOne).AddResultingState(stateOne);
-            stateContext.AddAction(actionTwo, actionValue: 1f).AddResultingState(stateTwo);
+            stateContext.AddAction(actionTwo, cumulativeReward: 1f).AddResultingState(stateTwo);
 
             // Act
             SelectStates();
@@ -499,8 +499,8 @@ namespace Unity.AI.Planner.Tests.Unit
             */
             // Setup
             var stateContext = m_Builder.AddState(rootState, visitCount: 100);
-            stateContext.AddAction(actionOne, actionValue: new BoundedValue(0, 0, 0)).AddResultingState(stateOne);
-            stateContext.AddAction(actionTwo, actionValue: new BoundedValue(0, 1, 2)).AddResultingState(stateTwo);
+            stateContext.AddAction(actionOne, cumulativeReward: new BoundedValue(0, 0, 0)).AddResultingState(stateOne);
+            stateContext.AddAction(actionTwo, cumulativeReward: new BoundedValue(0, 1, 2)).AddResultingState(stateTwo);
 
             // Act
             SelectStates();
@@ -525,7 +525,7 @@ namespace Unity.AI.Planner.Tests.Unit
 namespace Unity.AI.Planner.Tests.Performance
 {
     using System.Collections;
-    using Unity.PerformanceTesting;
+    using PerformanceTesting;
     using UnityEngine.TestTools;
 
     [Category("Performance")]
@@ -534,13 +534,12 @@ namespace Unity.AI.Planner.Tests.Performance
         [Performance, UnityTest]
         public IEnumerator TestPerformanceOnLargeTree()
         {
-            var policyGraph = PolicyGraphUtility.BuildTree(actionsPerState: 2, resultsPerAction: 1, depth: 10);
-            var searchContext = new TestSearchContext()
-            {
-                RootStateKey = 0,
-                PolicyGraph = policyGraph,
-                StateDepthLookup = policyGraph.GetExpandedDepthMap(0),
-            };
+            var planGraph = PlanGraphUtility.BuildTree(actionsPerState: 2, resultsPerAction: 1, depth: 10);
+
+            var nodeCount = planGraph.Size;
+            var depthMap = new NativeHashMap<int, int>(nodeCount, Allocator.TempJob);
+            var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.TempJob);
+            planGraph.GetExpandedDepthMap(0, depthMap, queue);
 
             var selectedUnexpandedStates = new NativeList<int>(1, Allocator.Persistent);
             var allExpandedStates = new NativeMultiHashMap<int, int>(1, Allocator.Persistent);
@@ -552,14 +551,14 @@ namespace Unity.AI.Planner.Tests.Performance
             {
                 var selectJob = new SelectionJob<int, int>()
                 {
-                    SearchBudget = 1,
-                    RootStateKey = searchContext.RootStateKey,
-                    StateDepthLookup = searchContext.StateDepthLookup,
-                    StateInfoLookup = policyGraph.StateInfoLookup,
-                    ActionLookup = policyGraph.ActionLookup,
-                    ActionInfoLookup = policyGraph.ActionInfoLookup,
-                    ResultingStateLookup = policyGraph.ResultingStateLookup,
-                    StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                    StateExpansionBudget = 1,
+                    RootStateKey = 0,
+                    StateDepthLookup = depthMap,
+                    StateInfoLookup = planGraph.StateInfoLookup,
+                    ActionLookup = planGraph.ActionLookup,
+                    ActionInfoLookup = planGraph.ActionInfoLookup,
+                    ResultingStateLookup = planGraph.ResultingStateLookup,
+                    StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                     SelectedUnexpandedStates = selectedUnexpandedStates,
                     AllSelectedStates = allExpandedStates
@@ -568,14 +567,17 @@ namespace Unity.AI.Planner.Tests.Performance
 
             }).WarmupCount(1).MeasurementCount(30).IterationsPerMeasurement(1).CleanUp(() =>
             {
-                searchContext.StateDepthLookup.Dispose();
-                searchContext.StateDepthLookup = policyGraph.GetExpandedDepthMap(0);
+                depthMap.Clear();
+                queue.Clear();
+                planGraph.GetExpandedDepthMap(0, depthMap, queue);
 
                 selectedUnexpandedStates.Clear();
                 allExpandedStates.Clear();
             }).Run();
 
-            searchContext.Dispose();
+            depthMap.Dispose();
+            queue.Dispose();
+            planGraph.Dispose();
             selectedUnexpandedStates.Dispose();
             allExpandedStates.Dispose();
 
@@ -586,13 +588,12 @@ namespace Unity.AI.Planner.Tests.Performance
         [Performance, UnityTest]
         public IEnumerator TestPerformanceOnLargeGraph()
         {
-            var policyGraph = PolicyGraphUtility.BuildLattice(10);
-            var searchContext = new TestSearchContext
-            {
-                RootStateKey = 0,
-                PolicyGraph = policyGraph,
-                StateDepthLookup = policyGraph.GetExpandedDepthMap(0),
-            };
+            var planGraph = PlanGraphUtility.BuildLattice(10);
+
+            var nodeCount = planGraph.Size;
+            var depthMap = new NativeHashMap<int, int>(nodeCount, Allocator.TempJob);
+            var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.TempJob);
+            planGraph.GetExpandedDepthMap(0, depthMap, queue);
 
             var selectedUnexpandedStates = new NativeList<int>(1, Allocator.Persistent);
             var allExpandedStates = new NativeMultiHashMap<int, int>(1, Allocator.Persistent);
@@ -604,14 +605,14 @@ namespace Unity.AI.Planner.Tests.Performance
             {
                 var selectJob = new SelectionJob<int, int>()
                 {
-                    SearchBudget = 1,
-                    RootStateKey = searchContext.RootStateKey,
-                    StateDepthLookup = searchContext.StateDepthLookup,
-                    StateInfoLookup = policyGraph.StateInfoLookup,
-                    ActionLookup = policyGraph.ActionLookup,
-                    ActionInfoLookup = policyGraph.ActionInfoLookup,
-                    ResultingStateLookup = policyGraph.ResultingStateLookup,
-                    StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                    StateExpansionBudget = 1,
+                    RootStateKey = 0,
+                    StateDepthLookup = depthMap,
+                    StateInfoLookup = planGraph.StateInfoLookup,
+                    ActionLookup = planGraph.ActionLookup,
+                    ActionInfoLookup = planGraph.ActionInfoLookup,
+                    ResultingStateLookup = planGraph.ResultingStateLookup,
+                    StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                     SelectedUnexpandedStates = selectedUnexpandedStates,
                     AllSelectedStates = allExpandedStates
@@ -620,14 +621,17 @@ namespace Unity.AI.Planner.Tests.Performance
 
             }).WarmupCount(1).MeasurementCount(30).IterationsPerMeasurement(1).CleanUp(() =>
             {
-                searchContext.StateDepthLookup.Dispose();
-                searchContext.StateDepthLookup = policyGraph.GetExpandedDepthMap(0);
+                depthMap.Clear();
+                queue.Clear();
+                planGraph.GetExpandedDepthMap(0, depthMap, queue);
 
                 selectedUnexpandedStates.Clear();
                 allExpandedStates.Clear();
             }).Run();
 
-            searchContext.Dispose();
+            queue.Dispose();
+            depthMap.Dispose();
+            planGraph.Dispose();
             selectedUnexpandedStates.Dispose();
             allExpandedStates.Dispose();
 
@@ -638,13 +642,12 @@ namespace Unity.AI.Planner.Tests.Performance
         [Performance, UnityTest]
         public IEnumerator TestPerformanceOnLargeGraphBudget10()
         {
-            var policyGraph = PolicyGraphUtility.BuildLattice(midLatticeDepth: 10);
-            var searchContext = new TestSearchContext()
-            {
-                RootStateKey = 0,
-                PolicyGraph = policyGraph,
-                StateDepthLookup = policyGraph.GetExpandedDepthMap(0),
-            };
+            var planGraph = PlanGraphUtility.BuildLattice(midLatticeDepth: 10);
+
+            var nodeCount = planGraph.Size;
+            var depthMap = new NativeHashMap<int, int>(nodeCount, Allocator.TempJob);
+            var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.TempJob);
+            planGraph.GetExpandedDepthMap(0, depthMap, queue);
 
             var selectedUnexpandedStates = new NativeList<int>(1, Allocator.Persistent);
             var allExpandedStates = new NativeMultiHashMap<int, int>(1, Allocator.Persistent);
@@ -656,14 +659,14 @@ namespace Unity.AI.Planner.Tests.Performance
             {
                 var selectJob = new SelectionJob<int, int>()
                 {
-                    SearchBudget = 10,
-                    RootStateKey = searchContext.RootStateKey,
-                    StateDepthLookup = searchContext.StateDepthLookup,
-                    StateInfoLookup = policyGraph.StateInfoLookup,
-                    ActionLookup = policyGraph.ActionLookup,
-                    ActionInfoLookup = policyGraph.ActionInfoLookup,
-                    ResultingStateLookup = policyGraph.ResultingStateLookup,
-                    StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                    StateExpansionBudget = 10,
+                    RootStateKey = 0,
+                    StateDepthLookup = depthMap,
+                    StateInfoLookup = planGraph.StateInfoLookup,
+                    ActionLookup = planGraph.ActionLookup,
+                    ActionInfoLookup = planGraph.ActionInfoLookup,
+                    ResultingStateLookup = planGraph.ResultingStateLookup,
+                    StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                     SelectedUnexpandedStates = selectedUnexpandedStates,
                     AllSelectedStates = allExpandedStates
@@ -672,14 +675,17 @@ namespace Unity.AI.Planner.Tests.Performance
 
             }).WarmupCount(1).MeasurementCount(1).IterationsPerMeasurement(1).CleanUp(() =>
             {
-                searchContext.StateDepthLookup.Dispose();
-                searchContext.StateDepthLookup = policyGraph.GetExpandedDepthMap(0);
+                depthMap.Clear();
+                queue.Clear();
+                planGraph.GetExpandedDepthMap(0, depthMap, queue);
 
                 selectedUnexpandedStates.Clear();
                 allExpandedStates.Clear();
             }).Run();
 
-            searchContext.Dispose();
+            queue.Dispose();
+            depthMap.Dispose();
+            planGraph.Dispose();
             selectedUnexpandedStates.Dispose();
             allExpandedStates.Dispose();
 
@@ -690,17 +696,15 @@ namespace Unity.AI.Planner.Tests.Performance
         [Performance, UnityTest]
         public IEnumerator TestPerformanceOnLargeGraphBudget10Parallel()
         {
-            var policyGraph = PolicyGraphUtility.BuildLattice(10);
-            var depthMap = policyGraph.GetReachableDepthMap(0);
-            var searchContext = new TestSearchContext()
-            {
-                RootStateKey = 0,
-                PolicyGraph = policyGraph,
-                StateDepthLookup = depthMap,
-            };
+            var planGraph = PlanGraphUtility.BuildLattice(10);
+
+            var nodeCount = planGraph.Size;
+            var depthMap = new NativeHashMap<int, int>(nodeCount, Allocator.TempJob);
+            var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.TempJob);
+            planGraph.GetExpandedDepthMap(0, depthMap, queue);
 
             int budget = 10;
-            int size = math.min(budget, depthMap.Length);
+            int size = math.min(budget, depthMap.Count());
             UnityEngine.Assertions.Assert.IsTrue(size > 0);
 
             var inputStates = new NativeList<int>(size, Allocator.TempJob);
@@ -731,12 +735,12 @@ namespace Unity.AI.Planner.Tests.Performance
                     // Selection job
                     lastHandle = new ParallelSelectionJob<int, int>
                     {
-                        StateDepthLookup = searchContext.StateDepthLookup,
-                        StateInfoLookup = policyGraph.StateInfoLookup,
-                        ActionInfoLookup = policyGraph.ActionInfoLookup,
-                        ActionLookup = policyGraph.ActionLookup,
-                        ResultingStateLookup = policyGraph.ResultingStateLookup,
-                        StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                        StateDepthLookup = depthMap,
+                        StateInfoLookup = planGraph.StateInfoLookup,
+                        ActionInfoLookup = planGraph.ActionInfoLookup,
+                        ActionLookup = planGraph.ActionLookup,
+                        ResultingStateLookup = planGraph.ResultingStateLookup,
+                        StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                         Horizon = iteration,
                         InputStates = inputStates.AsDeferredJobArray(),
@@ -772,8 +776,9 @@ namespace Unity.AI.Planner.Tests.Performance
                 m_SelectedUnexpandedStates.Clear();
             }).Run();
 
-
-            searchContext.Dispose();
+            queue.Dispose();
+            depthMap.Dispose();
+            planGraph.Dispose();
             inputStates.Dispose();
             inputBudgets.Dispose();
             outputStateBudgets.Dispose();

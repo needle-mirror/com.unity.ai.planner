@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Utility;
 
 namespace UnityEditor.AI.Planner.Utility
@@ -15,7 +15,7 @@ namespace UnityEditor.AI.Planner.Utility
         static Type[] s_ActionParameterComparerTypes;
         static Type[] s_ActionPreconditionTypes;
         static Type[] s_ActionRewardTypes;
-        static Type[] s_HeuristicTypes;
+        static Type[] s_CumulativeRewardEstimatorTypes;
         static Type[] s_TerminationRewardTypes;
         static Type[] s_TerminationPreconditionTypes;
 
@@ -25,7 +25,7 @@ namespace UnityEditor.AI.Planner.Utility
         public static Type[] ActionPreconditionTypes => s_ActionPreconditionTypes;
         public static Type[] ActionEffectTypes  => s_ActionEffectTypes;
         public static Type[] ActionParameterComparerTypes => s_ActionParameterComparerTypes;
-        public static Type[] HeuristicTypes  => s_HeuristicTypes;
+        public static Type[] CumulativeRewardEstimatorTypes  => s_CumulativeRewardEstimatorTypes;
 
         public static void Refresh()
         {
@@ -37,12 +37,13 @@ namespace UnityEditor.AI.Planner.Utility
             s_TerminationRewardTypes = GetCustomTypesDerivedFrom(typeof(ICustomTerminationReward<>));
             s_TerminationPreconditionTypes = GetCustomTypesDerivedFrom(typeof(ICustomTerminationPrecondition<>));
 
-            s_HeuristicTypes = GetCustomTypesDerivedFrom(typeof(ICustomHeuristic<>));
+            s_CumulativeRewardEstimatorTypes = GetCustomTypesDerivedFrom(typeof(ICustomCumulativeRewardEstimator<>));
         }
 
         static Type[] GetCustomTypesDerivedFrom(Type type)
         {
-            return TypeCache.GetTypesDerivedFrom(type).Where(t => !t.IsGenericType && t.Assembly.GetName().Name == TypeResolver.CustomAssemblyName).ToArray();
+            return TypeCache.GetTypesDerivedFrom(type).Where(t => !t.IsGenericType &&
+                t.Assembly.GetName().Name == TypeHelper.CustomAssemblyName).ToArray();
         }
 
         static Type[] GetCustomTypesDerivedFrom(Type[] types)

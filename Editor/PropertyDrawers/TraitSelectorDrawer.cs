@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using TraitDefinition = Unity.Semantic.Traits.TraitDefinition;
 
 namespace UnityEditor.AI.Planner.Editors
 {
@@ -128,7 +128,7 @@ namespace UnityEditor.AI.Planner.Editors
                 if (asset == null)
                     return;
 
-                var size = style.CalcSize(new GUIContent(asset.Name));
+                var size = style.CalcSize(new GUIContent(asset.name));
                 labelRect.width = size.x;
 
                 if (labelRect.xMax + altButtonStyle.normal.background.width > rect.xMax)
@@ -137,7 +137,7 @@ namespace UnityEditor.AI.Planner.Editors
                     return;
                 }
 
-                if (GUI.Button(labelRect, asset.Name, style))
+                if (GUI.Button(labelRect, asset.name, style))
                 {
                     PopupWindow.Show(labelRect, new TraitSelectorPopup(title, traits, invalidTraits));
                 }

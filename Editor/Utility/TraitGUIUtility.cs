@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
-using Unity.AI.Planner.Utility;
+using Unity.AI.Planner.Traits;
+using Unity.Semantic.Traits;
+using Unity.Entities;
+using Unity.DynamicStructs;
 using UnityEditor.AI.Planner.Editors;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using ITrait = Unity.AI.Planner.Traits.ITrait;
 
 namespace UnityEditor.AI.Planner.Utility
 {
@@ -13,42 +15,52 @@ namespace UnityEditor.AI.Planner.Utility
     {
         public static readonly string emptyTraitBasedObjectId = "TraitBasedObjectId.None";
 
-        internal static Type GetOperandValuePropertyType(SerializedProperty operand, ref string unknownType)
+        internal static Type GetOperandValuePropertyType(SerializedProperty operand, SerializedProperty @operator, ref string unknownType)
         {
             var trait = operand.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition;
             if (trait == null)
-            {
-                if (!string.IsNullOrEmpty(operand.FindPropertyRelative("m_Parameter").stringValue))
-                {
-                    return typeof(ITraitBasedObjectData);
-                }
-
                 return null;
-            }
 
-            var fieldId = operand.FindPropertyRelative("m_TraitFieldId").intValue;
-
-            var field = trait.GetField(fieldId);
+            var field = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
             if (field == null)
                 return null;
 
             // Enum from Planner asset may be not known ahead of time
-            if (field.Type.StartsWith(TypeResolver.TraitEnumsNamespace))
+            var propertyType = field.property_type;
+            if (propertyType.AssemblyQualifiedName.StartsWith(Unity.Semantic.Traits.Utility.TypeResolver.EnumsQualifier))
             {
-                unknownType = field.Type;
+                unknownType = propertyType.Name;
                 return typeof(Enum);
             }
 
-            return field.FieldType;
+            if (propertyType.IsGenericType && typeof(List<>).IsAssignableFrom(propertyType.GetGenericTypeDefinition()))
+            {
+                if (IsListComparisonOperator(@operator))
+                {
+                    var type = typeof(int);
+                    unknownType = type.Name;
+                    return type;
+                }
+
+                if (IsListAssignment(@operator))
+                    return propertyType;
+
+                var elementType = propertyType.GetGenericArguments()[0];
+                unknownType = elementType.Name;
+                return elementType;
+            }
+
+            return field.property_type;
         }
 
-        public static GUIContent GetOperandDisplayContent(SerializedProperty operand, IList<ParameterDefinition> parameters, float width, GUIStyle style)
+        public static GUIContent GetOperandDisplayContent(SerializedProperty operand, SerializedProperty @operator,
+            IList<ParameterDefinition> parameters, float width, GUIStyle style)
         {
             var normalColor = EditorGUIUtility.isProSkin ? "white" : "black";
             const string errorColor = "#EF2526";
 
             var parameterProperty = operand.FindPropertyRelative("m_Parameter").stringValue;
-            var traitProperty = operand.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition;
+            var traitDefinitionProperty = operand.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition;
             var enumProperty = operand.FindPropertyRelative("m_Enum").objectReferenceValue as EnumDefinition;
             var valueProperty = operand.FindPropertyRelative("m_Value").stringValue;
 
@@ -63,37 +75,38 @@ namespace UnityEditor.AI.Planner.Utility
                 operandString += EditorStyleHelper.RichText(parameterProperty, validParameter ? normalColor: errorColor, true);
             }
 
-            if (traitProperty != null)
+            if (traitDefinitionProperty != null)
             {
                 bool validTrait = true;
                 var parentParameter = parameters.FirstOrDefault(p => p.Name == parameterProperty);
                 if (parentParameter != null)
                 {
                     // Check if the selected Parameter contains this trait
-                    validTrait = parentParameter.RequiredTraits.Any(t => t == traitProperty);
+                    validTrait = parentParameter.RequiredTraits.Any(t => t == traitDefinitionProperty);
                 }
 
-                var traitName = traitProperty.Name;
+                var traitName = traitDefinitionProperty.name;
                 operandString = AppendOperand(operandString, EditorStyleHelper.RichText(traitName, validTrait ? normalColor : errorColor));
 
-                var traidFieldId = operand.FindPropertyRelative("m_TraitFieldId").intValue;
-                if (traidFieldId > 0)
-                {
-                    // Check if the value is a field of the selected Trait
-                    bool validTraitValue = traitProperty.Fields.Any(f => f.UniqueId == traidFieldId);
-                    var displayedTrait = validTraitValue?traitProperty.GetFieldName(traidFieldId):"undefined";
+                var traitProperty = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
+                // Check if the value is a field of the selected Trait
+                bool validTraitValue = traitProperty != null;
+                var displayedTrait = validTraitValue ? traitProperty.property_name : "undefined";
 
-                    operandString = AppendOperand(operandString, EditorStyleHelper.RichText(displayedTrait, validTraitValue ? normalColor : errorColor));
-                }
+                operandString = AppendOperand(operandString, EditorStyleHelper.RichText(displayedTrait, validTraitValue ? normalColor : errorColor));
+
+                if (IsListOperand(operand) && IsListComparisonOperator(@operator) && !IsListAssignment(@operator))
+                    operandString = AppendOperand(operandString, "Length");
             }
             else
             {
                 bool validValue = true;
                 if (enumProperty != null)
                 {
-                    operandString = EditorStyleHelper.RichText(enumProperty.Name, normalColor, true);
+                    operandString = EditorStyleHelper.RichText(enumProperty.name, normalColor, true);
 
-                    validValue = enumProperty.Values.Contains(valueProperty);
+                    validValue = enumProperty.properties.Any(p => p.property_type == typeof(string)
+                        && p.property_name == valueProperty);
                 }
 
                 if (!string.IsNullOrEmpty(valueProperty))
@@ -137,18 +150,82 @@ namespace UnityEditor.AI.Planner.Utility
             return string.IsNullOrEmpty(operand) ? value : $"{operand}.{value}";
         }
 
+        public static bool IsListOperand(SerializedProperty operand)
+        {
+            var trait = operand.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition;
+            if (trait == null)
+                return false;
+
+            var traitProperty = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
+
+            if (traitProperty != null)
+            {
+                var propertyType = traitProperty.property_type;
+                if (propertyType != null && propertyType.IsGenericType &&
+                    typeof(List<>).IsAssignableFrom(propertyType.GetGenericTypeDefinition()))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool IsListComparisonOperator(SerializedProperty @operator)
+        {
+            if (@operator == null)
+                return false;
+
+            switch (@operator.stringValue)
+            {
+                case "==":
+                case "!=":
+                case "<":
+                case ">":
+                case "<=":
+                case ">=":
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        public static bool IsListUnaryOperator(SerializedProperty @operator)
+        {
+            if (@operator == null)
+                return false;
+
+            switch (@operator.stringValue)
+            {
+                case "clear":
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
+        public static bool IsListAssignment(SerializedProperty @operator)
+        {
+            if (@operator == null)
+                return false;
+
+            return @operator.stringValue == "=";
+        }
+
+
         public static bool IsNumberOperand(SerializedProperty operand)
         {
             var trait = operand.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition;
             if (trait == null)
                 return false;
 
-            var fieldId = operand.FindPropertyRelative("m_TraitFieldId").intValue;
+            var traitProperty = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
 
-            var field = trait.GetField(fieldId);
-            if (field != null)
+            if (traitProperty != null)
             {
-                var propertyType = field.FieldType;
+                var propertyType = traitProperty.property_type;
                 if (propertyType != null && propertyType.IsPrimitive)
                 {
                     switch (Type.GetTypeCode(propertyType))
@@ -169,18 +246,22 @@ namespace UnityEditor.AI.Planner.Utility
             return false;
         }
 
-        public static void DrawOperandSelectorField(Rect rect, SerializedProperty operand, IList<ParameterDefinition> parameters, Action<SerializedProperty> onExpectedTypeChanged)
+        public static void DrawOperandSelectorField(Rect rect, SerializedProperty operand, SerializedProperty @operator,
+            IList<ParameterDefinition> parameters, Action<SerializedProperty> onExpectedTypeChanged)
         {
-            DrawOperandSelectorField(rect, operand, parameters, null, default, onExpectedTypeChanged);
+            DrawOperandSelectorField(rect, operand, @operator, parameters, null, default, onExpectedTypeChanged);
         }
 
-        public static void DrawOperandSelectorField(Rect rect, SerializedProperty operand, IList<ParameterDefinition> parameters, Type expectedType = null, string expectedUnknownType = default, Action<SerializedProperty> onExpectedTypeChanged = null)
+        public static void DrawOperandSelectorField(Rect rect, SerializedProperty operand, SerializedProperty @operator,
+            IList<ParameterDefinition> parameters, Type expectedType = null, string expectedUnknownType = default,
+            Action<SerializedProperty> onExpectedTypeChanged = null)
         {
-            var content = GetOperandDisplayContent(operand, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
+            var content = GetOperandDisplayContent(operand, @operator, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
 
             if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
             {
-                var allowParameterSelection = expectedType != null && (typeof(TraitBasedObjectId).IsAssignableFrom(expectedType) || typeof(ITraitBasedObjectData).IsAssignableFrom(expectedType));
+                var allowParameterSelection = expectedType != null &&
+                    (typeof(TraitBasedObjectId).IsAssignableFrom(expectedType) || expectedType == typeof(GameObject) || expectedType == typeof(Entity));
                 var allowTraitSelection = !allowParameterSelection && expectedType != null && typeof(ITrait).IsAssignableFrom(expectedType);
 
                 var popup = new OperandSelectorPopup(operand, parameters, allowParameterSelection, allowTraitSelection, onExpectedTypeChanged, expectedType, expectedUnknownType);
@@ -188,9 +269,10 @@ namespace UnityEditor.AI.Planner.Utility
             }
         }
 
-        public static void DrawOperandSelectorField(Rect rect, SerializedProperty operand, IList<ParameterDefinition> parameters, bool allowParameter, bool allowTrait, Action<SerializedProperty> onExpectedTypeChanged)
+        public static void DrawOperandSelectorField(Rect rect, SerializedProperty operand, SerializedProperty @operator,
+            IList<ParameterDefinition> parameters, bool allowParameter, bool allowTrait, Action<SerializedProperty> onExpectedTypeChanged)
         {
-            var content = GetOperandDisplayContent(operand, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
+            var content = GetOperandDisplayContent(operand, @operator, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
 
             if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
             {
@@ -214,7 +296,7 @@ namespace UnityEditor.AI.Planner.Utility
         {
             operand.FindPropertyRelative("m_Parameter").stringValue = string.Empty;
             operand.FindPropertyRelative("m_Trait").objectReferenceValue = null;
-            operand.FindPropertyRelative("m_TraitFieldId").intValue = 0;
+            operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue = null;
             operand.FindPropertyRelative("m_Enum").objectReferenceValue =  null;
             operand.FindPropertyRelative("m_Value").stringValue = string.Empty;
 

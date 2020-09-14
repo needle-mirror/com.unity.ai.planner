@@ -23,8 +23,8 @@ namespace Unity.AI.Planner.Tests.Integration
         [Test]
         public void TestTenIterations()
         {
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, DefaultHeuristic<int>, DefaultTerminalStateEvaluator<int>, DestroyIntsScheduler>();
-            scheduler.Initialize(new TestStateManager(), new DefaultHeuristic<int>(), new DefaultTerminalStateEvaluator<int>());
+            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, DefaultCumulativeRewardEstimator<int>, DefaultTerminalStateEvaluator<int>, DestroyIntsScheduler>();
+            scheduler.Initialize(new TestStateManager(), new DefaultCumulativeRewardEstimator<int>(), new DefaultTerminalStateEvaluator<int>());
             JobHandle currentJobHandle = default;
 
             for (int i = 0; i < 10; i++)
@@ -42,11 +42,11 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             const int k_RootState = 0;
             const int k_Goal = 100;
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToHeuristic, CountToTerminationEvaluator, DestroyIntsScheduler>();
-            scheduler.Initialize(new TestStateManager(), new CountToHeuristic { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
+            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToCumulativeRewardEstimator, CountToTerminationEvaluator, DestroyIntsScheduler>();
+            scheduler.Initialize(new TestStateManager(), new CountToCumulativeRewardEstimator { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
 
             bool complete = false;
-            var request = scheduler.RequestPlan(k_RootState).SearchUntil(requestCompleteCallback: (plan) => {complete = true;});
+            var request = scheduler.RequestPlan(k_RootState).PlanUntil(requestCompleteCallback: (plan) => {complete = true;});
             while (!complete)
             {
                 scheduler.Schedule(default).Complete();
@@ -65,8 +65,8 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             const int k_RootState = 0;
             const int k_Goal = 100;
-            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToHeuristic, CountToTerminationEvaluator, DestroyIntsScheduler>();
-            scheduler.Initialize(new TestStateManager(), new CountToHeuristic { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
+            var scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToCumulativeRewardEstimator, CountToTerminationEvaluator, DestroyIntsScheduler>();
+            scheduler.Initialize(new TestStateManager(), new CountToCumulativeRewardEstimator { Goal = k_Goal }, new CountToTerminationEvaluator { Goal = k_Goal });
             var request = scheduler.RequestPlan(k_RootState);
             for (int i = 0; i < 10; i++)
             {
@@ -76,8 +76,8 @@ namespace Unity.AI.Planner.Tests.Integration
             scheduler.UpdatePlanRequestRootState(1);
             scheduler.CurrentJobHandle.Complete();
 
-            var planRootState = scheduler.m_SearchContext.RootStateKey;
-            var zeroInPlan = scheduler.m_SearchContext.StateDepthLookup.ContainsKey(k_RootState);
+            var planRootState = scheduler.planData.RootStateKey;
+            var zeroInPlan = scheduler.planData.StateDepthLookup.ContainsKey(k_RootState);
             request.Dispose();
             scheduler.Dispose();
 
@@ -90,6 +90,8 @@ namespace Unity.AI.Planner.Tests.Integration
 #if ENABLE_PERFORMANCE_TESTS
 namespace Unity.AI.Planner.Tests.Performance
 {
+    using PerformanceTesting;
+
     [Category("Performance")]
     class PlannerSchedulerPerformanceTests
     {
@@ -98,20 +100,19 @@ namespace Unity.AI.Planner.Tests.Performance
         {
             const int kRootState = 0;
             const int kGoal = 42;
-            PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToHeuristic, CountToTerminationEvaluator> scheduler = null;
+            PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToCumulativeRewardEstimator, CountToTerminationEvaluator, CountToDestroyStatesScheduler> scheduler = default;
 
             Measure.Method(() =>
             {
-                scheduler.SearchContext.PolicyGraph.StateInfoLookup.TryGetValue(kRootState, out var rootInfo);
-                while (!rootInfo.SubgraphComplete)
+                var planRequest = scheduler.RequestPlan(kRootState);
+                while (planRequest.Status != PlanRequestStatus.Complete)
                 {
                     scheduler.Schedule(default).Complete();
-                    scheduler.SearchContext.PolicyGraph.StateInfoLookup.TryGetValue(kRootState, out rootInfo);
                 }
             }).SetUp(() =>
             {
-                scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToHeuristic, CountToTerminationEvaluator>
-                    (kRootState, new TestStateManager(), new CountToActionScheduler(), new CountToHeuristic { Goal = kGoal }, new CountToTerminationEvaluator { Goal = kGoal });
+                scheduler = new PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToCumulativeRewardEstimator, CountToTerminationEvaluator, CountToDestroyStatesScheduler>();
+                scheduler.Initialize(new TestStateManager(), new CountToCumulativeRewardEstimator { Goal = kGoal }, new CountToTerminationEvaluator { Goal = kGoal }, 1.0f);
             }).CleanUp(() =>
             {
                 scheduler.Dispose();

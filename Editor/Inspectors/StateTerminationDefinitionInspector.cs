@@ -1,10 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Editors
 {

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using GraphVisualizer;
 using Unity.AI.Planner;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Visualizer
 {

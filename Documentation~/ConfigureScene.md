@@ -21,10 +21,10 @@ After setting up GameObjects in the scene with traits you can add a `DecisionCon
 
 ![Image](images/DecisionController.png)
 
-In order to make and execute plans, a `DecisionController` requires a [PlanDefinition](PlanDefinition.md), which defines the planning problem to be solved. Once assigned, the `DecisionController` will display:
-* The assigned `PlanDefinition`
+In order to make and execute plans, a `DecisionController` requires a [ProblemDefinition](ProblemDefinition.md), which defines the planning problem to be solved. Once assigned, the `DecisionController` will display:
+* The assigned `ProblemDefinition`
 * Settings for initialization and automatic updating (see [DecisionController](xref:UnityEngine.AI.Planner.Controller.DecisionController))
-* Callback assignments for enacting the actions included in the `PlanDefinition`
+* Callback assignments for enacting the actions included in the `ProblemDefinition`
 * A world query for including trait-based objects in the planning state
 
 Advanced options for controlling the planner search and execution are also available by clicking the cog icon on the `DecisionController` (shown below). For tips on improving planner performance, see [Improving Performance](PlannerPerformanceTips.md).

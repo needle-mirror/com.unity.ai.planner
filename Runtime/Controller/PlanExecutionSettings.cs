@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace UnityEngine.AI.Planner
+namespace Unity.AI.Planner
 {
     /// <summary>
     /// Settings for control of the execution of plans.
@@ -24,8 +24,8 @@ namespace UnityEngine.AI.Planner
             WaitForMaximumDecisionTolerance,
             /// <summary>Execute an action only once the plan has grown to a minimum size.</summary>
             WaitForMinimumPlanSize,
-            /// <summary>Execute an action only once the search process has run for a minimum amount of time.</summary>
-            WaitForMinimumSearchTime
+            /// <summary>Execute an action only once the planning process has run for a minimum amount of time.</summary>
+            WaitForMinimumPlanningTime
         }
 
         /// <summary>
@@ -50,6 +50,6 @@ namespace UnityEngine.AI.Planner
         /// The minimum time spent iterating on the plan required to act.
         /// </summary>
         [Tooltip("The minimum time spent iterating on the plan required to act.")]
-        public float MinimumSearchTime = 0;
+        public float MinimumPlanningTime = 0;
     }
 }

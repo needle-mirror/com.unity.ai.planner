@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Linq;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using UnityEngine;
 
 namespace UnityEditor.AI.Planner.Editors

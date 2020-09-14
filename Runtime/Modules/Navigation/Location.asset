@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4733c0880a5a0ce4f94cc97cb9b0049b, type: 3}
   m_Name: Location
   m_EditorClassIdentifier: 
-  m_Namespace: Unity.AI.Planner.DomainLanguage.TraitBased
+  m_Namespace: 
   m_Fields:
   - m_UniqueId: 100
     m_Name: Transform
@@ -24,7 +24,7 @@ MonoBehaviour:
       m_IntValue: 0
       m_StringValue: 
       m_ObjectValue: {fileID: 0}
-    m_Restriction: 2
+    m_Restriction: 0
   - m_UniqueId: 101
     m_Name: Position
     m_Type: UnityEngine.Vector3
@@ -35,7 +35,7 @@ MonoBehaviour:
       m_IntValue: 0
       m_StringValue: 
       m_ObjectValue: {fileID: 0}
-    m_Restriction: 1
+    m_Restriction: 0
   - m_UniqueId: 102
     m_Name: Forward
     m_Type: UnityEngine.Vector3
@@ -46,5 +46,5 @@ MonoBehaviour:
       m_IntValue: 0
       m_StringValue: 
       m_ObjectValue: {fileID: 0}
-    m_Restriction: 1
+    m_Restriction: 0
   m_NextFieldUniqueId: 103

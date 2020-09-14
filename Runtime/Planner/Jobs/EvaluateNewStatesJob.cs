@@ -8,15 +8,15 @@ using UnityEngine;
 namespace Unity.AI.Planner.Jobs
 {
     [BurstCompile]
-    struct EvaluateNewStatesJob<TStateKey, TStateData, TStateDataContext, THeuristic, TTerminationEvaluator> : IJobParallelForDefer
+    struct EvaluateNewStatesJob<TStateKey, TStateData, TStateDataContext, TCumulativeRewardEstimator, TTerminationEvaluator> : IJobParallelForDefer
         where TStateKey : struct, IEquatable<TStateKey>
         where TStateData : struct
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
-        where THeuristic : struct, IHeuristic<TStateData>
+        where TCumulativeRewardEstimator : struct, ICumulativeRewardEstimator<TStateData>
         where TTerminationEvaluator : struct, ITerminationEvaluator<TStateData>
     {
         // Input
-        [ReadOnly] public THeuristic Heuristic;
+        [ReadOnly] public TCumulativeRewardEstimator CumulativeRewardEstimator;
         [ReadOnly] public TTerminationEvaluator TerminationEvaluator;
         [ReadOnly] public TStateDataContext StateDataContext;
         [ReadOnly] public NativeArray<TStateKey> States;
@@ -33,28 +33,28 @@ namespace Unity.AI.Planner.Jobs
             var terminal = TerminationEvaluator.IsTerminal(stateData, out var terminalReward);
             var value = terminal ?
                 new BoundedValue(terminalReward, terminalReward, terminalReward) :
-                Heuristic.Evaluate(stateData);
+                CumulativeRewardEstimator.Evaluate(stateData);
 
             if (!terminal)
             {
                 if (float.IsNaN(value.LowerBound) || float.IsNaN(value.Average) || float.IsNaN(value.UpperBound)
                 || float.IsInfinity(value.LowerBound) || float.IsInfinity(value.Average) || float.IsInfinity(value.UpperBound))
-                    throw new NotFiniteNumberException($"BoundedValue contains an invalid value; Please check heuristic rules for {typeof(THeuristic)}");
+                    throw new NotFiniteNumberException($"BoundedValue contains an invalid value; Please check reward estimation rules for {typeof(TCumulativeRewardEstimator)}");
 
                 if (value.LowerBound > value.Average)
-                    throw new ConstraintException($"Lower bound should not be greater than the average; Please check heuristic rules for {typeof(THeuristic)}");
+                    throw new ConstraintException($"Lower bound should not be greater than the average; Please check reward estimation rules for {typeof(TCumulativeRewardEstimator)}");
 
                 if (value.UpperBound < value.Average)
-                    throw new ConstraintException($"Upper bound should not be less than the average; Please check heuristic rules for {typeof(THeuristic)}");
+                    throw new ConstraintException($"Upper bound should not be less than the average; Please check reward estimation rules for {typeof(TCumulativeRewardEstimator)}");
 
                 if (value.LowerBound > value.UpperBound)
-                    throw new ConstraintException($"Lower bound should not be greater than the upper bound; Please check heuristic rules for {typeof(THeuristic)}");
+                    throw new ConstraintException($"Lower bound should not be greater than the upper bound; Please check reward estimation rules for {typeof(TCumulativeRewardEstimator)}");
             }
 
             StateInfoLookup.TryAdd(stateKey, new StateInfo
             {
-                SubgraphComplete = terminal,
-                PolicyValue = value,
+                SubplanIsComplete = terminal,
+                CumulativeRewardEstimate = value,
             });
 
             BinnedStateKeys.Add(stateKey.GetHashCode(), stateKey);

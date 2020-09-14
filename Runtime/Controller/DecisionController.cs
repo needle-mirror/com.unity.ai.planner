@@ -1,12 +1,16 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using Unity.AI.Planner;
-using Unity.AI.Planner.Controller;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using System.Linq;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Utility;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using Unity.Semantic.Traits;
+using Unity.Semantic.Traits.Queries;
+using Unity.Semantic.Traits.Utility;
+using UnityEngine;
+using UnityEngine.Serialization;
 
-namespace UnityEngine.AI.Planner.Controller
+namespace Unity.AI.Planner.Controller
 {
     /// <summary>
     /// The primary component from the AI Planner package, governing planning and plan execution.
@@ -16,27 +20,29 @@ namespace UnityEngine.AI.Planner.Controller
     public sealed class DecisionController : MonoBehaviour
     {
 #pragma warning disable 0649
+        [FormerlySerializedAs("m_PlanDefinition")]
         [SerializeField]
-        PlanDefinition m_PlanDefinition;
+        ProblemDefinition m_ProblemDefinition;
 
         [Tooltip("Automatically initialize the planner on start; Toggle off if you need to delay planner initialization due to external factors")]
         [SerializeField]
         bool m_InitializeOnStart = true;
 
+        [FormerlySerializedAs("m_SearchSettings")]
         [SerializeField]
-        PlannerSearchSettings m_SearchSettings;
+        PlannerSettings m_PlannerSettings;
 
         [SerializeField]
         PlanExecutionSettings m_ExecutionSettings;
 
         [SerializeField]
-        TraitBasedObjectQuery m_WorldObjectQuery;
+        SemanticQuery m_WorldObjectQuery;
 
         [SerializeField]
         ActionExecutionInfo[] m_ActionExecuteInfos;
 
         [SerializeField]
-        [Tooltip("Automatically plan and execute according to the specified search and execution settings.")]
+        [Tooltip("Automatically plan and execute according to the specified planning and execution settings.")]
         bool m_AutoUpdate = true;
 #pragma warning restore 0649
 
@@ -63,6 +69,9 @@ namespace UnityEngine.AI.Planner.Controller
         {
             get
             {
+                if (!Initialized)
+                    return false;
+
                 if (!CurrentActionKey.Equals(default))
                     return false;
 
@@ -75,19 +84,19 @@ namespace UnityEngine.AI.Planner.Controller
                 if (!CurrentPlan.TryGetStateInfo(CurrentStateKey, out var stateInfo))
                     return true;
 
-                return stateInfo.SubgraphComplete && CurrentPlan.GetActions(CurrentStateKey, null) == 0;
+                return stateInfo.SubplanIsComplete && CurrentPlan.GetActions(CurrentStateKey, null) == 0;
             }
         }
 
         /// <summary>
-        /// Settings for the control of the search algorithm iterating on the current plan.
+        /// Settings for the control of the planning algorithm iterating on the current plan.
         /// </summary>
-        public PlannerSearchSettings PlannerSearchSettings
+        public PlannerSettings PlannerSettings
         {
-            get => m_SearchSettings;
+            get => m_PlannerSettings;
             set
             {
-                m_SearchSettings = value;
+                m_PlannerSettings = value;
                 m_CurrentPlanRequest?.WithSettings(value);
             }
         }
@@ -140,6 +149,10 @@ namespace UnityEngine.AI.Planner.Controller
         /// </summary>
         public PlanExecutionStatus PlanExecutionStatus => m_PlanExecutor.Status;
 
+        SemanticObject m_PlanningAgent;
+
+        string Name => $"{gameObject.name} {gameObject.GetInstanceID()}";
+
         /// <summary>
         /// Initialize and create the executor instance
         /// </summary>
@@ -151,14 +164,14 @@ namespace UnityEngine.AI.Planner.Controller
                 return;
             }
 
-            if (m_PlanDefinition == null)
+            if (m_ProblemDefinition == null)
             {
-                Debug.LogWarning("Plan Definition is not set on the DecisionController");
+                Debug.LogWarning("Problem Definition is not set on the DecisionController");
                 enabled = false;
                 return;
             }
 
-            var planExecutorTypeName = $"{TypeResolver.PlansQualifier}.{m_PlanDefinition.Name}.{m_PlanDefinition.Name}Executor,{TypeResolver.PlansQualifier}";
+            var planExecutorTypeName = $"{TypeHelper.PlansQualifier}.{m_ProblemDefinition.Name}.{m_ProblemDefinition.Name}Executor,{TypeHelper.PlansQualifier}";
             if (!TypeResolver.TryGetType(planExecutorTypeName, out var executorType))
             {
                 Debug.LogError($"Cannot find type {planExecutorTypeName}");
@@ -173,7 +186,9 @@ namespace UnityEngine.AI.Planner.Controller
                 enabled = false;
                 return;
             }
-            m_PlanExecutor.Initialize(this, m_PlanDefinition, m_ActionExecuteInfos);
+
+            m_PlanningAgent = GetComponent<SemanticObject>();
+            m_PlanExecutor.Initialize(this, m_ProblemDefinition, m_ActionExecuteInfos);
             m_PlanExecutor.SetExecutionSettings(m_ExecutionSettings, OnActionComplete, OnTerminalStateReached, OnUnexpectedState);
 
             m_PlannerScheduler = m_PlanExecutor.PlannerScheduler;
@@ -194,7 +209,7 @@ namespace UnityEngine.AI.Planner.Controller
 
             // Query for initial state and plan
             var initialState = CreateNewStateFromWorldQuery();
-            m_PlannerScheduler.RequestPlan(initialState, null, m_SearchSettings);
+            m_PlannerScheduler.RequestPlan(initialState, null, m_PlannerSettings);
             m_PlanExecutor.SetPlan(m_CurrentPlanRequest.Plan);
             m_PlanExecutor.UpdateCurrentState(initialState);
 
@@ -211,9 +226,13 @@ namespace UnityEngine.AI.Planner.Controller
                 Debug.LogError("DecisionController components not initialized.");
                 return;
             }
-            var newState = m_StateConverter.CreateStateFromObjectData(GetTraitBasedObjects());
+            var newState = CreateNewStateFromWorldQuery();
             m_PlanExecutor.UpdateCurrentState(newState);
-            m_PlannerScheduler.UpdatePlanRequestRootState(newState);
+
+            if (CurrentPlan.TryGetEquivalentPlanState(newState, out var planState))
+                m_PlannerScheduler.UpdatePlanRequestRootState(planState);
+            else
+                m_PlannerScheduler.RequestPlan(newState, null, m_PlannerSettings);
         }
 
         /// <summary>
@@ -275,15 +294,21 @@ namespace UnityEngine.AI.Planner.Controller
         /// <param name="stateKey"></param>
         void OnUnexpectedState(IStateKey stateKey)
         {
-            m_PlannerScheduler.RequestPlan(stateKey, null, m_SearchSettings);
+            m_PlannerScheduler.RequestPlan(stateKey, null, m_PlannerSettings);
             m_PlanExecutor.SetPlan(m_CurrentPlanRequest.Plan);
         }
 
-        void Start()
+        IEnumerator Start()
         {
-            if (m_InitializeOnStart)
-                Initialize();
-        }
+            if (!m_InitializeOnStart)
+                yield break;
+
+            yield return null; // Wait for world state to settle
+            Initialize();
+
+            if (!Initialized && m_InitializeOnStart)
+                Debug.LogWarning($"Decision Controller for object {name} has not been initialized.");
+		}
 
         void OnDestroy()
         {
@@ -293,19 +318,10 @@ namespace UnityEngine.AI.Planner.Controller
         void Update()
         {
             if (!Initialized)
-            {
-                if (m_InitializeOnStart)
-                    Debug.LogWarning($"Decision Controller for object {name} has not been initialized.");
                 return;
-            }
-
-            if (!m_PlannerScheduler.CurrentJobHandle.IsCompleted)
-                return;
-
-
 
             // Execution
-            if (AutoUpdate)
+            if (AutoUpdate && m_PlanExecutor.Status == PlanExecutionStatus.AwaitingExecution)
                 UpdateExecutor();
         }
 
@@ -313,11 +329,6 @@ namespace UnityEngine.AI.Planner.Controller
         {
             if (AutoUpdate)
                 UpdateScheduler();
-        }
-
-        List<ITraitBasedObjectData> GetTraitBasedObjects()
-        {
-            return WorldDomainManager.Instance.GetTraitBasedObjects(gameObject, m_WorldObjectQuery);
         }
 
         IActionExecutionInfo GetExecutionInfo(string actionName)
@@ -330,6 +341,11 @@ namespace UnityEngine.AI.Planner.Controller
             }
 
             return null;
+        }
+
+        IEnumerable<SemanticObject> GetTraitBasedObjects()
+        {
+            return m_WorldObjectQuery == null ? Enumerable.Empty<SemanticObject>() : m_WorldObjectQuery.GetSemanticObjects();
         }
 
         IStateKey GetNextPlanState(IActionKey actionKey)
@@ -373,7 +389,13 @@ namespace UnityEngine.AI.Planner.Controller
         IStateKey CreateNewStateFromWorldQuery()
         {
             m_PlannerScheduler.CurrentJobHandle.Complete();
-            return m_StateConverter.CreateStateFromObjectData(GetTraitBasedObjects());
+
+            var traitBasedObjects = GetTraitBasedObjects();
+            var stateKey = m_StateConverter.CreateState(
+                m_PlanningAgent ? m_PlanningAgent.Entity : default,
+                traitBasedObjects.Select(o => o.Entity)); // Ids are maintained
+
+            return stateKey;
         }
     }
 }

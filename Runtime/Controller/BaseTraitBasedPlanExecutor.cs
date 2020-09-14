@@ -1,22 +1,21 @@
 using System;
 using System.Collections;
-using Unity.AI.Planner;
 using Unity.AI.Planner.Controller;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
 using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Entities;
+using UnityEngine;
 using UnityEngine.Assertions;
 
-namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
+namespace Unity.AI.Planner.Traits
 {
-    abstract class BaseTraitBasedPlanExecutor<TObject, TStateKey, TStateData, TStateDataContext, TActionScheduler, THeuristic, TTerminationEvaluator, TStateManager, TActionKey, TDestroyStatesScheduler> : ITraitBasedPlanExecutor
+    abstract class BaseTraitBasedPlanExecutor<TObject, TStateKey, TStateData, TStateDataContext, TActionScheduler, TCumulativeRewardEstimator, TTerminationEvaluator, TStateManager, TActionKey, TDestroyStatesScheduler> : ITraitBasedPlanExecutor
         where TObject : struct, ITraitBasedObject
         where TStateKey : struct, IEquatable<TStateKey>, IStateKey
         where TStateData : struct, ITraitBasedStateData<TObject, TStateData>
         where TStateDataContext : struct, ITraitBasedStateDataContext<TObject, TStateKey, TStateData>
         where TActionScheduler : struct, ITraitBasedActionScheduler<TObject, TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey>
-        where THeuristic : struct, IHeuristic<TStateData>
+        where TCumulativeRewardEstimator : struct, ICumulativeRewardEstimator<TStateData>
         where TTerminationEvaluator : struct, ITerminationEvaluator<TStateData>
         where TStateManager : JobComponentSystem, ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext>
         where TActionKey : struct, IEquatable<TActionKey>, IActionKeyWithGuid
@@ -73,7 +72,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         /// The object managing the scheduling of planning jobs.
         /// </summary>
         IPlannerScheduler IPlanExecutor.PlannerScheduler => PlannerScheduler;
-        protected PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, THeuristic, TTerminationEvaluator, TDestroyStatesScheduler> PlannerScheduler;
+        protected PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, TCumulativeRewardEstimator, TTerminationEvaluator, TDestroyStatesScheduler> PlannerScheduler;
 
         /// <summary>
         /// The domain data.
@@ -102,7 +101,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public abstract IActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey);
 
 
-        public virtual void Initialize(MonoBehaviour actor, PlanDefinition planDefinition, IActionExecutionInfo[] actionExecutionInfos)
+        public virtual void Initialize(MonoBehaviour actor, ProblemDefinition problemDefinition, IActionExecutionInfo[] actionExecutionInfos)
         {
             m_Actor = actor;
             m_ActionExecuteInfos = actionExecutionInfos;
@@ -111,14 +110,15 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             var world = new World($"{actor.name} {actor.GetInstanceID()}");
             m_StateManager = world.GetOrCreateSystem<TStateManager>();
             world.GetOrCreateSystem<SimulationSystemGroup>().AddSystemToUpdateList(m_StateManager);
-            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(world, ScriptBehaviourUpdateOrder.CurrentPlayerLoop);
+            var playerLoop = UnityEngine.LowLevel.PlayerLoop.GetCurrentPlayerLoop();
+            ScriptBehaviourUpdateOrder.AddWorldToPlayerLoop(world, ref playerLoop);
 
             // Setup scheduler - todo move this elsewhere
-            PlannerScheduler = new PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, THeuristic, TTerminationEvaluator, TDestroyStatesScheduler>();
-            PlannerScheduler.Initialize(m_StateManager, new THeuristic(), new TTerminationEvaluator(), planDefinition.DiscountFactor);
+            PlannerScheduler = new PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, TCumulativeRewardEstimator, TTerminationEvaluator, TDestroyStatesScheduler>();
+            PlannerScheduler.Initialize(m_StateManager, new TCumulativeRewardEstimator(), new TTerminationEvaluator(), problemDefinition.DiscountFactor);
 
             // Setup domain data
-            m_StateConverter = new PlannerStateConverter<TObject, TStateKey, TStateData, TStateDataContext, TStateManager>(planDefinition, m_StateManager);
+            m_StateConverter = new PlannerStateConverter<TObject, TStateKey, TStateData, TStateDataContext, TStateManager>(problemDefinition, m_StateManager);
 
             m_DecisionRuntimeInfo = new DecisionRuntimeInfo();
         }
@@ -200,16 +200,16 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                     return false;
 
                 case PlanExecutionSettings.PlanExecutionMode.WaitForPlanCompletion:
-                    return stateInfo.SubgraphComplete;
+                    return stateInfo.SubplanIsComplete;
 
                 case PlanExecutionSettings.PlanExecutionMode.WaitForMaximumDecisionTolerance:
-                    return stateInfo.PolicyValue.Range <= m_ExecutionSettings.MaximumDecisionTolerance;
+                    return stateInfo.CumulativeRewardEstimate.Range <= m_ExecutionSettings.MaximumDecisionTolerance;
 
                 case PlanExecutionSettings.PlanExecutionMode.WaitForMinimumPlanSize:
-                    return m_PlanWrapper.Size >= m_ExecutionSettings.MinimumPlanSize || stateInfo.SubgraphComplete;
+                    return m_PlanWrapper.Size >= m_ExecutionSettings.MinimumPlanSize || stateInfo.SubplanIsComplete;
 
-                case PlanExecutionSettings.PlanExecutionMode.WaitForMinimumSearchTime:
-                    return Time.time - m_DecisionRuntimeInfo.StartTimestamp >= m_ExecutionSettings.MinimumSearchTime || stateInfo.SubgraphComplete;
+                case PlanExecutionSettings.PlanExecutionMode.WaitForMinimumPlanningTime:
+                    return Time.time - m_DecisionRuntimeInfo.StartTimestamp >= m_ExecutionSettings.MinimumPlanningTime || stateInfo.SubplanIsComplete;
 
                 default:
                     return true;
@@ -343,7 +343,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         bool IsTerminal(TStateKey stateKey)
         {
             return m_PlanWrapper.TryGetStateInfo(stateKey, out var stateInfo)
-                    && stateInfo.SubgraphComplete
+                    && stateInfo.SubplanIsComplete
                     && !m_PlanWrapper.TryGetOptimalAction(stateKey, out _);
         }
 

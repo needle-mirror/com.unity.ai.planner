@@ -1,9 +1,10 @@
 #if !UNITY_DOTSPLAYER
+using Unity.Semantic.Traits;
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using Unity.DynamicStructs;
+using UnityEngine;
 
-namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
+namespace Unity.AI.Planner.Traits
 {
     [Serializable]
     class OperandValue
@@ -15,7 +16,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         TraitDefinition m_Trait;
 
         [SerializeField]
-        int m_TraitFieldId;
+        PropertyDefinition m_TraitProperty;
 
         [SerializeField]
         EnumDefinition m_Enum;
@@ -35,12 +36,12 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             set => m_Trait = value;
         }
 
-        public string TraitFieldName => Trait == null ? string.Empty : m_Trait.GetFieldName(m_TraitFieldId);
+        public string TraitPropertyName => m_TraitProperty ? m_TraitProperty.property_name : string.Empty;
 
-        public int TraitFieldId
+        public PropertyDefinition TraitProperty
         {
-            get => m_TraitFieldId;
-            set => m_TraitFieldId = value;
+            get => m_TraitProperty;
+            set => m_TraitProperty = value;
         }
 
         public EnumDefinition Enum
@@ -61,18 +62,18 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             m_Trait = null;
             m_Enum = null;
             m_Value = string.Empty;
-            m_TraitFieldId = 0;
+            m_TraitProperty = null;
         }
 
         public override string ToString()
         {
             if (m_Enum != null)
-                return $"{m_Enum.Name}.{m_Value}";
+                return $"{m_Enum.name}.{m_Value}";
 
             if (m_Trait != null)
-                return TraitFieldName == null ?
-                    $"{m_Parameter}.{m_Trait.Name}" :
-                    $"{m_Parameter}.{m_Trait.Name}.{TraitFieldName}";
+                return TraitPropertyName == null ?
+                    $"{m_Parameter}.{m_Trait.name}" :
+                    $"{m_Parameter}.{m_Trait.name}.{TraitPropertyName}";
 
             if (!string.IsNullOrEmpty(m_Parameter))
                 return m_Parameter;
@@ -94,6 +95,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public OperandValue OperandA
         {
             get => m_OperandA;
+            set => m_OperandA = value;
         }
 
         public string Operator
@@ -105,6 +107,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public OperandValue OperandB
         {
             get => m_OperandB;
+            set => m_OperandB = value;
         }
 
         public string CustomOperatorType

@@ -23,6 +23,43 @@ or
 [X.Y.Z] - date
  -->
 
+## [Unreleased]
+
+### Added
+
+* 
+
+## [0.2.4-preview.1] - 2020-09-14
+
+### Added
+* List support (fixed size) in `ActionDefinition`: Contains, Length, Clear, `=`, `+=`, `-=`
+* Temporary converters for convenience to convert old assets to new assets (will be removed in a future version)
+* PlanningAgent trait to allow distinguishing between the entity the agent is on from other agents in action definitions
+* Search to Plan Visualizer for filtering state data
+* Support for a custom named "AI.Shared" AsmDef to be created to allow for additional dependencies; AI.Planner.Custom will utilize this as a dependency 
+
+### Changed
+* `TraitDefinition` and `EnumDefinition` are now part of a separate AI Traits package that the AI Planner uses
+* `SemanticObject` component replaces the `TraitComponent` (deprecated)
+* Individual traits are now separate authoring components that can be added to GameObjects
+* Minimum Unity version is now 2020.1.2f
+* Entities dependency updated to version 0.14.0-preview.18
+* World queries are now handled through a SemanticQuery component from the Traits package (assigned on the DecisionController)
+* UnityEngine.* namespaces renamed to Unity.*
+* Planning jobs now allocate less memory during execution
+* State conversions after world queries now allocate less memory
+* Instances of "Policy" in naming have been replaced by "Plan"
+* Policy and action values have been refactored to "cumulative reward"
+* Mentions of "costs" (negative rewards) have been removed, in favor of "rewards"
+* "Heuristic" has been refactored to "cumulative reward estimator"
+* Items in the namespace "Unity.AI.Planner.DomainLanguage.TraitBased" have been moved to "Unity.AI.Planner.Traits"
+* "Subgraph complete" has been refactored to "subplan is complete"
+* `PlanDefinition` assets are now `ProblemDefinition` assets
+
+### Removed
+* Scriban removed as a package dependency (though still a dependency of Traits)
+* Removed world queries, filters, trait components, gizmos, and other items now present in the Traits package
+
 ## [0.2.3-preview.1] - 2020-05-05
 ### Added
 * `*=` as an `ActionDefinition` effect operator

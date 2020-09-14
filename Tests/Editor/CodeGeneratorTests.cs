@@ -3,16 +3,20 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
+using Unity.Semantic.Traits;
 using Unity.AI.Planner.Utility;
+using Unity.Semantic.Traits.Utility;
+using Unity.DynamicStructs;
 using UnityEditor.AI.Planner.CodeGen;
 using UnityEditor.AI.Planner.Utility;
 using UnityEditorInternal;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 using Object = UnityEngine.Object;
+using TraitsCodeGenerator = UnityEditor.Semantic.Traits.CodeGen.CodeGenerator;
 
 namespace UnityEditor.AI.Planner.Tests
 {
+    #if false
     class CodeGeneratorTestFixture
     {
         static readonly string k_AssetsPath = Path.Combine("Assets", "Temp");
@@ -20,52 +24,44 @@ namespace UnityEditor.AI.Planner.Tests
         static readonly string k_EnumAssetsPath = Path.Combine(k_AssetsPath, "Enums");
         protected static readonly string k_OutputPath = Path.Combine("Temp", "TestPlannerAssembly");
 
-        TraitDefinition m_TraitDefinition;
-        EnumDefinition m_EnumDefinition;
-        ActionDefinition m_ActionDefinition;
-        PlanDefinition m_PlanDefinition;
-        StateTerminationDefinition m_StateTerminationDefinition;
-
         protected CodeGenerator m_CodeGenerator = new CodeGenerator();
+        protected TraitsCodeGenerator m_TraitsCodeGenerator = new TraitsCodeGenerator();
+
+        protected TraitDefinition m_TraitDefinition;
+        protected EnumDefinition m_EnumDefinition;
+
+        ActionDefinition m_ActionDefinition;
+        ProblemDefinition m_ProblemDefinition;
+        StateTerminationDefinition m_StateTerminationDefinition;
 
         [OneTimeSetUp]
         public virtual void Setup()
         {
-            m_TraitDefinition = ScriptableObject.CreateInstance<TraitDefinition>();
-            m_TraitDefinition.Fields = new[]
-            {
-                new TraitDefinitionField()
-                {
-                    Name = "FieldA",
-                    FieldType = typeof(int)
-                }
-            }.ToList();
+            m_TraitDefinition = DynamicStruct.Create<TraitDefinition>();
+            m_TraitDefinition.CreateProperty<int>("FieldA");
             SaveAsset(m_TraitDefinition, Path.Combine(k_TraitAssetsPath, "TraitA.asset"));
 
             m_EnumDefinition = ScriptableObject.CreateInstance<EnumDefinition>();
-            m_EnumDefinition.Values = new[]
-            {
-                "ValueA",
-                "ValueB",
-                "ValueC"
-            };
+            m_EnumDefinition.CreateProperty<string>("ValueA");
+            m_EnumDefinition.CreateProperty<string>("ValueB");
+            m_EnumDefinition.CreateProperty<string>("ValueC");
             SaveAsset(m_EnumDefinition, Path.Combine(k_EnumAssetsPath, "EnumA.asset"));
 
             SetupTerminationDefinition("TerminationA.asset");
 
             SetupActionDefinition("ActionA.asset");
 
-            m_PlanDefinition = ScriptableObject.CreateInstance<PlanDefinition>();
-            m_PlanDefinition.ActionDefinitions = new[]
+            m_ProblemDefinition = ScriptableObject.CreateInstance<ProblemDefinition>();
+            m_ProblemDefinition.ActionDefinitions = new[]
             {
                 m_ActionDefinition
             };
-            m_PlanDefinition.StateTerminationDefinitions = new[]
+            m_ProblemDefinition.StateTerminationDefinitions = new[]
             {
                 m_StateTerminationDefinition
             };
 
-            SaveAsset(m_PlanDefinition, Path.Combine(k_AssetsPath, "PlanA.asset"));
+            SaveAsset(m_ProblemDefinition, Path.Combine(k_AssetsPath, "PlanA.asset"));
 
             PlannerAssetDatabase.Refresh(new []{  Path.Combine("Assets", "Temp") });
         }
@@ -175,30 +171,35 @@ namespace UnityEditor.AI.Planner.Tests
         public void TraitIsGenerated()
         {
             m_CodeGenerator.GenerateStateRepresentation(k_OutputPath);
-            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.StateRepresentationQualifier, "Traits", "TraitA.cs")));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeHelper.StateRepresentationQualifier, "Traits", "TraitA.cs")));
         }
 
         [Test]
         public void EnumIsGenerated()
         {
+            m_TraitsCodeGenerator.Generate(k_OutputPath, m_EnumDefinition);
             m_CodeGenerator.GenerateStateRepresentation(k_OutputPath);
-            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.StateRepresentationQualifier, "Traits", "EnumA.cs")));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.TraitsQualifier, "Traits", "EnumA.cs")));
         }
 
         [Test, Order(1)]
         public void StateRepresentationAssemblyIsCompiled()
         {
-            var paths = m_CodeGenerator.GenerateStateRepresentation(k_OutputPath);
-            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.StateRepresentationQualifier, "PlanA", "PlanStateRepresentation.cs")));
+            var paths = new List<string>();
+            paths.AddRange(m_TraitsCodeGenerator.Generate(k_OutputPath, m_EnumDefinition));
+            paths.AddRange(m_TraitsCodeGenerator.Generate(k_OutputPath, m_TraitDefinition));
 
-            var stateRepresentationAssemblyPath = Path.Combine(k_OutputPath, $"{TypeResolver.StateRepresentationQualifier}.dll");
+            paths.AddRange(m_CodeGenerator.GenerateStateRepresentation(k_OutputPath));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeHelper.StateRepresentationQualifier, "PlanA", "PlanStateRepresentation.cs")));
+
+            var stateRepresentationAssemblyPath = Path.Combine(k_OutputPath, $"{TypeHelper.StateRepresentationQualifier}.dll");
             Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), stateRepresentationAssemblyPath));
         }
 
         [Test, Order(2)]
         public void PlansAssemblyIsCompiled()
         {
-            var stateRepresentationAssemblyPath = Path.Combine(k_OutputPath, $"{TypeResolver.StateRepresentationQualifier}.dll");
+            var stateRepresentationAssemblyPath = Path.Combine(k_OutputPath, $"{TypeHelper.StateRepresentationQualifier}.dll");
 
             // Reference .cs files from Unity.AI.Planner.Editor.CustomMethods.Tests assembly definition
             var assemblyReference = AssetDatabase.FindAssets($"t: {nameof(AssemblyDefinitionAsset)}");
@@ -216,7 +217,7 @@ namespace UnityEditor.AI.Planner.Tests
             var additionalReferences = new List<string>();
             additionalReferences.Add(stateRepresentationAssemblyPath);
 
-            var customAssemblyPath = Path.Combine(k_OutputPath, $"{TypeResolver.CustomAssemblyName}.dll");
+            var customAssemblyPath = Path.Combine(k_OutputPath, $"{TypeHelper.CustomAssemblyName}.dll");
             Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), customAssemblyPath,
                 additionalReferences: additionalReferences.ToArray()));
 
@@ -233,12 +234,13 @@ namespace UnityEditor.AI.Planner.Tests
             additionalReferences.Add(customAssemblyPath);
             paths = m_CodeGenerator.GeneratePlans(k_OutputPath, customAssembly);
 
-            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.PlansQualifier, "PlanA", "ActionScheduler.cs")));
-            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.PlansQualifier, "PlanA", "ActionA.cs")));
-            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeResolver.PlansQualifier, "PlanA", "TerminationA.cs")));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeHelper.PlansQualifier, "PlanA", "ActionScheduler.cs")));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeHelper.PlansQualifier, "PlanA", "ActionA.cs")));
+            Assert.IsTrue(File.Exists(Path.Combine(k_OutputPath, TypeHelper.PlansQualifier, "PlanA", "TerminationA.cs")));
 
-            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), Path.Combine(k_OutputPath, $"{TypeResolver.PlansQualifier}.dll"),
+            Assert.IsTrue(PlannerAssemblyBuilder.BuildAssembly(paths.ToArray(), Path.Combine(k_OutputPath, $"{TypeHelper.PlansQualifier}.dll"),
                 additionalReferences: additionalReferences.ToArray()));
         }
     }
+    #endif
 }

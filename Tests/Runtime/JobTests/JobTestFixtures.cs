@@ -29,6 +29,7 @@ namespace Unity.AI.Planner.Tests
 
     struct TestStateManager : IStateManager<int, int, TestStateDataContext>
     {
+        public TestStateDataContext StateDataContext { get; }
         public TestStateDataContext GetStateDataContext() => new TestStateDataContext();
 
         public int GetStateData(int stateKey, bool readWrite) => GetStateData(stateKey);
@@ -153,7 +154,15 @@ namespace Unity.AI.Planner.Tests
         }
     }
 
-    struct CountToHeuristic : IHeuristic<int>
+    struct CountToDestroyStatesScheduler : IDestroyStatesScheduler<int, int, TestStateDataContext, TestStateManager>
+    {
+        public TestStateManager StateManager { get; set; }
+        public NativeQueue<int> StatesToDestroy { get; set; }
+
+        public JobHandle Schedule(JobHandle inputDeps) => inputDeps;
+    }
+
+    struct CountToCumulativeRewardEstimator : ICumulativeRewardEstimator<int>
     {
         public int Goal;
 
@@ -173,7 +182,7 @@ namespace Unity.AI.Planner.Tests
         }
     }
 
-    struct DefaultHeuristic<TStateData> : IHeuristic<TStateData>
+    struct DefaultCumulativeRewardEstimator<TStateData> : ICumulativeRewardEstimator<TStateData>
         where TStateData: struct
     {
         public BoundedValue Evaluate(TStateData stateData) => default;
@@ -189,14 +198,14 @@ namespace Unity.AI.Planner.Tests
         }
     }
 
-    struct TestManualOverrideHeuristic<TStateData> : IHeuristic<TStateData>
+    struct TestManualOverrideCumulativeRewardEstimator<TStateData> : ICumulativeRewardEstimator<TStateData>
         where TStateData: struct
     {
 #pragma warning disable 649
-        public BoundedValue HeuristicReturnValue;
+        public BoundedValue CumulativeRewardEstimatorReturnValue;
 #pragma warning restore 649
 
-        public BoundedValue Evaluate(TStateData stateData) => HeuristicReturnValue;
+        public BoundedValue Evaluate(TStateData stateData) => CumulativeRewardEstimatorReturnValue;
     }
 
     struct TestManualOverrideTerminationEvaluator<TStateData> : ITerminationEvaluator<TStateData>

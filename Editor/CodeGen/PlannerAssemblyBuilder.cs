@@ -5,9 +5,11 @@ using System.Linq;
 using System.Threading;
 using Unity.AI.Planner.Utility;
 using UnityEditor.AI.Planner.Utility;
+using UnityEditor.Semantic.Traits.CodeGen;
 using UnityEditor.Compilation;
 using UnityEditorInternal;
 using UnityEngine;
+using static System.Reflection.Assembly;
 
 namespace UnityEditor.AI.Planner.CodeGen
 {
@@ -15,11 +17,11 @@ namespace UnityEditor.AI.Planner.CodeGen
     {
         const string k_TitleBuildPopup = "Build Planner";
 
-        const string k_BuildMenuTitle = "AI/Planner/Generate assemblies";
+        const string k_BuildMenuTitle = "AI/Planner/Build";
 
-        const string k_StateRepresentationAssemblyFileName = TypeResolver.StateRepresentationQualifier + ".dll";
-        const string k_PlansAssemblyFileName =  TypeResolver.PlansQualifier + ".dll";
-        const string k_CustomCodeAssemblyFileName =  TypeResolver.CustomAssemblyName + ".dll";
+        const string k_StateRepresentationAssemblyFileName = TypeHelper.StateRepresentationQualifier + ".dll";
+        const string k_PlansAssemblyFileName =  TypeHelper.PlansQualifier + ".dll";
+        const string k_CustomCodeAssemblyFileName =  TypeHelper.CustomAssemblyName + ".dll";
 
         static readonly string k_TempOutputPath = Path.Combine("Temp", "PlannerAssembly");
         static readonly string k_TempOutputStateRepresentationAssembly = Path.Combine(k_TempOutputPath, k_StateRepresentationAssemblyFileName);
@@ -35,11 +37,40 @@ namespace UnityEditor.AI.Planner.CodeGen
             };
 
         [InitializeOnLoadMethod]
-        public static void AttachAutoBuild()
+        public static void AttachBuild()
         {
             if (!Application.isBatchMode)
                 EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+
+            TraitBuilder.traitBuilt += td => QueueBuild();
+            TraitBuilder.enumerationBuilt += td => QueueBuild();
         }
+
+        static void QueueBuild()
+        {
+            if (PlannerAssetDatabase.HasValidProblemDefinition())
+            {
+                if (EditorApplication.delayCall == null || !EditorApplication.delayCall.GetInvocationList().Any(
+                    d =>
+                    {
+                        var methodInfo = d.Method;
+                        return methodInfo.Name == nameof(BuildWhenReady) && methodInfo.DeclaringType == typeof(PlannerAssemblyBuilder);
+                    }))
+                {
+                    EditorApplication.delayCall += BuildWhenReady;
+                }
+            }
+        }
+
+        static void BuildWhenReady()
+        {
+            // Sometimes an existing compilation is already occurring, so continue queuing until it's actually possible to build
+            if (EditorApplication.isCompiling)
+                EditorApplication.delayCall += BuildWhenReady;
+            else
+                Build();
+        }
+
 
         static void OnPlayModeStateChanged(PlayModeStateChange playMode)
         {
@@ -54,7 +85,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
                 if (playMode == PlayModeStateChange.ExitingEditMode && !EditorApplication.isCompiling)
                 {
-                    if (!PlannerAssetDatabase.HasValidPlanDefinition())
+                    if (!PlannerAssetDatabase.HasValidProblemDefinition())
                         return;
 
                     var assetChangedPath = string.Empty;
@@ -62,7 +93,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     bool stateRepresentationNeedBuild = !PlannerAssetDatabase.StateRepresentationPackageExists();
                     if (!stateRepresentationNeedBuild)
                     {
-                        DateTime lastStateRepresentationBuildTime = GetAssemblyBuildTime(TypeResolver.StateRepresentationQualifier);
+                        DateTime lastStateRepresentationBuildTime = GetAssemblyBuildTime(TypeHelper.StateRepresentationQualifier);
 
                         stateRepresentationNeedBuild = PlannerAssetDatabase.TryFindNewerAsset(PlannerAssetDatabase.stateRepresentationAssetTypeNames, lastStateRepresentationBuildTime, ref assetChangedPath);
                         if (stateRepresentationNeedBuild)
@@ -76,7 +107,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     bool planNeedBuild = !PlannerAssetDatabase.PlansPackageExists();
                     if (!planNeedBuild)
                     {
-                        DateTime lastPlanBuildTime = GetAssemblyBuildTime(TypeResolver.PlansQualifier);
+                        DateTime lastPlanBuildTime = GetAssemblyBuildTime(TypeHelper.PlansQualifier);
                         planNeedBuild = PlannerAssetDatabase.TryFindNewerAsset(PlannerAssetDatabase.planAssetTypeNames, lastPlanBuildTime, ref assetChangedPath);
                         if (planNeedBuild)
                             Debug.Log($"Rebuilding AI Plan assembly because {assetChangedPath} is newer");
@@ -174,21 +205,21 @@ namespace UnityEditor.AI.Planner.CodeGen
 
         static System.Reflection.Assembly BuildCustomCodeAssembly()
         {
-            var currentLoadedAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == TypeResolver.CustomAssemblyName);
+            var currentLoadedAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == TypeHelper.CustomAssemblyName);
 
             var excludeReferences = new List<Assembly>();
             if (currentLoadedAssembly != null)
                 excludeReferences.Add(currentLoadedAssembly);
 
             var customCodeFilesPath = new List<string>();
-            string tempCustomDirectory = Path.Combine(k_TempOutputPath, TypeResolver.CustomAssemblyName);
+            string tempCustomDirectory = Path.Combine(k_TempOutputPath, TypeHelper.CustomAssemblyName);
             Directory.CreateDirectory(tempCustomDirectory);
             var assemblyInfoPath = Path.Combine(tempCustomDirectory, "AssemblyInfo.cs");
-            File.WriteAllText(assemblyInfoPath, $"using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"{TypeResolver.PlansQualifier}\")]");
+            File.WriteAllText(assemblyInfoPath, $"using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"{TypeHelper.PlansQualifier}\")]");
             customCodeFilesPath.Add(assemblyInfoPath);
 
             // Reference .cs files from all AsmRef pointing to AI.Planner.Custom assembly
-            ReferenceSourceFromAsmRef(TypeResolver.CustomAssemblyName, customCodeFilesPath);
+            ReferenceSourceFromAsmRef(TypeHelper.CustomAssemblyName, customCodeFilesPath);
 
             // Add a reference to the previously generated StateRepresentation Assembly
             var additionalReferences = new[] { k_TempOutputStateRepresentationAssembly };
@@ -196,14 +227,14 @@ namespace UnityEditor.AI.Planner.CodeGen
             if (BuildAssembly(customCodeFilesPath.ToArray(), k_TempOutputCustomCodeAssembly,  excludeReferences.Select(a => a.outputPath).ToArray(), additionalReferences))
             {
                 // Pre-load referenced assemblies in the reflection context
-                System.Reflection.Assembly.ReflectionOnlyLoadFrom(k_TempOutputStateRepresentationAssembly);
+                ReflectionOnlyLoadFrom(k_TempOutputStateRepresentationAssembly);
                 foreach (var reference in predefinedReferences)
                 {
-                    System.Reflection.Assembly.ReflectionOnlyLoadFrom(reference);
+                    ReflectionOnlyLoadFrom(reference);
                 }
 
                 AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += ResolveReflectionAssemblyDependency;
-                return System.Reflection.Assembly.ReflectionOnlyLoadFrom(k_TempOutputCustomCodeAssembly);
+                return ReflectionOnlyLoadFrom(k_TempOutputCustomCodeAssembly);
             }
 
             return null;
@@ -219,7 +250,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 var assetPath = AssetDatabase.GUIDToAssetPath(asmRefGuid);
 
                 // Skip sources from generated package
-                if (assetPath.Contains(TypeResolver.PlansQualifier.ToLower()) || assetPath.Contains(TypeResolver.StateRepresentationQualifier.ToLower()))
+                if (assetPath.Contains(TypeHelper.PlansQualifier.ToLower()) || assetPath.Contains(TypeHelper.StateRepresentationQualifier.ToLower()))
                     continue;
 
                 var reference = AssetDatabase.LoadAssetAtPath<AssemblyDefinitionReferenceAsset>(assetPath);
@@ -244,10 +275,10 @@ namespace UnityEditor.AI.Planner.CodeGen
 
         static bool CreateStateRepresentationPackage(CodeGenerator codeGenerator)
         {
-            var assemblyName = TypeResolver.StateRepresentationQualifier;
+            var assemblyName = TypeHelper.StateRepresentationQualifier;
             var currentLoadedAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == assemblyName);
 
-            var excludeReferences = new List<Assembly>();
+            var excludeReferences = new List<Compilation.Assembly>();
             if (currentLoadedAssembly != null)
                 excludeReferences.Add(currentLoadedAssembly);
 
@@ -257,7 +288,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             sourcePaths.AddRange(generatedFilesPath);
 
             // Reference .cs files from all AsmRef pointing to Generated.AI.Planner.StateRepresentation assembly
-            ReferenceSourceFromAsmRef(TypeResolver.StateRepresentationQualifier, sourcePaths);
+            ReferenceSourceFromAsmRef(TypeHelper.StateRepresentationQualifier, sourcePaths);
 
             var assemblyBuilt = BuildAssembly(sourcePaths.ToArray(), k_TempOutputStateRepresentationAssembly, excludeReferences.Select(a => a.outputPath).ToArray());
             if (assemblyBuilt)
@@ -265,7 +296,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 var generatedStateRepresentationPath = PlannerAssetDatabase.stateRepresentationPackagePath;
 
                 // Copy generated files for the StateRepresentation over to the packages folder
-                var sourceDir = Path.Combine(generatedStateRepresentationPath, TypeResolver.StateRepresentationQualifier);
+                var sourceDir = Path.Combine(generatedStateRepresentationPath, TypeHelper.StateRepresentationQualifier);
                 if (Directory.Exists(sourceDir))
                 {
                     Directory.Delete(sourceDir, true);
@@ -279,8 +310,8 @@ namespace UnityEditor.AI.Planner.CodeGen
                     Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
                     File.Copy(file, newFilePath, true);
                 }
-                codeGenerator.GenerateAsmRef(generatedStateRepresentationPath, TypeResolver.StateRepresentationQualifier);
-                codeGenerator.GeneratePackage(generatedStateRepresentationPath, TypeResolver.StateRepresentationQualifier);
+                codeGenerator.GenerateAsmRef(generatedStateRepresentationPath, TypeHelper.StateRepresentationQualifier);
+                codeGenerator.GeneratePackage(generatedStateRepresentationPath, TypeHelper.StateRepresentationQualifier);
             }
 
             return assemblyBuilt;
@@ -288,7 +319,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
         static void CreatePlansPackage(CodeGenerator codeGenerator, System.Reflection.Assembly customAssembly)
         {
-            var assemblyName = TypeResolver.PlansQualifier;
+            var assemblyName = TypeHelper.PlansQualifier;
             var currentLoadedAssembly = CompilationPipeline.GetAssemblies(AssembliesType.Player).FirstOrDefault(a => a.name == assemblyName);
 
             var excludeReferences = new List<Assembly>();
@@ -301,7 +332,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             sourcePaths.AddRange(generatedFilesPath);
 
             // Reference .cs files from all AsmRef pointing to Generated.AI.Planner.Plans assembly
-            ReferenceSourceFromAsmRef(TypeResolver.PlansQualifier, sourcePaths);
+            ReferenceSourceFromAsmRef(TypeHelper.PlansQualifier, sourcePaths);
 
             var additionalReferences = new List<string>();
             additionalReferences.Add(k_TempOutputStateRepresentationAssembly);
@@ -329,8 +360,8 @@ namespace UnityEditor.AI.Planner.CodeGen
                     Directory.CreateDirectory(Path.GetDirectoryName(newFilePath));
                     File.Copy(file, newFilePath, true);
                 }
-                codeGenerator.GenerateAsmRef(generatedPlansPath, TypeResolver.PlansQualifier);
-                codeGenerator.GeneratePackage(generatedPlansPath, TypeResolver.PlansQualifier);
+                codeGenerator.GenerateAsmRef(generatedPlansPath, TypeHelper.PlansQualifier);
+                codeGenerator.GeneratePackage(generatedPlansPath, TypeHelper.PlansQualifier);
             }
         }
 
@@ -349,6 +380,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 excludeReferences = excludeReferences,
                 referencesOptions = ReferencesOptions.UseEngineModules,
                 additionalReferences = additionalReferences,
+                compilerOptions = new ScriptCompilerOptions() { AllowUnsafeCode = true }
             };
 
             bool buildSucceed = false;
@@ -403,7 +435,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
         internal static System.Reflection.Assembly ResolveReflectionAssemblyDependency(object sender, ResolveEventArgs args)
         {
-            return System.Reflection.Assembly.ReflectionOnlyLoad(args.Name);
+            return ReflectionOnlyLoad(args.Name);
         }
     }
 }

@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
+using Unity.Semantic.Traits;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 using Assembly = System.Reflection.Assembly;
 
 namespace UnityEditor.AI.Planner.CodeGen
@@ -26,6 +26,12 @@ namespace UnityEditor.AI.Planner.CodeGen
                 assetValid &= IsTraitAssetValid(trait);
             }
 
+            if (!PlannerAssetDatabase.ProblemDefinitions.Any())
+            {
+                errorLogged?.Invoke($"At least one Problem Definition must exist", null);
+                assetValid = false;
+            }
+
             return assetValid;
         }
 
@@ -34,7 +40,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             Type[] customTypes = ReflectionUtils.GetTypesFromAssembly(customAssembly);
             bool assetValid = true;
 
-            foreach (var plan in PlannerAssetDatabase.PlanDefinitions)
+            foreach (var plan in PlannerAssetDatabase.ProblemDefinitions)
             {
                 if (plan.ActionDefinitions == null)
                     continue;
@@ -53,29 +59,29 @@ namespace UnityEditor.AI.Planner.CodeGen
             return assetValid;
         }
 
-        bool IsPlanAssetValid(PlanDefinition plan, Type[] customTypes = null)
+        bool IsPlanAssetValid(ProblemDefinition problemDefinition, Type[] customTypes = null)
         {
             bool planValid = true;
 
             // Check for duplicate actions
             List<string> declaredActions = new List<string>();
-            foreach (var action in plan.ActionDefinitions)
+            foreach (var action in problemDefinition.ActionDefinitions)
             {
                 if (declaredActions.Contains(action.Name))
                 {
-                    errorLogged?.Invoke($"{action.Name} is a duplicated action.", plan);
+                    errorLogged?.Invoke($"{action.Name} is a duplicated action.", problemDefinition);
                     planValid = false;
                 }
                 else
                     declaredActions.Add(action.Name);
             }
 
-            if (!string.IsNullOrEmpty(plan.CustomHeuristic))
+            if (!string.IsNullOrEmpty(problemDefinition.CustomCumulativeRewardEstimator))
             {
-                var heuristicType = customTypes?.FirstOrDefault(t => t.FullName == plan.CustomHeuristic);
-                if (heuristicType == null)
+                var rewardEstimatorType = customTypes?.FirstOrDefault(t => t.FullName == problemDefinition.CustomCumulativeRewardEstimator);
+                if (rewardEstimatorType == null)
                 {
-                    errorLogged?.Invoke($"Couldn't resolve custom heuristic type {plan.CustomHeuristic}.", plan);
+                    errorLogged?.Invoke($"Couldn't resolve custom cumulative reward estimator type {problemDefinition.CustomCumulativeRewardEstimator}.", problemDefinition);
                     planValid = false;
                 }
             }
@@ -153,7 +159,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                         var referencedParameter = action.Parameters.First(p => p.Name == parameter.LimitComparerReference);
                         var genericTraitTypeExpected = parameterComparerWithReferenceType.GenericTypeArguments[1].Name;
 
-                        if (!referencedParameter.RequiredTraits.FirstOrDefault(t => t.Name == genericTraitTypeExpected))
+                        if (!referencedParameter.RequiredTraits.FirstOrDefault(t => t.name == genericTraitTypeExpected))
                         {
                             errorLogged?.Invoke($"Reference {parameter.LimitComparerReference} for the parameter comparer type {comparerTypeName} is invalid.", action);
                             actionValid = false;
@@ -277,15 +283,15 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             // Check for duplicate enum values
             List<string> declaredValueNames = new List<string>();
-            foreach (var value in enumeration.Values)
+            foreach (var value in enumeration.properties)
             {
-                if (declaredValueNames.Contains(value))
+                if (declaredValueNames.Contains(value.property_name))
                 {
                     errorLogged?.Invoke($"{value} is a duplicated value name.", enumeration);
                     enumValid = false;
                 }
                 else
-                    declaredValueNames.Add(value);
+                    declaredValueNames.Add(value.property_name);
             }
             return enumValid;
         }
@@ -296,15 +302,15 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             // Check for duplicate field names
             List<string> declaredTraitNames = new List<string>();
-            foreach (var field in trait.Fields)
+            foreach (var field in trait.properties)
             {
-                if (declaredTraitNames.Contains(field.Name))
+                if (declaredTraitNames.Contains(field.property_name))
                 {
-                    errorLogged?.Invoke($"{field.Name} is a duplicated Field name.", trait);
+                    errorLogged?.Invoke($"{field.property_name} is a duplicated Field name.", trait);
                     traitValid = false;
                 }
                 else
-                    declaredTraitNames.Add(field.Name);
+                    declaredTraitNames.Add(field.property_name);
             }
             return traitValid;
         }

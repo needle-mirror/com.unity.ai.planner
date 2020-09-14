@@ -5,14 +5,13 @@ using Unity.AI.Planner.Tests.Unit;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
-using Unity.PerformanceTesting;
 
 namespace Unity.AI.Planner.Tests.Unit
 {
     [Category("Unit")]
     class NewStateEvaluationJobTests
     {
-        internal struct StateValueAsHeuristicValue : IHeuristic<int>
+        internal struct StateValueAsCumulativeRewardEstimatorValue : ICumulativeRewardEstimator<int>
         {
             public BoundedValue Evaluate(int stateData) => new float3(stateData, stateData, stateData);
         }
@@ -26,7 +25,7 @@ namespace Unity.AI.Planner.Tests.Unit
             }
         }
 
-        struct ExceptionHeuristic : IHeuristic<int>
+        struct ExceptionCumulativeRewardEstimator : ICumulativeRewardEstimator<int>
         {
             public BoundedValue Evaluate(int stateData)
             {
@@ -50,7 +49,7 @@ namespace Unity.AI.Planner.Tests.Unit
             var stateInfoLookup = new NativeHashMap<int, StateInfo>(0, Allocator.TempJob);
             var binnedStateKeys = new NativeMultiHashMap<int, int>(1, Allocator.TempJob);
 
-            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, ExceptionHeuristic, ExceptionTerminationEvaluator>()
+            var stateEvaluationJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, ExceptionCumulativeRewardEstimator, ExceptionTerminationEvaluator>()
             {
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),
@@ -58,7 +57,7 @@ namespace Unity.AI.Planner.Tests.Unit
                 BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
             };
 
-            Assert.DoesNotThrow(() => heuristicJob.Schedule(states, default).Complete());
+            Assert.DoesNotThrow(() => stateEvaluationJob.Schedule(states, default).Complete());
 
             states.Dispose();
             stateInfoLookup.Dispose();
@@ -66,7 +65,7 @@ namespace Unity.AI.Planner.Tests.Unit
         }
 
         [Test]
-        public void EvaluateHeuristicMultipleStates()
+        public void EvaluateCumulativeRewardEstimatorMultipleStates()
         {
             const int kStateCount = 10;
             var states = new NativeList<int>(kStateCount, Allocator.TempJob);
@@ -78,20 +77,20 @@ namespace Unity.AI.Planner.Tests.Unit
                 states.Add(i);
             }
 
-            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, StateValueAsHeuristicValue, DefaultTerminalStateEvaluator<int>>
+            var stateEvaluationJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, StateValueAsCumulativeRewardEstimatorValue, DefaultTerminalStateEvaluator<int>>
             {
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),
                 States = states.AsDeferredJobArray(),
                 BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
             };
-            heuristicJob.Schedule(states, default).Complete();
+            stateEvaluationJob.Schedule(states, default).Complete();
 
             for (int i = 0; i < states.Length; i++)
             {
                 stateInfoLookup.TryGetValue(i, out var stateInfo);
 
-                Assert.AreEqual(new BoundedValue(i, i, i), stateInfo.PolicyValue);
+                Assert.AreEqual(new BoundedValue(i, i, i), stateInfo.CumulativeRewardEstimate);
             }
 
             states.Dispose();
@@ -112,20 +111,20 @@ namespace Unity.AI.Planner.Tests.Unit
                 states.Add(i);
             }
 
-            var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, DefaultHeuristic<int>, EvensTerminalStateEvaluator>
+            var stateEvaluationJob = new EvaluateNewStatesJob<int, int, TestStateDataContext, DefaultCumulativeRewardEstimator<int>, EvensTerminalStateEvaluator>
             {
                 StateDataContext = new TestStateDataContext(),
                 StateInfoLookup = stateInfoLookup.AsParallelWriter(),
                 States = states.AsDeferredJobArray(),
                 BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
             };
-            heuristicJob.Schedule(states, default).Complete();
+            stateEvaluationJob.Schedule(states, default).Complete();
 
             for (int i = 0; i < states.Length; i++)
             {
                 stateInfoLookup.TryGetValue(i, out var stateInfo);
 
-                Assert.AreEqual(i % 2 == 0, stateInfo.SubgraphComplete);
+                Assert.AreEqual(i % 2 == 0, stateInfo.SubplanIsComplete);
             }
 
             states.Dispose();
@@ -138,6 +137,8 @@ namespace Unity.AI.Planner.Tests.Unit
 #if ENABLE_PERFORMANCE_TESTS
 namespace Unity.AI.Planner.Tests.Performance
 {
+    using PerformanceTesting;
+
     [Category("Performance")]
     public class NewStateEvaluationJobPerformanceTests
     {
@@ -152,8 +153,8 @@ namespace Unity.AI.Planner.Tests.Performance
 
             Measure.Method(() =>
             {
-                var heuristicJob = new EvaluateNewStatesJob<int, int, TestStateDataContext,
-                    NewStateEvaluationJobTests.StateValueAsHeuristicValue, DefaultTerminalStateEvaluator>
+                var stateEvaluationJob = new EvaluateNewStatesJob<int, int, TestStateDataContext,
+                    NewStateEvaluationJobTests.StateValueAsCumulativeRewardEstimatorValue, DefaultTerminalStateEvaluator<int>>
                 {
                     StateDataContext = new TestStateDataContext(),
                     States = states.AsDeferredJobArray(),
@@ -161,7 +162,7 @@ namespace Unity.AI.Planner.Tests.Performance
                     StateInfoLookup = stateInfoLookup.AsParallelWriter(),
                     BinnedStateKeys = binnedStateKeys.AsParallelWriter(),
                 };
-                heuristicJob.Schedule(states, default).Complete();
+                stateEvaluationJob.Schedule(states, default).Complete();
             }).SetUp(() =>
             {
                 states = new NativeList<int>(kStateCount, Allocator.TempJob);

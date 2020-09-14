@@ -14,18 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Parameters:
   - m_Name: Mover
-    m_RequiredTraits:
-    - {fileID: 11400000, guid: d59d07249ce0f0943929b1d4b761af33, type: 2}
-    - {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
+    m_RequiredTraits: []
     m_ProhibitedTraits: []
     m_LimitCount: 0
     m_LimitComparerType: 
     m_LimitComparerReference: 
   - m_Name: Destination
-    m_RequiredTraits:
-    - {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
-    m_ProhibitedTraits:
-    - {fileID: 11400000, guid: d59d07249ce0f0943929b1d4b761af33, type: 2}
+    m_RequiredTraits: []
+    m_ProhibitedTraits: []
     m_LimitCount: 0
     m_LimitComparerType: 
     m_LimitComparerReference: 
@@ -33,14 +29,14 @@ MonoBehaviour:
   - m_Operator: '!='
     m_OperandA:
       m_Parameter: Mover
-      m_Trait: {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
-      m_TraitFieldId: 101
+      m_Trait: {fileID: 0}
+      m_TraitFieldId: 2084774077
       m_Enum: {fileID: 0}
       m_Value: 
     m_OperandB:
       m_Parameter: Destination
-      m_Trait: {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
-      m_TraitFieldId: 101
+      m_Trait: {fileID: 0}
+      m_TraitFieldId: 2084774077
       m_Enum: {fileID: 0}
       m_Value: 
   m_CreatedObjects: []
@@ -49,14 +45,14 @@ MonoBehaviour:
   - m_Operator: =
     m_OperandA:
       m_Parameter: Mover
-      m_Trait: {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
-      m_TraitFieldId: 101
+      m_Trait: {fileID: 0}
+      m_TraitFieldId: 2084774077
       m_Enum: {fileID: 0}
       m_Value: 
     m_OperandB:
       m_Parameter: Destination
-      m_Trait: {fileID: 11400000, guid: 9d24b90158d644873a4d488182380074, type: 2}
-      m_TraitFieldId: 101
+      m_Trait: {fileID: 0}
+      m_TraitFieldId: 2084774077
       m_Enum: {fileID: 0}
       m_Value: 
   m_Reward: 0

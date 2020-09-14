@@ -8,28 +8,26 @@ namespace UnityEditor.AI.Planner.Editors
     {
         public static readonly GUIContent parameters = EditorGUIUtility.TrTextContent("Parameters");
         public static readonly GUIContent settings = EditorGUIUtility.TrTextContent("Settings");
-        public static readonly GUIContent plannerSettings = EditorGUIUtility.TrTextContent("Planner Settings");
         public static readonly GUIContent includeObjects = EditorGUIUtility.TrTextContent("Include objects");
         public static readonly GUIContent worldQuery = EditorGUIUtility.TrTextContent("World query");
         public static readonly GUIContent worldQueryPreview = EditorGUIUtility.TrTextContent("World objects (preview)");
-        public static readonly GUIContent localObjects = EditorGUIUtility.TrTextContent("Local objects");
         public static readonly GUIContent actionExecution = EditorGUIUtility.TrTextContent("Available actions from the plan");
         public static readonly GUIContent onActionStart = EditorGUIUtility.TrTextContent("Action Callback", "A callback to your code when the planner selects this action to execute");
         public static readonly GUIContent stateUpdate = EditorGUIUtility.TrTextContent("Next State Update", "After executing this action the planner must update it's internal state using one of these options");
         public static readonly GUIContent maxParametersReached = EditorGUIUtility.TrTextContent("Only a maximum of 16 parameters are supported");
         public static readonly GUIContent preconditions = EditorGUIUtility.TrTextContent("Preconditions");
         public static readonly GUIContent effects = EditorGUIUtility.TrTextContent("Effects");
-        public static readonly GUIContent heuristic = EditorGUIUtility.TrTextContent("Heuristic");
-        public static readonly GUIContent rewards = EditorGUIUtility.TrTextContent("Cost (-) / Reward (+)");
-        public static readonly GUIContent terminalRewards = EditorGUIUtility.TrTextContent("Terminal Cost (-) / Reward (+)");
+        public static readonly GUIContent cumulativeRewardEstimator = EditorGUIUtility.TrTextContent("Cumulative Reward Estimator");
+        public static readonly GUIContent rewards = EditorGUIUtility.TrTextContent("Reward");
+        public static readonly GUIContent terminalRewards = EditorGUIUtility.TrTextContent("Terminal Reward");
         public static readonly GUIContent fields = EditorGUIUtility.TrTextContent("Fields");
         public static readonly GUIContent values = EditorGUIUtility.TrTextContent("Values");
         public static readonly GUIContent usages = EditorGUIUtility.TrTextContent("Usages");
         public static readonly GUIContent criteria = EditorGUIUtility.TrTextContent("Criteria");
         public static readonly GUIContent actions = EditorGUIUtility.TrTextContent("Actions");
         public static readonly GUIContent terminations = EditorGUIUtility.TrTextContent("Terminations", tooltip: "For most applications, there is no need to continue planning beyond a point in which one or more termination conditions have been met. These conditions may represent the achievement of a desired goal or possibly the circumstances in which success has become impossible, such as when an agent has been defeated.");
-        public static readonly GUIContent planSearchSettings = EditorGUIUtility.TrTextContent("Search Settings", tooltip: "For most applications the default search settings should be okay. However, if you want to ensure that the planner has planned long enough before an action is taken, then you can adjust these settings.");
-        public static readonly GUIContent comparerLimit = EditorGUIUtility.TrTextContent("Limit", tooltip: "Maximum number of valid objects considered in the search for this parameter.");
+        public static readonly GUIContent plannerSettings = EditorGUIUtility.TrTextContent("Planner Settings", tooltip: "For most applications the default planning settings should be okay. However, if you want to ensure that the planner has planned long enough before an action is taken, then you can adjust these settings.");
+        public static readonly GUIContent comparerLimit = EditorGUIUtility.TrTextContent("Limit", tooltip: "Maximum number of valid objects considered by the planner for this parameter.");
         public static readonly GUIContent comparerOrder = EditorGUIUtility.TrTextContent("Order By", tooltip: "Specify a method used to order object list before the limit is applied.");
 
         public static readonly GUIContent objectsChanged = EditorGUIUtility.TrTextContent("Objects Modified");

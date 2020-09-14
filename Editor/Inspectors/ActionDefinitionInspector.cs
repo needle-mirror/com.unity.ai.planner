@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
+using Unity.Semantic.Traits;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Editors
 {
@@ -13,6 +13,7 @@ namespace UnityEditor.AI.Planner.Editors
     {
         static readonly string[] k_DefaultOperators = { "=" };
         static readonly string[] k_NumberOperators = { "=", "+=", "-=", "*=" };
+        static readonly string[] k_ListOperators = { "=", "+=", "-=", "clear" };
 
         NoHeaderReorderableList m_PreconditionList;
         NoHeaderReorderableList m_ObjectModifierList;
@@ -226,7 +227,7 @@ namespace UnityEditor.AI.Planner.Editors
                         else
                         {
                             var traitTypeExpected = parameterComparerWithReferenceType.GenericTypeArguments[1].Name;
-                            List<ParameterDefinition> referenceableParameters = availableParameters.Where(p => p.RequiredTraits.FirstOrDefault(t => t.Name == traitTypeExpected) != null).ToList();
+                            List<ParameterDefinition> referenceableParameters = availableParameters.Where(p => p.RequiredTraits.FirstOrDefault(t => t.name == traitTypeExpected) != null).ToList();
 
                             // Check that the parameter referenced is defined above in the list and contains the expected Trait
                             if (referenceableParameters.FindIndex(p => p.Name == comparerReference.stringValue) == -1)
@@ -391,7 +392,7 @@ namespace UnityEditor.AI.Planner.Editors
                     rect.width = buttonSize;
 
                     var traitDefinitions = PlannerAssetDatabase.TraitDefinitions.ToArray();
-                    var traitNames = traitDefinitions.Select(t => t?.Name).ToArray();
+                    var traitNames = traitDefinitions.Select(t => t?.name).ToArray();
 
                     var traitIndex = Array.IndexOf(traitDefinitions, operandB.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition);
                     EditorGUI.BeginChangeCheck();
@@ -411,7 +412,7 @@ namespace UnityEditor.AI.Planner.Editors
                     break;
                 default:
                 {
-                    TraitGUIUtility.DrawOperandSelectorField(rect, operandA, parameters, modified =>
+                    TraitGUIUtility.DrawOperandSelectorField(rect, operandA, null, parameters, modified =>
                     {
                         TraitGUIUtility.ClearOperandProperty(operandB);
                     });
@@ -423,10 +424,17 @@ namespace UnityEditor.AI.Planner.Editors
 
                     if (validLeftOperand)
                     {
-                        var operators = GetAssignationOperators(operandA);
+                        var operators = GetAssignmentOperators(operandA);
                         var opIndex = EditorGUI.Popup(rect, Array.IndexOf(operators, @operator.stringValue),
                             operators, EditorStyleHelper.listPopupStyleBold);
-                        @operator.stringValue = operators[Math.Max(0, opIndex)];
+                        var operatorSelected = operators[Math.Max(0, opIndex)];
+                        if (@operator.stringValue != operatorSelected)
+                        {
+                            if (TraitGUIUtility.IsListOperand(operandA) && TraitGUIUtility.IsListUnaryOperator(@operator))
+                                TraitGUIUtility.ClearOperandProperty(operandB);
+
+                            @operator.stringValue = operatorSelected;
+                        }
                     }
                     else
                     {
@@ -436,13 +444,16 @@ namespace UnityEditor.AI.Planner.Editors
                         GUI.enabled = true;
                     }
 
+                    var showRightOperand = !TraitGUIUtility.IsListOperand(operandA) || !TraitGUIUtility.IsListUnaryOperator(@operator);
+
                     rect.x += operatorSize + spacer;
                     rect.width = buttonSize;
 
-                    if (validLeftOperand)
+                    if (validLeftOperand && showRightOperand)
                     {
                         string unknownType = default;
-                        TraitGUIUtility.DrawOperandSelectorField(rect, operandB, parameters, TraitGUIUtility.GetOperandValuePropertyType(operandA, ref unknownType), unknownType);
+                        TraitGUIUtility.DrawOperandSelectorField(rect, operandB, @operator, parameters,
+                            TraitGUIUtility.GetOperandValuePropertyType(operandA, @operator, ref unknownType), unknownType);
                     }
                     else
                     {
@@ -519,9 +530,11 @@ namespace UnityEditor.AI.Planner.Editors
             });
         }
 
-        protected static string[] GetAssignationOperators(SerializedProperty operand)
+        protected static string[] GetAssignmentOperators(SerializedProperty operand)
         {
-            return TraitGUIUtility.IsNumberOperand(operand)? k_NumberOperators : k_DefaultOperators;
+            return TraitGUIUtility.IsNumberOperand(operand)? k_NumberOperators :
+                TraitGUIUtility.IsListOperand(operand) ? k_ListOperators :
+                k_DefaultOperators;
         }
     }
 }

@@ -1,10 +1,11 @@
 using System;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
+using Unity.Entities;
 
 namespace KeyDomain
 {
     [Serializable]
-    internal struct Carriable : ITrait, IEquatable<Carriable>
+    internal struct Carriable : ITrait, IBufferElementData, IEquatable<Carriable>
     {
         public ObjectId Carrier;
 

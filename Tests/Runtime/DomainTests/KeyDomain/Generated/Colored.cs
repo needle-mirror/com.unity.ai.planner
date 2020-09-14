@@ -1,10 +1,11 @@
 using System;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
+using Unity.Entities;
 
 namespace KeyDomain
 {
     [Serializable]
-    internal struct Colored : ITrait, IEquatable<Colored>
+    internal struct Colored : ITrait, IBufferElementData, IEquatable<Colored>
     {
         public ColorValue Color;
 

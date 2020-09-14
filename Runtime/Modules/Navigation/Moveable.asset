@@ -12,4 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4733c0880a5a0ce4f94cc97cb9b0049b, type: 3}
   m_Name: Moveable
   m_EditorClassIdentifier: 
+  m_Namespace: 
   m_Fields: []
+  m_NextFieldUniqueId: 100

@@ -2,56 +2,35 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Controller;
+using Unity.AI.Planner.Traits;
+using Unity.Semantic.Traits;
+using Unity.Semantic.Traits.Queries;
+using Unity.Entities;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.Controller;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using ITrait = Unity.AI.Planner.Traits.ITrait;
 
 namespace UnityEditor.AI.Planner.Editors
 {
     [CustomEditor(typeof(DecisionController), true)]
-    class DecisionControllerInspector : BaseTraitObjectEditor
+    class DecisionControllerInspector : Editor
     {
         static string s_LastPathUsedForNewPlan;
-
-        ReorderableList m_QueryFilterList;
-        Dictionary<string, Type> m_QueryTypes;
-        Vector2 m_PreviewScrollviewPosition;
 
         void OnEnable()
         {
             PlannerAssetDatabase.Refresh();
-            CacheQueryTypes();
-            InitializeReorderableLists();
-        }
-
-        void InitializeReorderableLists()
-        {
-            var queryProperty = serializedObject.FindProperty("m_WorldObjectQuery");
-
-            m_QueryFilterList = new ReorderableList(serializedObject, queryProperty.FindPropertyRelative("m_Filters"),
-                true, false, true, true)
-            {
-                drawElementCallback = DrawQueryFilterElement,
-                elementHeight = EditorGUIUtility.singleLineHeight * 1 + EditorGUIUtility.standardVerticalSpacing * 3,
-                headerHeight = 2,
-                elementHeightCallback = SetQueryFilterHeight,
-                onAddDropdownCallback = ShowQueryFilterMenu,
-                drawElementBackgroundCallback = DrawElementBackground,
-                drawNoneElementCallback = DrawNoElement,
-                onReorderCallback = ReorderQueryList,
-            };
         }
 
         void AssignPlanGUI(SerializedProperty definition)
         {
             EditorGUILayout.Space();
-            EditorGUILayout.HelpBox("Create and assign a Plan Definition to start working with the AI Planner", MessageType.Info);
+            EditorGUILayout.HelpBox("Create and assign a Problem Definition to start working with the AI Planner", MessageType.Info);
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("+", EditorStyles.miniButtonMid, GUILayout.Width(22)))
             {
-                var newPlan = PlannerAssetDatabase.CreateNewPlannerAsset<PlanDefinition>("Plan");
+                var newPlan = PlannerAssetDatabase.CreateNewPlannerAsset<ProblemDefinition>("Plan");
                 definition.objectReferenceValue = newPlan;
             }
             EditorGUILayout.PropertyField(definition, GUIContent.none);
@@ -61,13 +40,9 @@ namespace UnityEditor.AI.Planner.Editors
 
         public override void OnInspectorGUI()
         {
-            const float previewObjectHeight = 250;
-
-            base.OnInspectorGUI();
-
             serializedObject.Update();
 
-            var definition = serializedObject.FindProperty("m_PlanDefinition");
+            var definition = serializedObject.FindProperty("m_ProblemDefinition");
             if (!definition.objectReferenceValue)
             {
                 AssignPlanGUI(definition);
@@ -91,10 +66,9 @@ namespace UnityEditor.AI.Planner.Editors
 
                 if (AIPlannerPreferences.displayControllerAdvancedSettings)
                 {
-                    EditorGUILayout.PropertyField(serializedObject.FindProperty("m_SearchSettings"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("m_PlannerSettings"));
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("m_ExecutionSettings"));
                 }
-
 
                 EditorGUILayout.Space();
             }
@@ -105,7 +79,7 @@ namespace UnityEditor.AI.Planner.Editors
                 actionMappingArray.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.actionExecution, actionMappingArray.isExpanded);
                 if (actionMappingArray.isExpanded)
                 {
-                    var plan = definition.objectReferenceValue as PlanDefinition;
+                    var plan = definition.objectReferenceValue as ProblemDefinition;
                     if (plan != null && plan.ActionDefinitions != null)
                     {
                         // Remove actionInfo for actions not present in the plan
@@ -221,7 +195,7 @@ namespace UnityEditor.AI.Planner.Editors
                                                     Rect r = GUILayoutUtility.GetRect(operatorSize, operatorSize * 2,
                                                         EditorGUIUtility.singleLineHeight, EditorGUIUtility.singleLineHeight);
                                                     r.y += 2;
-                                                    DrawOperandSelectorField(r, argumentInfos, actionDefinition.Parameters.ToList(), parameterInfo.ParameterType);
+                                                    DrawOperandSelectorField(r, argumentInfos, null, actionDefinition.Parameters.ToList(), parameterInfo.ParameterType);
 
                                                     GUILayout.EndHorizontal();
                                                 }
@@ -249,229 +223,53 @@ namespace UnityEditor.AI.Planner.Editors
             queryProperty.isExpanded = EditorStyleHelper.DrawSubHeader(EditorStyleHelper.includeObjects, queryProperty.isExpanded);
             if (queryProperty.isExpanded)
             {
-                EditorGUILayout.LabelField(EditorStyleHelper.worldQuery, EditorStyles.boldLabel);
-                m_QueryFilterList.DoLayoutList();
+                if (!queryProperty.objectReferenceValue)
+                    EditorGUILayout.HelpBox("Assign a semantic query to populate the Planner state", MessageType.Warning);
 
-                EditorGUILayout.LabelField(EditorStyleHelper.worldQueryPreview, EditorStyles.boldLabel);
-                var objectQuery = SerializedPropertyExtensions.GetValue<TraitBasedObjectQuery>(queryProperty);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.PropertyField(queryProperty, new GUIContent("World Query"));
 
-                var targetGameObject = (target as Component)?.gameObject;
-                var validTraitComponents = FindObjectsOfType<TraitComponent>().ToList();
-
-                for (int i = validTraitComponents.Count - 1; i >= 0; i--)
+                if (!queryProperty.objectReferenceValue)
                 {
-                    // Make sure that the parent object is set on the trait component (used in FromGameObjectQuery)
-                    if (!EditorApplication.isPlaying)
-                        validTraitComponents[i].Initialize();
+                    var source = ((DecisionController)target).GetComponent<SemanticObject>();
 
-                    if (!objectQuery.IsValid(targetGameObject, validTraitComponents[i]))
+                    if (source.gameObject.GetComponent<SemanticQuery>() != null)
                     {
-                        validTraitComponents.RemoveAt(i);
+                        if (GUILayout.Button("Assign", EditorStyles.miniButtonMid, GUILayout.Width(45)))
+                        {
+                            queryProperty.objectReferenceValue = source.gameObject.GetComponent<SemanticQuery>();
+                        }
                     }
-                }
-
-                if (validTraitComponents.Count > 0)
-                {
-                    bool showScrollView = validTraitComponents.Count > previewObjectHeight / 22;
-                    if (showScrollView)
-                        m_PreviewScrollviewPosition = EditorGUILayout.BeginScrollView(m_PreviewScrollviewPosition, false, false, GUILayout.Height(previewObjectHeight));
-
-                    foreach (var objectData in validTraitComponents)
+                    else
                     {
-                        var providerSerializedObject = new SerializedObject(objectData);
-                        DrawTraitObjectData(providerSerializedObject.FindProperty("m_ObjectData"), true);
+                        if (GUILayout.Button("Add", EditorStyles.miniButtonMid, GUILayout.Width(35)))
+                        {
+                            var newQuery = source.gameObject.AddComponent<SemanticQuery>();
+                            queryProperty.objectReferenceValue = newQuery;
+                        }
                     }
 
-                    if (showScrollView)
-                        EditorGUILayout.EndScrollView();
                 }
-                else
-                {
-                    EditorGUILayout.BeginVertical("Box");
-                    EditorGUILayout.LabelField("None", EditorStyleHelper.italicGrayLabel);
-                    EditorGUILayout.EndVertical();
-                }
+
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.Space();
             }
 
             serializedObject.ApplyModifiedProperties();
         }
 
-        void DrawOperandSelectorField(Rect rect, SerializedProperty operand, List<ParameterDefinition> parameters, Type expectedType)
+        void DrawOperandSelectorField(Rect rect, SerializedProperty operand, SerializedProperty @operator, List<ParameterDefinition> parameters, Type expectedType)
         {
-            var content = TraitGUIUtility.GetOperandDisplayContent(operand, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
+            var content = TraitGUIUtility.GetOperandDisplayContent(operand, @operator, parameters, rect.size.x, EditorStyleHelper.listPopupStyle);
 
             if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
             {
-                var allowParameterSelection = expectedType != null && (typeof(TraitBasedObjectId).IsAssignableFrom(expectedType) || typeof(ITraitBasedObjectData).IsAssignableFrom(expectedType));
+                var allowParameterSelection = expectedType != null &&
+                    (typeof(TraitBasedObjectId).IsAssignableFrom(expectedType) || expectedType == typeof(GameObject) || expectedType == typeof(Entity));
                 var allowTraitSelection = !allowParameterSelection && expectedType != null && typeof(ITrait).IsAssignableFrom(expectedType);
 
                 var popup = new OperandSelectorPopup(operand, parameters, allowParameterSelection, allowTraitSelection, null, expectedType);
                 PopupWindow.Show(rect, popup);
-            }
-        }
-
-        void DrawQueryFilterElement(Rect rect, int index, bool isActive, bool isFocused)
-        {
-            var list = m_QueryFilterList.serializedProperty;
-            var property = list.GetArrayElementAtIndex(index);
-
-            var typeProperty = property.FindPropertyRelative("m_TypeName");
-
-            var type = m_QueryTypes[typeProperty.stringValue];
-            if (type == null)
-            {
-                return;
-            }
-
-            var attribute = type.GetCustomAttribute<QueryFilterAttribute>();
-            var typeDisplayName =  attribute?.Name ?? type.Name;
-
-            rect.height = EditorGUIUtility.singleLineHeight;
-            rect.y += attribute != null && attribute.ParameterType != ParameterTypes.None?EditorGUIUtility.standardVerticalSpacing:0;
-
-            property.FindPropertyRelative("m_Name").stringValue = typeDisplayName;
-
-            if (attribute != null)
-            {
-                switch (attribute.ParameterType)
-                {
-                    case ParameterTypes.Int:
-                        EditorGUI.PropertyField(rect, property.FindPropertyRelative("m_ParameterInt"),
-                            new GUIContent(typeDisplayName));
-                        break;
-                    case ParameterTypes.Float:
-                        EditorGUI.PropertyField(rect, property.FindPropertyRelative("m_ParameterFloat"),
-                            new GUIContent(typeDisplayName));
-                        break;
-                    case ParameterTypes.String:
-                        EditorGUI.PropertyField(rect, property.FindPropertyRelative("m_ParameterString"),
-                            new GUIContent(typeDisplayName));
-                        break;
-                    case ParameterTypes.TraitsProhibited:
-                    case ParameterTypes.TraitsRequired:
-                        EditorGUI.LabelField(rect, typeDisplayName);
-                        var traits = property.FindPropertyRelative("m_ParameterTraits");
-                        var requiredTraits = attribute.ParameterType == ParameterTypes.TraitsRequired;
-                        rect.x += EditorGUIUtility.labelWidth;
-                        rect.width -= EditorGUIUtility.labelWidth;
-
-                        TraitSelectorDrawer.DrawSelector(traits, rect, typeDisplayName,
-                            requiredTraits ? EditorStyleHelper.requiredTraitLabel : EditorStyleHelper.prohibitedTraitLabel,
-                            requiredTraits ? EditorStyleHelper.requiredTraitAdd : EditorStyleHelper.prohibitedTraitAdd,
-                            requiredTraits ? EditorStyleHelper.requiredTraitMore : EditorStyleHelper.prohibitedTraitMore);
-                        break;
-                    case ParameterTypes.GameObject:
-                        EditorGUI.PropertyField(rect, property.FindPropertyRelative("m_GameObject"),
-                            new GUIContent(typeDisplayName));
-                        break;
-                    case ParameterTypes.None:
-                        EditorGUI.LabelField(rect, typeDisplayName, EditorStyles.miniLabel);
-                        break;
-                }
-            }
-        }
-
-        void ShowQueryFilterMenu(Rect rect, ReorderableList list)
-        {
-            var menu = new GenericMenu();
-            AddQueryFilterItem(list, menu, typeof(LogicalOrFilter));
-
-            menu.AddSeparator(string.Empty);
-            AddQueryFilterItem(list, menu);
-
-            menu.ShowAsContext();
-        }
-
-        void AddQueryFilterItem(ReorderableList list, GenericMenu menu, Type ignoreType = null)
-        {
-            foreach (var queryType in m_QueryTypes.Values)
-            {
-                var queryAttribute = queryType.GetCustomAttribute<QueryFilterAttribute>();
-                if (ignoreType != null && queryType == ignoreType)
-                    continue;
-
-                menu.AddItem(new GUIContent(queryAttribute?.Name ?? queryType.Name), false, () =>
-                {
-                    serializedObject.Update();
-                    var newFieldProperty = list.serializedProperty.InsertArrayElement();
-                    var typeProperty = newFieldProperty.FindPropertyRelative("m_TypeName");
-                    typeProperty.stringValue = queryType.FullName;
-                    serializedObject.ApplyModifiedProperties();
-                });
-            }
-        }
-
-        void DrawElementBackground(Rect rect, int index, bool isActive, bool isFocused)
-        {
-            if (index < 0 )
-                return;
-
-            var list = m_QueryFilterList.serializedProperty;
-            var property = list.GetArrayElementAtIndex(index);
-            var typeProperty = property.FindPropertyRelative("m_TypeName");
-
-            var type = m_QueryTypes[typeProperty.stringValue];
-            if (type == null)
-            {
-                return;
-            }
-
-            var attribute = type.GetCustomAttribute<QueryFilterAttribute>();
-            if (Event.current.type == EventType.Repaint)
-            {
-                if (attribute.ParameterType == ParameterTypes.None)
-                {
-                    rect.x = rect.x + 1;
-                    rect.width = rect.width - 3;
-                    EditorStyleHelper.listElementDarkBackground.Draw(rect, false, isActive, isActive, isFocused);
-                }
-                else
-                {
-                    ReorderableList.DefaultBehaviours.DrawElementBackground(rect, index, isActive, isFocused, true);
-                }
-            }
-        }
-
-        static void DrawNoElement(Rect rect)
-        {
-            EditorGUI.LabelField(rect, "All world objects");
-        }
-
-        float SetQueryFilterHeight(int index)
-        {
-            var list = m_QueryFilterList.serializedProperty;
-            var property = list.GetArrayElementAtIndex(index);
-            var typeProperty = property.FindPropertyRelative("m_TypeName");
-
-            if (m_QueryTypes.ContainsKey(typeProperty.stringValue))
-            {
-                var attribute = m_QueryTypes[typeProperty.stringValue].GetCustomAttribute<QueryFilterAttribute>();
-                if (attribute.ParameterType == ParameterTypes.None)
-                    return EditorGUIUtility.singleLineHeight;
-            }
-
-            return EditorGUIUtility.singleLineHeight * 1 + EditorGUIUtility.standardVerticalSpacing * 3;
-        }
-
-        void ReorderQueryList(ReorderableList list)
-        {
-            var queryProperty = serializedObject.FindProperty("m_WorldObjectQuery");
-            var objectQuery = SerializedPropertyExtensions.GetValue<TraitBasedObjectQuery>(queryProperty);
-
-            foreach (var filter in objectQuery.Filters)
-            {
-                filter.ResetCache();
-            }
-        }
-
-        void CacheQueryTypes()
-        {
-            m_QueryTypes = new Dictionary<string, Type>();
-            var queryTypes =  TypeCache.GetTypesDerivedFrom(typeof(BaseQueryFilter)).Where(t => !t.IsGenericType);
-
-            foreach (var t in queryTypes)
-            {
-                  m_QueryTypes.Add(t.FullName, t);
             }
         }
     }

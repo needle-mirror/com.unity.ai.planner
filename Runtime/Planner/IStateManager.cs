@@ -15,10 +15,10 @@ namespace Unity.AI.Planner
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
     {
         /// <summary>
-        /// Get a wrapper context to access states in a detached manner (e.g. within jobs); See <see cref="IStateDataContext{TStateKey,TStateData}"/>
+        /// Get a wrapper context to access states in a job-friendly manner; See <see cref="IStateDataContext{TStateKey,TStateData}"/>
         /// </summary>
         /// <returns></returns>
-        TStateDataContext GetStateDataContext();
+        TStateDataContext StateDataContext { get; }
 
         /// <summary>
         /// Create a new state

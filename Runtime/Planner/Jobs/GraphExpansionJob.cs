@@ -10,7 +10,7 @@ namespace Unity.AI.Planner.Jobs
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
     {
-        public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph { get; set; }
+        public PlanGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> planGraph { get; set; }
         public NativeMultiHashMap<int, TStateKey> BinnedStateKeys;
 
         public NativeQueue<StateTransitionInfoPair<TStateKey, TActionKey, StateTransitionInfo>> InputStateExpansionInfo { get; set; }
@@ -19,7 +19,7 @@ namespace Unity.AI.Planner.Jobs
         public void Execute()
         {
             var capacityNeeded = InputStateExpansionInfo.Count;
-            PolicyGraph.ExpandBy(capacityNeeded, capacityNeeded);
+            planGraph.ExpandBy(capacityNeeded, capacityNeeded);
 
             if (BinnedStateKeys.Count() + capacityNeeded > BinnedStateKeys.Capacity)
                 BinnedStateKeys.Capacity = Math.Max(BinnedStateKeys.Count() + capacityNeeded, BinnedStateKeys.Capacity * 2);
@@ -94,7 +94,7 @@ namespace Unity.AI.Planner.Jobs
                     {
                         WriteEdgeToState(precedingStateKey, actionKey, stateTransitionInfo, otherStateKey);
 
-                        if (i == index) // Matched to self -> output for heuristic evaluation
+                        if (i == index) // Matched to self -> output for reward estimation evaluation
                             NewStates.Enqueue(stateKey);
                         else
                             StatesToDestroy.Enqueue(stateKey);

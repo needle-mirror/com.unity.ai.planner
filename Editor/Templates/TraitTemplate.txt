@@ -1,21 +1,23 @@
 using System;
+using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Entities;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 {{- if include_enums }}
-using {{ namespace }}.Enums;
+using Generated.Semantic.Traits.Enums;
 {{- end }}
 
 namespace {{ namespace }}
 {
     [Serializable]
-    public struct {{ name }} : ITrait, IEquatable<{{ name }}>
+    public struct {{ name }} : ITrait, IBufferElementData, IEquatable<{{ name }}>
     {
         {{- for field in fields }}
         public const string Field{{ field.field_name }} = "{{ field.field_name }}";
         {{- end }}
 
         {{- for field in fields }}
-        public {{ field.field_type }} {{ field.field_name }};
+        public {{ if field.field_type | string.contains "GameObject" -}}TraitBasedObjectId{{- else -}}{{ field.field_type }}{{- end }} {{ field.field_name }};
         {{- end }}
 
         public void SetField(string fieldName, object value)

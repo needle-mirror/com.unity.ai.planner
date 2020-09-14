@@ -2,8 +2,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.Semantic.Traits;
+using UnityEngine;
 
-namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
+namespace Unity.AI.Planner.Traits
 {
     [Serializable]
     class ParameterDefinition

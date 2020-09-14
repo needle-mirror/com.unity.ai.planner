@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace UnityEditor.AI.Planner.Editors
 {
-    abstract class SaveableInspector : Editor
+    internal abstract class SaveableInspector : Editor
     {
         Preset m_OriginalObject;
 
@@ -53,7 +53,7 @@ namespace UnityEditor.AI.Planner.Editors
             }
         }
 
-        void ApplyChanges(bool reselect = true)
+        void ApplyChanges()
         {
             if (CanSave)
                 SaveAsset();
@@ -61,6 +61,7 @@ namespace UnityEditor.AI.Planner.Editors
 
         void SaveAsset()
         {
+            // TODO: Look into AssetDatabase.ForceReserializeAssets
             EditorApplication.delayCall += () => AssetDatabaseUtility.SaveSingleAsset(target);
         }
 

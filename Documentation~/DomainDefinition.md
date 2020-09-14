@@ -1,8 +1,8 @@
 # Defining the domain
 
-For the Planner to be able to solve a problem, a model that represents this problem need to be created first. This model is expressed using a trait-based domain language that can represent a large variety of scenarios.
+For the Planner to be able to solve a problem, a model that represents this problem need to be created first. This model is expressed using a trait-based domain language that can represent a large variety of scenarios. Traits are defined using the Traits package. 
 
-To define a planning domain, two types of assets can be used: "Trait Definition" and "Enum Definition". These assets can be created via the asset creation menu (Create -> AI -> Trait -> Trait or Enum Definition) or the Create menu from the project window.
+To define a planning domain, two types of assets can be used: "Trait Definition" and "Enum Definition". These assets can be created via the asset creation menu (Create -> AI -> Semantic -> Trait or Enum Definition) or the Create menu from the project window.
 
 ![Image](images/CreateDomainAssets.png)
 

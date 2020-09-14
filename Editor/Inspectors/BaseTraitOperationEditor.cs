@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.Semantic.Traits;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 using UnityObject = UnityEngine.Object;
 
 namespace UnityEditor.AI.Planner.Editors

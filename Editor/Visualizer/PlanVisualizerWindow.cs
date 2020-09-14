@@ -68,7 +68,7 @@ namespace UnityEditor.AI.Planner.Visualizer
 
         GameObject FindPlannerObject()
         {
-            var planner = (MonoBehaviour)FindObjectOfType(typeof(UnityEngine.AI.Planner.Controller.DecisionController));
+            var planner = (MonoBehaviour)FindObjectOfType(typeof(Unity.AI.Planner.Controller.DecisionController));
             return planner != null ? planner.gameObject : null;
         }
 
@@ -110,7 +110,7 @@ namespace UnityEditor.AI.Planner.Visualizer
             if (go == null)
                 return false;
 
-            var decisionControllers = go.GetComponents<UnityEngine.AI.Planner.Controller.DecisionController>();
+            var decisionControllers = go.GetComponents<Unity.AI.Planner.Controller.DecisionController>();
             foreach (var decisionController in decisionControllers)
             {
                 if (!decisionController.enabled || decisionController.m_PlanExecutor == null)
@@ -224,8 +224,8 @@ namespace UnityEditor.AI.Planner.Visualizer
             if (m_PlanExecutor?.Plan != null)
             {
                 EditorGUILayout.Space();
-                GUILayout.Label($"Max Plan Depth: {m_PlanExecutor?.Plan?.MaxPlanDepth}");
-                GUILayout.Label($"Plan Size: {m_PlanExecutor?.Plan?.Size}");
+                GUILayout.Label($"Longest Plan Length: {m_PlanExecutor?.Plan?.MaxPlanDepth},");
+                GUILayout.Label($"States In Plan Graph: {m_PlanExecutor?.Plan?.Size}");
             }
 
             EditorGUILayout.EndHorizontal();

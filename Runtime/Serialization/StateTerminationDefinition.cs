@@ -3,8 +3,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.AI.Planner.Utility;
+using Unity.Semantic.Traits.Utility;
+using UnityEngine;
 
-namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
+namespace Unity.AI.Planner.Traits
 {
     [Serializable]
     [HelpURL(Help.BaseURL + "/manual/TerminationDefinition.html")]
@@ -34,6 +36,7 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public float TerminalReward
         {
             get => m_TerminalReward;
+            set => m_TerminalReward = value;
         }
 
 #pragma warning disable 0649

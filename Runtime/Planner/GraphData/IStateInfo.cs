@@ -10,11 +10,11 @@ namespace Unity.AI.Planner
         /// <summary>
         /// The bounded value estimate of the state.
         /// </summary>
-        BoundedValue PolicyValue { get; }
+        BoundedValue CumulativeRewardEstimate { get; }
 
         /// <summary>
         /// Designates if the subgraph of the state is complete.
         /// </summary>
-        bool SubgraphComplete { get; }
+        bool SubplanIsComplete { get; }
     }
 }

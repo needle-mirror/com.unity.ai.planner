@@ -1,7 +1,6 @@
 using UnityEngine;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Generated.AI.Planner.StateRepresentation;
-using Generated.AI.Planner.StateRepresentation.Enums;
 using Generated.AI.Planner.StateRepresentation.PlanA;
 
 struct CustomActionEffect : ICustomActionEffect<StateData>

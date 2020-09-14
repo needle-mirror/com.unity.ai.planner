@@ -1,176 +1,176 @@
-﻿using System;
-#if !UNITY_DOTSPLAYER
+using System;
+using Unity.Semantic.Traits;
+using Unity.Entities;
 using UnityEngine;
-using UnityEngine.Serialization;
-#endif
 
-#if UNITY_DOTSPLAYER
-/// <summary>
-/// Representation of a 3D vector with three floating-point values
-/// </summary>
-public struct Vector3 : IEquatable<Vector3>
+namespace Generated.Semantic.Traits
 {
     /// <summary>
-    /// The X component of the vector
+    /// Component representing the Location trait.
     /// </summary>
-    public float x;
-
-    /// <summary>
-    /// The Y component of the vector
-    /// </summary>
-    public float y;
-
-    /// <summary>
-    /// The Z component of the vector
-    /// </summary>
-    public float z;
-
-    public override bool Equals(object obj)
+    [ExecuteAlways]
+    [DisallowMultipleComponent]
+    [AddComponentMenu("Semantic/Traits/Location (Trait)")]
+    [RequireComponent(typeof(SemanticObject))]
+    public partial class Location : MonoBehaviour, ITrait
     {
-        return obj is Vector3 other && Equals(other);
-    }
-
-    public bool Equals(Vector3 other)
-    {
-      return (double) this.x == (double) other.x && (double) this.y == (double) other.y && (double) this.z == (double) other.z;
-    }
-
-    public static bool operator ==(Vector3 lhs, Vector3 rhs)
-    {
-      float num1 = lhs.x - rhs.x;
-      float num2 = lhs.y - rhs.y;
-      float num3 = lhs.z - rhs.z;
-      return (double) num1 * (double) num1 + (double) num2 * (double) num2 + (double) num3 * (double) num3 < 9.99999943962493E-11;
-    }
-
-    public static bool operator !=(Vector3 lhs, Vector3 rhs)
-    {
-      return !(lhs == rhs);
-    }
-
-    public override int GetHashCode()
-    {
-        unchecked
+        /// <summary>
+        /// The transform of the object.
+        /// </summary>
+        public UnityEngine.Transform Transform
         {
-            var hashCode = x.GetHashCode();
-            hashCode = (hashCode * 397) ^ y.GetHashCode();
-            hashCode = (hashCode * 397) ^ z.GetHashCode();
-            return hashCode;
-        }
-    }
-}
-#endif
-
-namespace Unity.AI.Planner.DomainLanguage.TraitBased
-{
-    /// <summary>
-    /// A custom trait for locations, since it is commonly used in domains
-    /// </summary>
-    [Serializable]
-    public struct Location : ICustomTrait, IEquatable<Location>
-    {
-        /// <summary>
-        /// The Id of the transform of the location
-        /// </summary>
-        [FormerlySerializedAs("TransformInstanceID")]
-        public int TransformInstanceId;
-
-        /// <summary>
-        /// The position of the location
-        /// </summary>
-        public Vector3 Position;
-
-        /// <summary>
-        /// The forward vector of the location
-        /// </summary>
-        public Vector3 Forward;
-
-#if !UNITY_DOTSPLAYER
-        /// <summary>
-        /// The transform of the location
-        /// </summary>
-        public Transform Transform
-        {
-            get => null;
+            get { return m_p338023941; }
             set
             {
-                    TransformInstanceId = value.GetInstanceID();
-                    Position = value.position;
-                    Forward = value.forward;
+                LocationData data = default;
+                var dataActive = m_EntityManager != default && m_EntityManager.HasComponent<LocationData>(m_Entity);
+                if (dataActive)
+                    data = m_EntityManager.GetComponentData<LocationData>(m_Entity);
+                m_p338023941 = value;
+                data.Transform = transform;
+                if (dataActive)
+                    m_EntityManager.SetComponentData(m_Entity, data);
+
+                Position = value.position;
+                Forward = value.forward;
             }
+        }
+
+        /// <summary>
+        /// The position of the object.
+        /// </summary>
+        public UnityEngine.Vector3 Position
+        {
+            get
+            {
+                if (m_EntityManager != default && m_EntityManager.HasComponent<LocationData>(m_Entity))
+                {
+                    m_p2084774077 = m_EntityManager.GetComponentData<LocationData>(m_Entity).Position;
+                }
+
+                return m_p2084774077;
+            }
+            set
+            {
+                LocationData data = default;
+                var dataActive = m_EntityManager != default && m_EntityManager.HasComponent<LocationData>(m_Entity);
+                if (dataActive)
+                    data = m_EntityManager.GetComponentData<LocationData>(m_Entity);
+                Transform.position = data.Position = m_p2084774077 = value;
+                if (dataActive)
+                    m_EntityManager.SetComponentData(m_Entity, data);
+            }
+        }
+
+        /// <summary>
+        /// The forward vector of the object.
+        /// </summary>
+        public UnityEngine.Vector3 Forward
+        {
+            get
+            {
+                if (m_EntityManager != default && m_EntityManager.HasComponent<LocationData>(m_Entity))
+                {
+                    m_p2006904664 = m_EntityManager.GetComponentData<LocationData>(m_Entity).Forward;
+                }
+
+                return m_p2006904664;
+            }
+            set
+            {
+                LocationData data = default;
+                var dataActive = m_EntityManager != default && m_EntityManager.HasComponent<LocationData>(m_Entity);
+                if (dataActive)
+                    data = m_EntityManager.GetComponentData<LocationData>(m_Entity);
+                Transform.forward = data.Forward = m_p2006904664 = value;
+                if (dataActive)
+                    m_EntityManager.SetComponentData(m_Entity, data);
+            }
+        }
+
+        /// <summary>
+        /// The component data representation of the trait.
+        /// </summary>
+        public LocationData Data
+        {
+            get => m_World != null && m_World.IsCreated && m_EntityManager != default && m_EntityManager.HasComponent<LocationData>(m_Entity)
+                ? m_EntityManager.GetComponentData<LocationData>(m_Entity) : GetData();
+            set
+            {
+                if (m_World != null && m_World.IsCreated && m_EntityManager != default && m_EntityManager.HasComponent<LocationData>(m_Entity))
+                    m_EntityManager.SetComponentData(m_Entity, value);
+            }
+        }
+
+#pragma warning disable 649
+        [SerializeField]
+        [InspectorName("Transform")]
+        UnityEngine.Transform m_p338023941 = default;
+        [SerializeField]
+        [HideInInspector]
+        UnityEngine.Vector3 m_p2084774077 = default;
+        [SerializeField]
+        [HideInInspector]
+        UnityEngine.Vector3 m_p2006904664 = default;
+#pragma warning restore 649
+
+        EntityManager m_EntityManager;
+        World m_World;
+        Entity m_Entity;
+
+        LocationData GetData()
+        {
+            LocationData data = default;
+            data.Transform = m_p338023941;
+
+            return data;
+        }
+
+
+        void OnEnable()
+        {
+            // Handle the case where this trait is added after conversion
+            var semanticObject = GetComponent<SemanticObject>();
+            if (semanticObject && !semanticObject.Entity.Equals(default))
+                Convert(semanticObject.Entity, semanticObject.EntityManager, null);
+
+            Transform = gameObject.transform;
+        }
+
+        public void Convert(Entity entity, EntityManager destinationManager, GameObjectConversionSystem _)
+        {
+            m_Entity = entity;
+            m_EntityManager = destinationManager;
+            m_World = destinationManager.World;
+
+            if (!destinationManager.HasComponent(entity, typeof(LocationData)))
+            {
+                destinationManager.AddComponentData(entity, GetData());
+            }
+        }
+
+        void OnDestroy()
+        {
+            if (m_World != default && m_World.IsCreated)
+            {
+                m_EntityManager.RemoveComponent<LocationData>(m_Entity);
+                if (m_EntityManager.GetComponentCount(m_Entity) == 0)
+                    m_EntityManager.DestroyEntity(m_Entity);
+            }
+        }
+
+        void OnValidate()
+        {
+
+            // Commit local fields to backing store
+            Data = GetData();
+        }
+
+#if UNITY_EDITOR
+        void OnDrawGizmos()
+        {
+            TraitGizmos.DrawGizmoForTrait(nameof(LocationData), gameObject, Data);
         }
 #endif
-
-        /// <summary>
-        /// Compares this location to another
-        /// </summary>
-        /// <param name="other">Another location to which the location is compared</param>
-        /// <returns>Returns true if the two locations are equal</returns>
-        public bool Equals(Location other)
-        {
-            return TransformInstanceId.Equals(other.TransformInstanceId)
-                && Position == other.Position
-                && Forward == other.Forward;
-        }
-
-        /// <summary>
-        /// Get the value of a field
-        /// </summary>
-        /// <param name="fieldName">Name of field</param>
-        /// <returns>Field value if field exists</returns>
-        public object GetField(string fieldName)
-        {
-            switch (fieldName)
-            {
-                case nameof(Position):
-                    return Position;
-
-                case nameof(Forward):
-                    return Forward;
-
-                case nameof(TransformInstanceId):
-                    return TransformInstanceId;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Set the value of a field
-        /// </summary>
-        /// <param name="fieldName">Name of field</param>
-        /// <param name="value">Value</param>
-        public void SetField(string fieldName, object value)
-        {
-            switch (fieldName)
-            {
-                case nameof(Position):
-                    Position = (Vector3)value;
-                    break;
-
-                case nameof(Forward):
-                    Forward = (Vector3)value;
-                    break;
-
-                case nameof(TransformInstanceId):
-                    TransformInstanceId = (int)value;
-                    break;
-
-#if !UNITY_DOTSPLAYER
-                case nameof(Transform):
-                    Transform = (Transform)value;
-                    break;
-#endif
-            }
-        }
-
-        /// <summary>
-        /// Returns a string that represents the location
-        /// </summary>
-        /// <returns>A string that represents the location</returns>
-        public override string ToString()
-        {
-            return $"Location: {Position} {Forward} {TransformInstanceId}";
-        }
     }
 }

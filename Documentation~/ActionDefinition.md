@@ -13,7 +13,7 @@ An action is defined by the following:
 * Parameters - The set of objects involved in and potentially affected by the action.
 * Preconditions - The conditions under which the action may be performed.
 * Effects - The changes incurred by objects as a result of the action.
-* Cost / Reward - The cost (negative) or reward (positive) for taking the action.
+* Reward - The reward for performing the action.
 
 ![Action Definition Inspector](images/ActionDefinition.png)
 
@@ -42,10 +42,10 @@ Deleted objects are specified by selecting the parameter referring to the object
 ![Deleted Object](images/DeletedObject.png)
 
 
-### Reward / Cost
+### Rewards
 
-An action's reward or cost is a numerical value associated with the inherent benefit or penalty associated with taking the action. Typically, positive values are referred to as _rewards_ while negative values are referred to as _costs_. In the context of planning, these values are a representation of "utility" (see: utility theory), which is simply a numeric, unitless representation of preference. This characteristic allows the search algorithm to evaluate plans and order them accordingly. Specifically, the plans are given a total reward/cost, which is the discounted or undiscounted[^1] sum of the costs/rewards of each individual action over the course of the plan. 
+An action's reward is a numerical value associated with the inherent benefit or penalty associated with taking the action. In the context of planning, these values are a representation of "utility" (see: utility theory), which is simply a numeric, unitless representation of preference. This characteristic allows the search algorithm to evaluate plans and order them accordingly. Specifically, the plans are given a total reward, which is the discounted or undiscounted[^1] sum of the rewards of each individual action over the course of the plan. 
 
-Since the agent's goal is to maximize its *cumulative* reward over the course of the plan, it will prefer to select actions with high reward or low cost. This can entail selecting near-term actions with low reward in order to achieve a larger delayed payoff from future actions, which is one of the benefits of sequential decision-making.
+Since the agent's goal is to maximize its *cumulative* reward over the course of the plan, it will prefer to select actions with high reward. This can entail selecting near-term actions with low reward in order to achieve a larger delayed payoff from future actions, which is one of the benefits of sequential decision-making.
 
-[^1]: Here, discounting refers to the scaling down of the rewards/costs of actions farther along the plan, which effectively considers near-term decisions with more weight than for long-term decisions. For information how to set the discount factor, see [PlanDefinition](PlanDefinition.md).
+[^1]: Here, discounting refers to the scaling down of the rewards of actions farther along the plan, which effectively considers near-term decisions with more weight than for long-term decisions. For information how to set the discount factor, see [ProblemDefinition](ProblemDefinition.md).

@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Utility;
+using Unity.Semantic.Traits.Utility;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Entities;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
+using ICustomTrait = Unity.AI.Planner.Traits.ICustomTrait;
+using TraitDefinition = Unity.Semantic.Traits.TraitDefinition;
 
 namespace UnityEditor.AI.Planner.CodeGen
 {
@@ -21,22 +24,18 @@ namespace UnityEditor.AI.Planner.CodeGen
         {
             m_GeneratedFilePaths.Clear();
 
-            bool anyEnums = false;
-            foreach (var e in PlannerAssetDatabase.EnumDefinitions)
-            {
-                GenerateEnum(e, outputPath);
-                anyEnums = true;
-            }
+            bool anyEnums = PlannerAssetDatabase.EnumDefinitions.Any();
 
             foreach (var trait in PlannerAssetDatabase.TraitDefinitions)
             {
-                if (TypeResolver.TryGetType(trait.FullyQualifiedName, out var traitType) && typeof(ICustomTrait).IsAssignableFrom(traitType)) // No codegen needed
+                if (TypeResolver.TryGetType($"{TypeHelper.TraitBasedQualifier}.{trait.name}", out var traitType)
+                    && typeof(ICustomTrait).IsAssignableFrom(traitType)) // No codegen needed
                     continue;
 
                 GenerateTrait(trait, outputPath, anyEnums);
             }
 
-            foreach (var plan in PlannerAssetDatabase.PlanDefinitions)
+            foreach (var plan in PlannerAssetDatabase.ProblemDefinitions)
             {
                 if (plan.ActionDefinitions == null || !plan.ActionDefinitions.Any())
                 {
@@ -47,7 +46,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 GeneratePlanStateRepresentation(outputPath, plan);
             }
 
-            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, "AssemblyInfo.cs"), $"using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"{TypeResolver.PlansQualifier}\")]");
+            SaveToFile(Path.Combine(outputPath, TypeHelper.StateRepresentationQualifier, "AssemblyInfo.cs"), $"using System.Runtime.CompilerServices; [assembly: InternalsVisibleTo(\"{TypeHelper.PlansQualifier}\")]");
 
             // Make a copy, so this is re-entrant
             return m_GeneratedFilePaths.ToList();
@@ -60,7 +59,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             Type[] customTypes = ReflectionUtils.GetTypesFromAssembly(customAssembly);
 
             var anyEnums = PlannerAssetDatabase.EnumDefinitions.Any();
-            foreach (var plan in PlannerAssetDatabase.PlanDefinitions)
+            foreach (var plan in PlannerAssetDatabase.ProblemDefinitions)
             {
                 if (plan.ActionDefinitions == null || !plan.ActionDefinitions.Any())
                 {
@@ -88,61 +87,62 @@ namespace UnityEditor.AI.Planner.CodeGen
             return m_GeneratedFilePaths.ToList();
         }
 
+        Type GetConvertedType(Type type)
+        {
+            if (type == typeof(GameObject) || type == typeof(Entity))
+                return typeof(TraitBasedObjectId);
+
+            return Unity.Semantic.Traits.Utility.TypeResolver.GetBlittableTypeEquivalent(type);
+        }
+
         void GenerateTrait(TraitDefinition trait, string outputPath, bool includeEnums = false)
         {
-            var fields = trait.Fields.Select(p => new
+            var fields = trait.properties.Select(p => new
             {
-                field_type = p.Type,
-                field_name = p.Name
+                field_type = Unity.Semantic.Traits.Utility.TypeResolver.GetUnmangledName(GetConvertedType(p.property_type)),
+                field_name = p.property_name
             });
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateTrait, new
             {
-                @namespace = TypeResolver.StateRepresentationQualifier,
-                name = trait.Name,
+                @namespace = TypeHelper.StateRepresentationQualifier,
+                name = trait.name,
                 fields = fields,
                 include_enums = includeEnums,
             });
 
-            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, "Traits", $"{trait.Name}.cs"), result);
+            SaveToFile(Path.Combine(outputPath, TypeHelper.StateRepresentationQualifier, "Traits", $"{trait.name}.cs"), result);
         }
 
-        void GenerateEnum(EnumDefinition @enum, string outputPath)
+        void GeneratePlanStateRepresentation(string outputPath, ProblemDefinition problemDefinition)
         {
-            var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateEnum, new
-            {
-                @namespace = TypeResolver.StateRepresentationQualifier,
-                Name = @enum.Name,
-                Values = @enum.Values
-            });
-
-            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, "Traits", $"{@enum.Name}.cs"), result);
-        }
-
-        void GeneratePlanStateRepresentation(string outputPath, PlanDefinition plan)
-        {
-            var traits = plan.GetTraitsUsed().Select(p => new
-            {
-                name = p.Name,
-                relations = p.Fields.Where(f => f.Type.EndsWith("ObjectId")).Select(f => new { name = f.Name }),
-                attributes = p.Fields.Where(f => !f.Type.EndsWith("ObjectId")
-                    && (f.FieldType == null // It's possible the type isn't available for reflection, so just assume it's blittable for now
-                    || UnsafeUtility.IsUnmanaged(f.FieldType))).Select(t => new
-                {
-                    field_type = t.Type,
-                    field_name = t.Name
-                })
-            });
-
+            var traits = problemDefinition.GetTraitsUsed()
+                    .Append(PlannerAssetDatabase.TraitDefinitions.FirstOrDefault(t => t.name == nameof(PlanningAgent)))
+                    .Where(t => t != null)
+                    .Select(t => new
+                    {
+                        name = t.name,
+                        relations = t.properties.Where(p =>
+                                p.property_type == typeof(GameObject) || p.property_type == typeof(Entity))
+                            .Select(p => new { name = p.property_name }),
+                        attributes = t.properties.Where(p =>
+                                p.property_type != typeof(GameObject) && p.property_type != typeof(Entity)
+                            && (p.property_type == null // It's possible the type isn't available for reflection, so just assume it's blittable for now
+                            || UnsafeUtility.IsUnmanaged(GetConvertedType(p.property_type)))).Select(p => new
+                        {
+                            field_type = Unity.Semantic.Traits.Utility.TypeResolver.GetUnmangledName(GetConvertedType(p.property_type)),
+                            field_name = p.property_name
+                        })
+                    });
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateStateRepresentation, new
             {
-                @namespace = $"{TypeResolver.StateRepresentationQualifier}.{plan.Name}",
+                @namespace = $"{TypeHelper.StateRepresentationQualifier}.{problemDefinition.Name}",
                 trait_list = traits,
                 num_traits = traits.Count()
             });
 
-            SaveToFile(Path.Combine(outputPath, TypeResolver.StateRepresentationQualifier, plan.Name, "PlanStateRepresentation.cs"), result);
+            SaveToFile(Path.Combine(outputPath, TypeHelper.StateRepresentationQualifier, problemDefinition.Name, "PlanStateRepresentation.cs"), result);
         }
 
         void GenerateTermination(StateTerminationDefinition termination, string planName, Type[] customTypes, string outputPath, bool includeEnums)
@@ -157,8 +157,8 @@ namespace UnityEditor.AI.Planner.CodeGen
             });
 
             var terminationCriteria = termination.Criteria.Where(p => !p.IsSpecialOperator(Operation.SpecialOperators.Custom));
-            var criteriaTraits = terminationCriteria.Where(c => c.OperandA.Trait != null).Select(c => c.OperandA.Trait.Name)
-                .Concat(terminationCriteria.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.Name))
+            var criteriaTraits = terminationCriteria.Where(c => c.OperandA.Trait != null).Select(c => c.OperandA.Trait.name)
+                .Concat(terminationCriteria.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.name))
                 .Distinct();
 
             var customCriteriaList = termination.Criteria.Where(p => p.IsSpecialOperator(Operation.SpecialOperators.Custom));
@@ -168,8 +168,8 @@ namespace UnityEditor.AI.Planner.CodeGen
             var criteria = terminationCriteria.Select(p => new
             {
                 @operator = p.Operator,
-                operand_a = GetPreconditionOperandString(p.OperandA, parameterNames),
-                operand_b = GetPreconditionOperandString(p.OperandB, parameterNames),
+                operand_a = GetPreconditionOperandString(p.OperandA, p.Operator, parameterNames),
+                operand_b = GetPreconditionOperandString(p.OperandB, p.Operator, parameterNames),
                 loop_index = Mathf.Max(parameterNames.FindIndex(name => name == p.OperandA.Parameter)
                     , parameterNames.FindIndex(name => name == p.OperandB.Parameter))
             });
@@ -200,7 +200,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateTermination, new
             {
-                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
+                @namespace = $"{TypeHelper.PlansQualifier}.{planName}",
                 plan_name = planName,
                 name = terminationName,
                 parameter_list = parameters,
@@ -210,12 +210,12 @@ namespace UnityEditor.AI.Planner.CodeGen
                 reward_value = termination.TerminalReward,
                 custom_rewards =  customRewards,
                 include_enums = includeEnums,
-                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
+                state_representation_qualifier = TypeHelper.StateRepresentationQualifier
             });
-            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, $"{terminationName}.cs"), result);
+            SaveToFile(Path.Combine(outputPath, TypeHelper.PlansQualifier, planName, $"{terminationName}.cs"), result);
         }
 
-        void GenerateActionScheduler(PlanDefinition definition, string planName, string outputPath)
+        void GenerateActionScheduler(ProblemDefinition definition, string planName, string outputPath)
         {
             int maxArgs = 0;
             foreach (var action in definition.ActionDefinitions)
@@ -226,43 +226,43 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateActionScheduler, new
             {
-                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
+                @namespace = $"{TypeHelper.PlansQualifier}.{planName}",
                 plan_name = definition.Name,
                 actions = definition.ActionDefinitions,
                 num_actions = definition.ActionDefinitions.Count(),
                 num_args = maxArgs,
-                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
+                state_representation_qualifier = TypeHelper.StateRepresentationQualifier
             });
 
-            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, "ActionScheduler.cs"), result);
+            SaveToFile(Path.Combine(outputPath, TypeHelper.PlansQualifier, planName, "ActionScheduler.cs"), result);
         }
 
-        void GeneratePlanner(PlanDefinition definition, string planName, string outputPath, bool includeEnums = false)
+        void GeneratePlanner(ProblemDefinition definition, string planName, string outputPath, bool includeEnums = false)
         {
-            var customHeuristic = definition.CustomHeuristic;
-            var heuristicTypeName = string.IsNullOrEmpty(customHeuristic) ? "DefaultHeuristic" : $"global::{customHeuristic}";
+            var customCumulativeRewardEstimator = definition.CustomCumulativeRewardEstimator;
+            var rewardEstimatorTypeName = string.IsNullOrEmpty(customCumulativeRewardEstimator) ? "DefaultCumulativeRewardEstimator" : $"global::{customCumulativeRewardEstimator}";
 
-            var defaultHeuristic = new
+            var defaultCumulativeRewardEstimator = new
             {
-                lower = definition.DefaultHeuristicLower,
-                avg = definition.DefaultHeuristicAverage,
-                upper = definition.DefaultHeuristicUpper,
+                lower = definition.DefaultEstimateLower,
+                avg = definition.DefaultEstimateAverage,
+                upper = definition.DefaultEstimateUpper,
             };
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplatePlanExecutor, new
             {
-                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
+                @namespace = $"{TypeHelper.PlansQualifier}.{planName}",
                 plan_name = definition.Name,
                 actions = definition.ActionDefinitions,
                 traits = definition.GetTraitsUsed(),
-                heuristic = heuristicTypeName,
-                default_heuristic = defaultHeuristic,
+                reward_estimator = rewardEstimatorTypeName,
+                default_reward_estimate = defaultCumulativeRewardEstimator,
                 terminations = definition.StateTerminationDefinitions.Where(t => t != null).Select(t => t.Name),
                 include_enums = includeEnums,
-                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
+                state_representation_qualifier = TypeHelper.StateRepresentationQualifier
             });
 
-            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, $"{definition.name}Executor.cs"), result);
+            SaveToFile(Path.Combine(outputPath, TypeHelper.PlansQualifier, planName, $"{definition.name}Executor.cs"), result);
         }
 
         void GenerateAction(ActionDefinition action, string planName, Type[] customTypes, string outputPath, bool includeEnums = false)
@@ -280,15 +280,18 @@ namespace UnityEditor.AI.Planner.CodeGen
             var traitPreconditionList = action.Preconditions.Where(p => !p.IsSpecialOperator(Operation.SpecialOperators.Custom));
             var preconditions = traitPreconditionList.Select(p => new
             {
-                @operator = p.Operator,
-                operand_a = GetPreconditionOperandString(p.OperandA, parameterNames),
-                operand_b = GetPreconditionOperandString(p.OperandB, parameterNames),
-                loop_index = Mathf.Max(parameterNames.FindIndex(name => name == p.OperandA.Parameter)
-                    , parameterNames.FindIndex(name => name == p.OperandB.Parameter))
+                @operator = p.Operator.Contains("contains") ? ".Contains" : p.Operator,
+                operand_a = GetPreconditionOperandString(p.OperandA, p.Operator, parameterNames),
+                operand_b = GetPreconditionOperandString(p.OperandB, p.Operator, parameterNames),
+                is_list_method = p.OperandA.Trait != null && p.OperandA.TraitProperty != null
+                                                             && IsListType(p.OperandA.TraitProperty.property_type)
+                                                             && p.Operator.Contains("contains"),
+                loop_index = Mathf.Max(parameterNames.FindIndex(name => name == p.OperandA.Parameter),
+                    parameterNames.FindIndex(name => name == p.OperandB.Parameter))
             });
 
-            var preconditionTraits = traitPreconditionList.Where(c => c.OperandA.Trait != null).Select(c => c.OperandA.Trait.Name)
-                .Concat(traitPreconditionList.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.Name))
+            var preconditionTraits = traitPreconditionList.Where(c => c.OperandA.Trait != null).Select(c => c.OperandA.Trait.name)
+                .Concat(traitPreconditionList.Where(c => c.OperandB.Trait != null).Select(c => c.OperandB.Trait.name))
                 .Distinct();
 
             var customPreconditionList = action.Preconditions.Where(p => p.IsSpecialOperator(Operation.SpecialOperators.Custom));
@@ -297,8 +300,8 @@ namespace UnityEditor.AI.Planner.CodeGen
             var createdObjects = action.CreatedObjects.Select(c => new
             {
                 name = c.Name,
-                required_traits = c.RequiredTraits.Select(t => t.Name),
-                prohibited_traits = c.ProhibitedTraits.Select(t => t.Name)
+                required_traits = c.RequiredTraits.Select(t => t.name),
+                prohibited_traits = c.ProhibitedTraits.Select(t => t.name)
             });
 
             var requiredObjectBuffers = new HashSet<string>();
@@ -332,7 +335,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateAction, new
             {
-                @namespace = $"{TypeResolver.PlansQualifier}.{planName}",
+                @namespace = $"{TypeHelper.PlansQualifier}.{planName}",
                 plan_name = planName,
                 action_name = action.Name,
                 parameter_list = parameters.ToList(),
@@ -348,10 +351,10 @@ namespace UnityEditor.AI.Planner.CodeGen
                 removed_objects = action.RemovedObjects,
                 required_object_buffers = requiredObjectBuffers.ToList(),
                 required_trait_buffers = requiredTraitBuffers.ToList(),
-                state_representation_qualifier = TypeResolver.StateRepresentationQualifier
+                state_representation_qualifier = TypeHelper.StateRepresentationQualifier
             });
 
-            SaveToFile(Path.Combine(outputPath, TypeResolver.PlansQualifier, planName, $"{action.Name}.cs"), result);
+            SaveToFile(Path.Combine(outputPath, TypeHelper.PlansQualifier, planName, $"{action.Name}.cs"), result);
         }
 
         string[] BuildModifierLines(ActionDefinition action, Operation operation, ref HashSet<string> requiredObjectBuffers, ref HashSet<string> requiredTraitBuffers)
@@ -379,7 +382,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                         throw new ArgumentException("Invalid operands for an Add trait operator");
                     }
                     var parameter = operandA.Parameter;
-                    var trait = operandB.Trait.Name;
+                    var trait = operandB.Trait.name;
 
                     requiredObjectBuffers.Add(parameter);
 
@@ -393,7 +396,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                         throw new ArgumentException("Invalid operands for a Remove trait operator");
                     }
                     var parameter = operandA.Parameter;
-                    var trait = operandB.Trait.Name;
+                    var trait = operandB.Trait.name;
 
                     requiredObjectBuffers.Add(parameter);
 
@@ -410,8 +413,8 @@ namespace UnityEditor.AI.Planner.CodeGen
                     var parameterNames = action.Parameters.Select(p => p.Name).ToList();
 
                     var paramA = operandA.Parameter;
-                    var traitA = operandA.Trait.Name;
-                    var fieldA = operandA.TraitFieldName;
+                    var traitA = operandA.Trait.name;
+                    var fieldA = operandA.TraitPropertyName;
 
                     requiredTraitBuffers.Add(traitA);
 
@@ -425,11 +428,14 @@ namespace UnityEditor.AI.Planner.CodeGen
 
                     modifierLines.Add($"var @{traitA} = new{traitA}Buffer[{objectAPrefix}{paramA}Object.{traitA}Index];");
 
+                    var operandAType = operandA.TraitProperty.property_type;
+                    var isListOperation = operandAType != null && IsListType(operandAType);
+
                     if (operandB.Trait == null)
                     {
                         if (operandB.Enum != null)
                         {
-                            modifierLines.Add($"@{traitA}.@{fieldA} {@operator} {operandB.Enum.Name}.{operandB.Value};");
+                            modifierLines.Add($"@{traitA}.@{fieldA} {@operator} {operandB.Enum.name}.{operandB.Value};");
                         }
                         else if (parameterNames.Contains(operandB.Parameter))
                         {
@@ -440,6 +446,11 @@ namespace UnityEditor.AI.Planner.CodeGen
                         {
                             modifierLines.Add($"@{traitA}.@{fieldA} {@operator} new{operandB.Parameter}ObjectId;");
                         }
+                        else if (isListOperation)
+                        {
+                            if (@operator == "clear")
+                                modifierLines.Add($"@{traitA}.@{fieldA}.Clear();");
+                        }
                         else
                         {
                             modifierLines.Add($"@{traitA}.@{fieldA} {@operator} {operandB.Value};");
@@ -447,8 +458,8 @@ namespace UnityEditor.AI.Planner.CodeGen
                     }
                     else
                     {
-                        string traitB = operandB.Trait.Name;
-                        string fieldB = operandB.TraitFieldName;
+                        string traitB = operandB.Trait.name;
+                        string fieldB = operandB.TraitPropertyName;
 
                         requiredTraitBuffers.Add(traitB);
 
@@ -458,7 +469,25 @@ namespace UnityEditor.AI.Planner.CodeGen
                             requiredObjectBuffers.Add(operandB.Parameter);
                         }
 
-                        modifierLines.Add($"@{traitA}.{fieldA} {@operator} new{traitB}Buffer[{objectBPrefix}{operandB.Parameter}Object.{traitB}Index].{fieldB};");
+                        if (isListOperation)
+                        {
+                            if (@operator == "=")
+                            {
+                                modifierLines.Add($"@{traitA}.{fieldA}.Clear();");
+                                modifierLines.Add($"var list = new{traitB}Buffer[{objectBPrefix}{operandB.Parameter}Object.{traitB}Index].{fieldB};");
+                                modifierLines.Add($"for (var i = 0; i < list.Length; i++)");
+                                modifierLines.Add($"\t@{traitA}.{fieldA}.Add(list[i]);");
+                            }
+                            else
+                            {
+                                @operator = @operator == "+=" ? ".Add" : ".Remove";
+                                modifierLines.Add($"@{traitA}.{fieldA}{@operator}(new{traitB}Buffer[{objectBPrefix}{operandB.Parameter}Object.{traitB}Index].{fieldB});");
+                            }
+                        }
+                        else
+                        {
+                            modifierLines.Add($"@{traitA}.{fieldA} {@operator} new{traitB}Buffer[{objectBPrefix}{operandB.Parameter}Object.{traitB}Index].{fieldB};");
+                        }
                     }
 
                     modifierLines.Add($"new{traitA}Buffer[{objectAPrefix}{paramA}Object.{traitA}Index] = @{traitA};");
@@ -533,12 +562,12 @@ namespace UnityEditor.AI.Planner.CodeGen
             m_GeneratedFilePaths.Add(filePath);
         }
 
-        static string GetPreconditionOperandString(OperandValue operand, List<string> parameterNames)
+        static string GetPreconditionOperandString(OperandValue operand, string @operator, List<string> parameterNames)
         {
             if (operand.Trait == null)
             {
                 if (operand.Enum != null)
-                    return $"{operand.Enum.Name}.{operand.Value}";
+                    return $"{operand.Enum.name}.{operand.Value}";
 
                 if (parameterNames.Contains(operand.Parameter))
                     return $"stateData.GetTraitBasedObjectId({operand.Parameter}Index)";
@@ -546,11 +575,43 @@ namespace UnityEditor.AI.Planner.CodeGen
                 return operand.Value;
             }
 
-            var precondition =  $"{operand.Trait.Name}Buffer[{operand.Parameter}Object.{operand.Trait.Name}Index]";
-            if (!string.IsNullOrEmpty(operand.TraitFieldName))
-                precondition +=  $".{operand.TraitFieldName}";
+            var precondition =  $"{operand.Trait.name}Buffer[{operand.Parameter}Object.{operand.Trait.name}Index]";
+            if (!string.IsNullOrEmpty(operand.TraitPropertyName))
+            {
+                precondition += $".{operand.TraitPropertyName}";
+
+                var operandPropertyType = operand.TraitProperty.property_type;
+                if (IsListType(operandPropertyType))
+                {
+                    if (IsComparisonOperator(@operator))
+                        precondition += ".Length";
+                    else if (@operator == "!contains")
+                        precondition = "!" + precondition;
+                }
+            }
 
             return precondition;
+        }
+
+        static bool IsListType(Type type)
+        {
+            return type.IsGenericType && typeof(List<>).IsAssignableFrom(type.GetGenericTypeDefinition());
+        }
+
+        static bool IsComparisonOperator(string @operator)
+        {
+            switch (@operator)
+            {
+                case "==":
+                case "!=":
+                case "<":
+                case ">":
+                case "<=":
+                case ">=":
+                    return true;
+            }
+
+            return false;
         }
     }
 }

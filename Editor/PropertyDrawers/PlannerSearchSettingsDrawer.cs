@@ -1,9 +1,9 @@
-﻿using UnityEngine;
-using UnityEngine.AI.Planner;
+﻿using Unity.AI.Planner;
+using UnityEngine;
 
 namespace UnityEditor.AI.Planner
 {
-    [CustomPropertyDrawer(typeof(PlannerSearchSettings))]
+    [CustomPropertyDrawer(typeof(PlannerSettings))]
     class PlannerSearchSettingsDrawer : PropertyDrawer
     {
         // Draw the property inside the given rect
@@ -18,12 +18,12 @@ namespace UnityEditor.AI.Planner
                 using (new EditorGUI.IndentLevelScope())
                 {
                     // Settings
-                    EditorGUILayout.PropertyField(property.FindPropertyRelative("SearchIterationsPerUpdate"));
+                    EditorGUILayout.PropertyField(property.FindPropertyRelative("PlanningIterationsPerUpdate"));
                     EditorGUILayout.PropertyField(property.FindPropertyRelative("StateExpansionBudgetPerIteration"));
 
-                    DrawEnabledProperty(property, "UseCustomSearchFrequency", "MinFramesPerSearchUpdate");
+                    DrawEnabledProperty(property, "UseCustomPlanningFrequency", "MinFramesPerPlanningUpdate");
                     DrawEnabledProperty(property, "CapPlanSize", "MaxStatesInPlan");
-                    DrawEnabledProperty(property, "StopPlanningWhenToleranceAchieved", "RootPolicyValueTolerance");
+                    DrawEnabledProperty(property, "StopPlanningWhenToleranceAchieved", "RootEstimatedRewardTolerance");
                     DrawEnabledProperty(property, "CapPlanUpdates", "MaxUpdates");
 
                     EditorGUILayout.PropertyField(property.FindPropertyRelative("GraphSelectionJobMode"));

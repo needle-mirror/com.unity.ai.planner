@@ -1,13 +1,14 @@
 ﻿using System;
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 
 namespace Unity.AI.Planner.Jobs
 {
     /// <summary>
-    /// Modes designating the strategy for computing updated decision policy values during backpropagation.
+    /// Modes designating the strategy for computing updated decision estimated reward values during backpropagation.
     /// </summary>
     public enum BackpropagationJobMode
     {
@@ -31,13 +32,16 @@ namespace Unity.AI.Planner.Jobs
         [ReadOnly] public NativeMultiHashMap<TStateKey, int> SelectedStates;
 
         public NativeHashMap<TStateKey, int> DepthMap;
-        public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph;
+        public PlanGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> planGraph;
 
         public void Execute()
         {
-            var statesToUpdate = new NativeMultiHashMap<int, TStateKey>(SelectedStates.Count(), Allocator.Temp);
-            var maxDepth = int.MinValue;
+            var statesToUpdateLength = SelectedStates.Count();
+            var statesToUpdate = new NativeMultiHashMap<int, TStateKey>(statesToUpdateLength, Allocator.Temp);
+            var currentHorizon = new NativeList<TStateKey>(statesToUpdateLength, Allocator.Temp);
+            var nextHorizon = new NativeList<TStateKey>(statesToUpdateLength, Allocator.Temp);
 
+            var maxDepth = int.MinValue;
             var selectedStateKeys = SelectedStates.GetKeyArray(Allocator.Temp);
             for (int i = 0; i < selectedStateKeys.Length; i++)
             {
@@ -53,21 +57,19 @@ namespace Unity.AI.Planner.Jobs
 
                 // Queue state and track max depth of backpropagation
                 statesToUpdate.AddValueIfUnique(stateDepth, stateKey);
-                maxDepth = Math.Max(maxDepth, stateDepth);
+                maxDepth = math.max(maxDepth, stateDepth);
             }
+            selectedStateKeys.Dispose();
 
-            var actionLookup = PolicyGraph.ActionLookup;
-            var resultingStateLookup = PolicyGraph.ResultingStateLookup;
-            var actionInfoLookup = PolicyGraph.ActionInfoLookup;
-            var stateInfoLookup = PolicyGraph.StateInfoLookup;
-            var stateTransitionInfoLookup = PolicyGraph.StateTransitionInfoLookup;
-            var predecessorLookup = PolicyGraph.PredecessorGraph;
+            var actionLookup = planGraph.ActionLookup;
+            var resultingStateLookup = planGraph.ResultingStateLookup;
+            var actionInfoLookup = planGraph.ActionInfoLookup;
+            var stateInfoLookup = planGraph.StateInfoLookup;
+            var stateTransitionInfoLookup = planGraph.StateTransitionInfoLookup;
+            var predecessorLookup = planGraph.PredecessorGraph;
             var depth = maxDepth;
 
-            var currentHorizon = new NativeList<TStateKey>(statesToUpdate.Count(), Allocator.Temp);
-            var nextHorizon = new NativeList<TStateKey>(statesToUpdate.Count(), Allocator.Temp);
-
-            // pull out states from statesToUpdate
+            // Pull states from statesToUpdate
             if (statesToUpdate.TryGetFirstValue(depth, out var stateToAdd, out var stateIterator))
             {
                 do
@@ -75,8 +77,8 @@ namespace Unity.AI.Planner.Jobs
                 while (statesToUpdate.TryGetNextValue(out stateToAdd, ref stateIterator));
             }
 
-            // fill current horizon
-            while (currentHorizon.Length > 0 || depth >= 0)
+            // Update values from leaf state(s) to root
+            while (depth >= 0)
             {
                 for (int i = 0; i < currentHorizon.Length; i++)
                 {
@@ -89,7 +91,7 @@ namespace Unity.AI.Planner.Jobs
 
                         // Update all actions
                         do
-                            updateState |= UpdateActionValue(new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey), resultingStateLookup, stateInfoLookup, actionInfoLookup, stateTransitionInfoLookup);
+                            updateState |= UpdateCumulativeReward(new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey), resultingStateLookup, stateInfoLookup, actionInfoLookup, stateTransitionInfoLookup);
                         while (actionLookup.TryGetNextValue(out actionKey, ref stateActionIterator));
                     }
 
@@ -125,6 +127,50 @@ namespace Unity.AI.Planner.Jobs
                 }
             }
 
+            // new: continue propagating complete flag changes
+            while (currentHorizon.Length > 0)
+            {
+                for (int i = 0; i < currentHorizon.Length; i++)
+                {
+                    var stateKey = currentHorizon[i];
+                    var updateState = false;
+
+                    // Update all actions
+                    actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var stateActionIterator);
+                    do
+                    {   var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
+                        if (UpdateSubplanCompleteStatus(stateActionPair, out var updatedActionInfo))
+                        {
+                            updateState = true;
+
+                            // Write back updated info
+                            actionInfoLookup[stateActionPair] = updatedActionInfo;
+                        }
+                    }
+                    while (actionLookup.TryGetNextValue(out actionKey, ref stateActionIterator));
+
+                    // Update state
+                    if (updateState && UpdateSubplanCompleteStatus(stateKey, out var updatedStateInfo))
+                    {
+                        // Write back updated info
+                        stateInfoLookup[stateKey] = updatedStateInfo;
+
+                        // If a change has occured, update predecessors
+                        if (predecessorLookup.TryGetFirstValue(stateKey, out var predecessorStateKey, out var predecessorIterator))
+                        {
+                            do
+                                nextHorizon.AddIfUnique(predecessorStateKey);
+                            while (predecessorLookup.TryGetNextValue(out predecessorStateKey, ref predecessorIterator));
+                        }
+                    }
+                }
+
+                var temp = currentHorizon;
+                currentHorizon = nextHorizon;
+                nextHorizon = temp;
+                nextHorizon.Clear();
+            }
+
             currentHorizon.Dispose();
             nextHorizon.Dispose();
             statesToUpdate.Dispose();
@@ -139,11 +185,11 @@ namespace Unity.AI.Planner.Jobs
             // Handle case of no valid actions (mark complete)
             if (!actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator))
             {
-                if (!stateInfo.SubgraphComplete)
+                if (!stateInfo.SubplanIsComplete)
                 {
-                    // State was not marked terminal, so the value should be reset, as to not use the heuristic value.
-                    stateInfo.PolicyValue = new BoundedValue(0,0,0);
-                    stateInfo.SubgraphComplete = true;
+                    // State was not marked terminal, so the value should be reset, as to not use the estimated value.
+                    stateInfo.CumulativeRewardEstimate = new BoundedValue(0,0,0);
+                    stateInfo.SubplanIsComplete = true;
                     stateInfoLookup[stateKey] = stateInfo;
                     return true;
                 }
@@ -152,10 +198,10 @@ namespace Unity.AI.Planner.Jobs
                 return false;
             }
 
-            var originalValue = stateInfo.PolicyValue;
-            var originalCompleteStatus = stateInfo.SubgraphComplete;
-            stateInfo.PolicyValue = new BoundedValue(float.MinValue, float.MinValue, float.MinValue);
-            stateInfo.SubgraphComplete = true;
+            var originalValue = stateInfo.CumulativeRewardEstimate;
+            var originalCompleteStatus = stateInfo.SubplanIsComplete;
+            stateInfo.CumulativeRewardEstimate = new BoundedValue(float.MinValue, float.MinValue, float.MinValue);
+            stateInfo.SubplanIsComplete = true;
             var maxLowerBound = float.MinValue;
 
             // Pick max action; find max lower bound
@@ -164,11 +210,11 @@ namespace Unity.AI.Planner.Jobs
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                 var actionInfo = actionInfoLookup[stateActionPair];
 
-                stateInfo.PolicyValue = stateInfo.PolicyValue.Average < actionInfo.ActionValue.Average ?
-                    actionInfo.ActionValue :
-                    stateInfo.PolicyValue;
+                stateInfo.CumulativeRewardEstimate = stateInfo.CumulativeRewardEstimate.Average < actionInfo.CumulativeRewardEstimate.Average ?
+                    actionInfo.CumulativeRewardEstimate :
+                    stateInfo.CumulativeRewardEstimate;
 
-                maxLowerBound = math.max(maxLowerBound, actionInfo.ActionValue.LowerBound);
+                maxLowerBound = math.max(maxLowerBound, actionInfo.CumulativeRewardEstimate.LowerBound);
             }
             while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
 
@@ -179,28 +225,28 @@ namespace Unity.AI.Planner.Jobs
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                 var actionInfo = actionInfoLookup[stateActionPair];
 
-                if (actionInfo.ActionValue.UpperBound >= maxLowerBound)
-                    stateInfo.SubgraphComplete &= actionInfo.SubgraphComplete;
+                if (actionInfo.CumulativeRewardEstimate.UpperBound >= maxLowerBound)
+                    stateInfo.SubplanIsComplete &= actionInfo.SubplanIsComplete;
             }
             while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
 
             // Reassign
             stateInfoLookup[stateKey] = stateInfo;
 
-            return !originalValue.Approximately(stateInfo.PolicyValue) || originalCompleteStatus != stateInfo.SubgraphComplete;
+            return !originalValue.Approximately(stateInfo.CumulativeRewardEstimate) || originalCompleteStatus != stateInfo.SubplanIsComplete;
         }
 
-        bool UpdateActionValue(StateActionPair<TStateKey, TActionKey> stateActionPair,
+        bool UpdateCumulativeReward(StateActionPair<TStateKey, TActionKey> stateActionPair,
             NativeMultiHashMap<StateActionPair<TStateKey, TActionKey>, TStateKey> resultingStateLookup,
             NativeHashMap<TStateKey, StateInfo> stateInfoLookup,
             NativeHashMap<StateActionPair<TStateKey, TActionKey>, ActionInfo> actionInfoLookup,
             NativeHashMap<StateTransition<TStateKey, TActionKey>, StateTransitionInfo> stateTransitionInfoLookup)
         {
             var actionInfo = actionInfoLookup[stateActionPair];
-            var originalValue = actionInfo.ActionValue;
-            var originalCompleteStatus = actionInfo.SubgraphComplete;
-            actionInfo.ActionValue = default;
-            actionInfo.SubgraphComplete = true;
+            var originalValue = actionInfo.CumulativeRewardEstimate;
+            var originalCompleteStatus = actionInfo.SubplanIsComplete;
+            actionInfo.CumulativeRewardEstimate = default;
+            actionInfo.SubplanIsComplete = true;
 
             resultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingStateKey, out var iterator);
             do
@@ -208,14 +254,59 @@ namespace Unity.AI.Planner.Jobs
                 var stateTransitionInfo = stateTransitionInfoLookup[new StateTransition<TStateKey, TActionKey>(stateActionPair, resultingStateKey)];
                 var resultingStateInfo = stateInfoLookup[resultingStateKey];
 
-                actionInfo.SubgraphComplete &= resultingStateInfo.SubgraphComplete;
-                actionInfo.ActionValue += stateTransitionInfo.Probability *
-                    (stateTransitionInfo.TransitionUtilityValue + DiscountFactor * resultingStateInfo.PolicyValue);
+                actionInfo.SubplanIsComplete &= resultingStateInfo.SubplanIsComplete;
+                actionInfo.CumulativeRewardEstimate += stateTransitionInfo.Probability *
+                    (stateTransitionInfo.TransitionUtilityValue + DiscountFactor * resultingStateInfo.CumulativeRewardEstimate);
             } while (resultingStateLookup.TryGetNextValue(out resultingStateKey, ref iterator));
 
             actionInfoLookup[stateActionPair] = actionInfo;
 
-            return !originalValue.Approximately(actionInfo.ActionValue) || originalCompleteStatus != actionInfo.SubgraphComplete;
+            return !originalValue.Approximately(actionInfo.CumulativeRewardEstimate) || originalCompleteStatus != actionInfo.SubplanIsComplete;
+        }
+
+        bool UpdateSubplanCompleteStatus(TStateKey stateKey, out StateInfo updatedStateInfo)
+        {
+            updatedStateInfo = planGraph.StateInfoLookup[stateKey];
+            var originalCompleteStatus = updatedStateInfo.SubplanIsComplete;
+            updatedStateInfo.SubplanIsComplete = true;
+            var maxLowerBound = float.MinValue;
+
+            // Find max lower bound
+            var actionLookup = planGraph.ActionLookup;
+            actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator);
+            do
+            {
+                var actionInfo = planGraph.ActionInfoLookup[new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey)];
+                maxLowerBound = math.max(maxLowerBound, actionInfo.CumulativeRewardEstimate.LowerBound);
+            }
+            while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
+
+            // Update complete status (ignore pruned actions)
+            actionLookup.TryGetFirstValue(stateKey, out actionKey, out iterator);
+            do
+            {
+                var actionInfo = planGraph.ActionInfoLookup[new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey)];
+                if (actionInfo.CumulativeRewardEstimate.UpperBound >= maxLowerBound)
+                    updatedStateInfo.SubplanIsComplete &= actionInfo.SubplanIsComplete;
+            }
+            while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
+
+            return originalCompleteStatus != updatedStateInfo.SubplanIsComplete;
+        }
+
+        bool UpdateSubplanCompleteStatus(StateActionPair<TStateKey, TActionKey> stateActionPair, out ActionInfo updatedActionInfo)
+        {
+            updatedActionInfo = planGraph.ActionInfoLookup[stateActionPair];
+            var originalCompleteStatus = updatedActionInfo.SubplanIsComplete;
+            updatedActionInfo.SubplanIsComplete = true;
+
+            // Update complete status
+            planGraph.ResultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingStateKey, out var iterator);
+            do
+                updatedActionInfo.SubplanIsComplete &= planGraph.StateInfoLookup[resultingStateKey].SubplanIsComplete;
+            while (planGraph.ResultingStateLookup.TryGetNextValue(out resultingStateKey, ref iterator));
+
+            return originalCompleteStatus != updatedActionInfo.SubplanIsComplete;
         }
     }
 
@@ -305,7 +396,7 @@ namespace Unity.AI.Planner.Jobs
         [ReadOnly] public float DiscountFactor;
         [ReadOnly] public NativeArray<TStateKey> StatesToUpdate;
 
-        // Policy graph
+        // Plan graph
         [ReadOnly] public NativeMultiHashMap<TStateKey, TActionKey> ActionLookup;
         [ReadOnly] public NativeMultiHashMap<TStateKey, TStateKey> PredecessorGraph;
         [ReadOnly] public NativeHashMap<StateTransition<TStateKey, TActionKey>, StateTransitionInfo> StateTransitionInfoLookup;
@@ -315,6 +406,8 @@ namespace Unity.AI.Planner.Jobs
 
         // Outputs
         [WriteOnly] public NativeHashMap<TStateKey, byte>.ParallelWriter PredecessorStatesToUpdate;
+
+        [NativeDisableContainerSafetyRestriction] NativeList<ActionInfo> m_ActionInfoForState;
 
         public void Execute(int jobIndex)
         {
@@ -340,17 +433,21 @@ namespace Unity.AI.Planner.Jobs
                 return;
             }
 
+            // Allocate local container
+            if (!m_ActionInfoForState.IsCreated)
+                m_ActionInfoForState = new NativeList<ActionInfo>(actionCount, Allocator.Temp);
+            else
+                m_ActionInfoForState.Clear();
+
             // Expanded state. Only update if one or more actions have updated.
             var updateState = false;
-            var actionInfoForState = new NativeArray<ActionInfo>(actionCount, Allocator.Temp);
-            var index = 0;
 
             // Update all actions
             ActionLookup.TryGetFirstValue(stateKey, out var actionKey, out var stateActionIterator);
             do
             {
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
-                if (UpdateActionValue(stateActionPair, out var actionInfo))
+                if (UpdateCumulativeReward(stateActionPair, out var actionInfo))
                 {
                     // Queue for write job
                     ActionInfoLookup[stateActionPair] = actionInfo;
@@ -358,14 +455,14 @@ namespace Unity.AI.Planner.Jobs
                     updateState = true;
                 }
 
-                actionInfoForState[index++] = actionInfo;
+                m_ActionInfoForState.Add(actionInfo);
             }
             while (ActionLookup.TryGetNextValue(out actionKey, ref stateActionIterator));
 
 
 
             // If no actions have changed info, the state info will not change, so check before updating state.
-            if (updateState && UpdateStateValueFromActions(stateKey, actionInfoForState, out updatedStateInfo))
+            if (updateState && UpdateStateValueFromActions(stateKey, m_ActionInfoForState, out updatedStateInfo))
             {
                 // Queue for write job
                 StateInfoLookup[stateKey] = updatedStateInfo;
@@ -378,62 +475,61 @@ namespace Unity.AI.Planner.Jobs
                     while (PredecessorGraph.TryGetNextValue(out predecessorStateKey, ref predecessorIterator));
                 }
             }
-            actionInfoForState.Dispose();
         }
 
         bool UpdateStateValueNoActions(TStateKey stateKey, out StateInfo updatedStateInfo)
         {
             // Handle case of no actions (mark complete, override bounds)
             var originalStateInfo = StateInfoLookup[stateKey];
-            var policyAverage = originalStateInfo.PolicyValue.Average;
+            var rewardAverage = originalStateInfo.CumulativeRewardEstimate.Average;
             updatedStateInfo = new StateInfo
             {
-                PolicyValue = originalStateInfo.SubgraphComplete ?
-                    new BoundedValue(policyAverage, policyAverage, policyAverage) : new BoundedValue(0,0,0),
-                SubgraphComplete = true
+                CumulativeRewardEstimate = originalStateInfo.SubplanIsComplete ?
+                    new BoundedValue(rewardAverage, rewardAverage, rewardAverage) : new BoundedValue(0,0,0),
+                SubplanIsComplete = true
             };
 
-            return !originalStateInfo.PolicyValue.Approximately(updatedStateInfo.PolicyValue) ||
-                   originalStateInfo.SubgraphComplete != updatedStateInfo.SubgraphComplete;
+            return !originalStateInfo.CumulativeRewardEstimate.Approximately(updatedStateInfo.CumulativeRewardEstimate) ||
+                   originalStateInfo.SubplanIsComplete != updatedStateInfo.SubplanIsComplete;
         }
 
         bool UpdateStateValueFromActions(TStateKey stateKey, NativeArray<ActionInfo> updatedActionInfo, out StateInfo updatedStateInfo)
         {
             updatedStateInfo = new StateInfo
             {
-                PolicyValue = new BoundedValue(float.MinValue, float.MinValue, float.MinValue),
-                SubgraphComplete = true
+                CumulativeRewardEstimate = new BoundedValue(float.MinValue, float.MinValue, float.MinValue),
+                SubplanIsComplete = true
             };
 
-            // Set state value = max action value; find max lower bound
+            // Set state value = max action reward value; find max lower bound
             var maxLowerBound = float.MinValue;
             for (int i = 0; i < updatedActionInfo.Length; i++)
             {
-                var actionValue = updatedActionInfo[i].ActionValue;
-                maxLowerBound = math.max(maxLowerBound, actionValue.LowerBound);
-                if (updatedStateInfo.PolicyValue.Average < actionValue.Average)
-                    updatedStateInfo.PolicyValue = actionValue;
+                var cumulativeReward = updatedActionInfo[i].CumulativeRewardEstimate;
+                maxLowerBound = math.max(maxLowerBound, cumulativeReward.LowerBound);
+                if (updatedStateInfo.CumulativeRewardEstimate.Average < cumulativeReward.Average)
+                    updatedStateInfo.CumulativeRewardEstimate = cumulativeReward;
             }
 
             // Update complete status (ignore pruned actions)
             for (int i = 0; i < updatedActionInfo.Length; i++)
             {
                 var actionInfo = updatedActionInfo[i];
-                if (actionInfo.ActionValue.UpperBound >= maxLowerBound)
-                    updatedStateInfo.SubgraphComplete &= actionInfo.SubgraphComplete;
+                if (actionInfo.CumulativeRewardEstimate.UpperBound >= maxLowerBound)
+                    updatedStateInfo.SubplanIsComplete &= actionInfo.SubplanIsComplete;
             }
 
             var originalStateInfo = StateInfoLookup[stateKey];
-            return originalStateInfo.SubgraphComplete != updatedStateInfo.SubgraphComplete ||
-                   !originalStateInfo.PolicyValue.Approximately(updatedStateInfo.PolicyValue);
+            return originalStateInfo.SubplanIsComplete != updatedStateInfo.SubplanIsComplete ||
+                   !originalStateInfo.CumulativeRewardEstimate.Approximately(updatedStateInfo.CumulativeRewardEstimate);
         }
 
-        bool UpdateActionValue(StateActionPair<TStateKey, TActionKey> stateActionPair, out ActionInfo updatedActionInfo)
+        bool UpdateCumulativeReward(StateActionPair<TStateKey, TActionKey> stateActionPair, out ActionInfo updatedActionInfo)
         {
             updatedActionInfo = new ActionInfo
             {
-                ActionValue = default,
-                SubgraphComplete = true
+                CumulativeRewardEstimate = default,
+                SubplanIsComplete = true
             };
 
             ResultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingStateKey, out var iterator);
@@ -442,14 +538,14 @@ namespace Unity.AI.Planner.Jobs
                 var stateTransitionInfo = StateTransitionInfoLookup[new StateTransition<TStateKey, TActionKey>(stateActionPair, resultingStateKey)];
                 var resultingStateInfo = StateInfoLookup[resultingStateKey];
 
-                updatedActionInfo.SubgraphComplete &= resultingStateInfo.SubgraphComplete;
-                updatedActionInfo.ActionValue.m_ValueVector += stateTransitionInfo.Probability *
-                    (stateTransitionInfo.TransitionUtilityValue + DiscountFactor * resultingStateInfo.PolicyValue.m_ValueVector);
+                updatedActionInfo.SubplanIsComplete &= resultingStateInfo.SubplanIsComplete;
+                updatedActionInfo.CumulativeRewardEstimate.m_ValueVector += stateTransitionInfo.Probability *
+                    (stateTransitionInfo.TransitionUtilityValue + DiscountFactor * resultingStateInfo.CumulativeRewardEstimate.m_ValueVector);
             } while (ResultingStateLookup.TryGetNextValue(out resultingStateKey, ref iterator));
 
             var originalActionInfo = ActionInfoLookup[stateActionPair];
-            return originalActionInfo.SubgraphComplete != updatedActionInfo.SubgraphComplete ||
-                !originalActionInfo.ActionValue.Approximately(updatedActionInfo.ActionValue);
+            return originalActionInfo.SubplanIsComplete != updatedActionInfo.SubplanIsComplete ||
+                !originalActionInfo.CumulativeRewardEstimate.Approximately(updatedActionInfo.CumulativeRewardEstimate);
         }
     }
 
@@ -459,15 +555,16 @@ namespace Unity.AI.Planner.Jobs
         where TActionKey : struct, IEquatable<TActionKey>
     {
         public NativeHashMap<TStateKey, byte> StatesToUpdate;
-        public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph;
+        public PlanGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> planGraph;
 
         public void Execute()
         {
-            if (StatesToUpdate.Count() == 0)
+            if (StatesToUpdate.IsEmpty)
                 return;
 
-            var currentHorizon = new NativeList<TStateKey>(StatesToUpdate.Count(), Allocator.Temp);
-            var nextHorizon = new NativeList<TStateKey>(StatesToUpdate.Count(), Allocator.Temp);
+            var statesToUpdateLength = StatesToUpdate.Count();
+            var currentHorizon = new NativeList<TStateKey>(statesToUpdateLength, Allocator.Temp);
+            var nextHorizon = new NativeList<TStateKey>(statesToUpdateLength, Allocator.Temp);
 
             var stateKeys = StatesToUpdate.GetKeyArray(Allocator.Temp);
             for (int i = 0; i < stateKeys.Length; i++)
@@ -476,10 +573,10 @@ namespace Unity.AI.Planner.Jobs
             }
             stateKeys.Dispose();
 
-            var actionLookup = PolicyGraph.ActionLookup;
-            var actionInfoLookup = PolicyGraph.ActionInfoLookup;
-            var stateInfoLookup = PolicyGraph.StateInfoLookup;
-            var predecessorLookup = PolicyGraph.PredecessorGraph;
+            var actionLookup = planGraph.ActionLookup;
+            var actionInfoLookup = planGraph.ActionInfoLookup;
+            var stateInfoLookup = planGraph.StateInfoLookup;
+            var predecessorLookup = planGraph.PredecessorGraph;
             while (currentHorizon.Length > 0)
             {
                 for (int i = 0; i < currentHorizon.Length; i++)
@@ -529,18 +626,18 @@ namespace Unity.AI.Planner.Jobs
 
         bool UpdateStateCompleteStatus(TStateKey stateKey, out StateInfo updatedStateInfo)
         {
-            updatedStateInfo = PolicyGraph.StateInfoLookup[stateKey];
-            var originalCompleteStatus = updatedStateInfo.SubgraphComplete;
-            updatedStateInfo.SubgraphComplete = true;
+            updatedStateInfo = planGraph.StateInfoLookup[stateKey];
+            var originalCompleteStatus = updatedStateInfo.SubplanIsComplete;
+            updatedStateInfo.SubplanIsComplete = true;
             var maxLowerBound = float.MinValue;
 
             // Find max lower bound
-            var actionLookup = PolicyGraph.ActionLookup;
+            var actionLookup = planGraph.ActionLookup;
             actionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator);
             do
             {
-                var actionInfo = PolicyGraph.ActionInfoLookup[new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey)];
-                maxLowerBound = math.max(maxLowerBound, actionInfo.ActionValue.LowerBound);
+                var actionInfo = planGraph.ActionInfoLookup[new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey)];
+                maxLowerBound = math.max(maxLowerBound, actionInfo.CumulativeRewardEstimate.LowerBound);
             }
             while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
 
@@ -548,28 +645,28 @@ namespace Unity.AI.Planner.Jobs
             actionLookup.TryGetFirstValue(stateKey, out actionKey, out iterator);
             do
             {
-                var actionInfo = PolicyGraph.ActionInfoLookup[new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey)];
-                if (actionInfo.ActionValue.UpperBound >= maxLowerBound)
-                    updatedStateInfo.SubgraphComplete &= actionInfo.SubgraphComplete;
+                var actionInfo = planGraph.ActionInfoLookup[new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey)];
+                if (actionInfo.CumulativeRewardEstimate.UpperBound >= maxLowerBound)
+                    updatedStateInfo.SubplanIsComplete &= actionInfo.SubplanIsComplete;
             }
             while (actionLookup.TryGetNextValue(out actionKey, ref iterator));
 
-            return originalCompleteStatus != updatedStateInfo.SubgraphComplete;
+            return originalCompleteStatus != updatedStateInfo.SubplanIsComplete;
         }
 
         bool UpdateActionCompleteStatus(StateActionPair<TStateKey, TActionKey> stateActionPair, out ActionInfo updatedActionInfo)
         {
-            updatedActionInfo = PolicyGraph.ActionInfoLookup[stateActionPair];
-            var originalCompleteStatus = updatedActionInfo.SubgraphComplete;
-            updatedActionInfo.SubgraphComplete = true;
+            updatedActionInfo = planGraph.ActionInfoLookup[stateActionPair];
+            var originalCompleteStatus = updatedActionInfo.SubplanIsComplete;
+            updatedActionInfo.SubplanIsComplete = true;
 
             // Update complete status
-            PolicyGraph.ResultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingStateKey, out var iterator);
+            planGraph.ResultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingStateKey, out var iterator);
             do
-                updatedActionInfo.SubgraphComplete &= PolicyGraph.StateInfoLookup[resultingStateKey].SubgraphComplete;
-            while (PolicyGraph.ResultingStateLookup.TryGetNextValue(out resultingStateKey, ref iterator));
+                updatedActionInfo.SubplanIsComplete &= planGraph.StateInfoLookup[resultingStateKey].SubplanIsComplete;
+            while (planGraph.ResultingStateLookup.TryGetNextValue(out resultingStateKey, ref iterator));
 
-            return originalCompleteStatus != updatedActionInfo.SubgraphComplete;
+            return originalCompleteStatus != updatedActionInfo.SubplanIsComplete;
         }
     }
 }

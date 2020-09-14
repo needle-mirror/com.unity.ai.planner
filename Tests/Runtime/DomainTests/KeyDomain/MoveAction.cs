@@ -1,6 +1,6 @@
 using System;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;

@@ -58,8 +58,8 @@ namespace UnityEditor.AI.Planner.Visualizer
             {
                 base.DrawInspector(visualizer);
 
-                EditorGUILayout.LabelField("Action Value", $"{actionInfo.ActionValue}", EditorStyles.whiteLabel);
-                EditorGUILayout.LabelField("Complete", $"{actionInfo.SubgraphComplete}", EditorStyles.whiteLabel);
+                EditorGUILayout.LabelField("Estimated Total Reward", $"{actionInfo.CumulativeRewardEstimate}", EditorStyles.whiteLabel);
+                EditorGUILayout.LabelField("Subplan Is Complete", $"{actionInfo.SubplanIsComplete}", EditorStyles.whiteLabel);
 
                 SortSuccessorStates(stateKey, actionKey, m_StateTransitions, ref m_Successors, out _, out _);
 
@@ -70,9 +70,9 @@ namespace UnityEditor.AI.Planner.Visualizer
                     EditorGUILayout.Space();
                     EditorGUILayout.LabelField("Resulting state", $"{successor.StateKey.Label}", EditorStyles.whiteLabel);
                     EditorGUILayout.LabelField("Probability", $"{successor.StateTransitionInfo.Probability}", EditorStyles.whiteLabel);
-                    EditorGUILayout.LabelField("Transition Utility Value", $"{successor.StateTransitionInfo.TransitionUtilityValue}", EditorStyles.whiteLabel);
+                    EditorGUILayout.LabelField("Action Reward", $"{successor.StateTransitionInfo.TransitionUtilityValue}", EditorStyles.whiteLabel);
 
-                    s_ParameterGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("Parameter information"), s_ParameterGUIFoldout);
+                    s_ParameterGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("Parameters"), s_ParameterGUIFoldout);
 
                     if (s_ParameterGUIFoldout)
                     {

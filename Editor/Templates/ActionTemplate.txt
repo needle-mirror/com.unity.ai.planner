@@ -3,13 +3,15 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.Burst;
 using {{ state_representation_qualifier }};
 using {{ state_representation_qualifier }}.{{ plan_name }};
 {{- if include_enums }}
-using {{ state_representation_qualifier }}.Enums;
+using Generated.Semantic.Traits.Enums;
 {{- end }}
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Mathematics;
 
 namespace {{ namespace }}
 {
@@ -31,11 +33,41 @@ namespace {{ namespace }}
         [ReadOnly] NativeArray<StateEntityKey> m_StatesToExpand;
         StateDataContext m_StateDataContext;
 
+        // local allocations
+        {{- for p in parameter_list }}
+        [NativeDisableContainerSafetyRestriction] NativeArray<ComponentType> {{ p.name }}Filter;
+        [NativeDisableContainerSafetyRestriction] NativeList<int> {{ p.name }}ObjectIndices;
+        {{- end }}
+
+        [NativeDisableContainerSafetyRestriction] NativeList<ActionKey> ArgumentPermutations;
+        [NativeDisableContainerSafetyRestriction] NativeList<{{ action_name }}FixupReference> TransitionInfo;
+
+        bool LocalContainersInitialized => ArgumentPermutations.IsCreated;
+
         internal {{ action_name }}(Guid guid, NativeList<StateEntityKey> statesToExpand, StateDataContext stateDataContext)
         {
             ActionGuid = guid;
             m_StatesToExpand = statesToExpand.AsDeferredJobArray();
             m_StateDataContext = stateDataContext;
+
+            {{- for p in parameter_list }}
+            {{ p.name }}Filter = default;
+            {{ p.name }}ObjectIndices = default;
+            {{- end }}
+            ArgumentPermutations = default;
+            TransitionInfo = default;
+        }
+
+        void InitializeLocalContainers()
+        {
+            {{- for p in parameter_list }}
+            {{ p.name }}Filter = new NativeArray<ComponentType>({{p.required_traits.size + p.prohibited_traits.size}}, Allocator.Temp){ {{- for r in p.required_traits -}} [{{ for.index }}] = ComponentType.ReadWrite<{{ r.name }}>(),{{ end }}
+                                                                                           {{- for e in p.prohibited_traits }} [{{ for.index + p.required_traits.size }}] = ComponentType.Exclude<{{ e.name }}>(),{{ end }}  };
+            {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
+            {{- end }}
+
+            ArgumentPermutations = new NativeList<ActionKey>(4, Allocator.Temp);
+            TransitionInfo = new NativeList<{{ action_name }}FixupReference>(ArgumentPermutations.Length, Allocator.Temp);
         }
 
         public static int GetIndexForParameterName(string parameterName)
@@ -51,12 +83,7 @@ namespace {{ namespace }}
         void GenerateArgumentPermutations(StateData stateData, NativeList<ActionKey> argumentPermutations)
         {
             {{- for p in parameter_list }}
-            var {{ p.name }}Filter = new NativeArray<ComponentType>({{p.required_traits.size + p.prohibited_traits.size}}, Allocator.Temp){ {{- for r in p.required_traits -}} [{{ for.index }}] = ComponentType.ReadWrite<{{ r.fully_qualified_name }}>(),{{ end }}
-                                                            {{- for e in p.prohibited_traits }} [{{ for.index + p.required_traits.size }}] = ComponentType.Exclude<{{ e.fully_qualified_name }}>(),{{ end }}  };
-            {{- end }}
-
-            {{- for p in parameter_list }}
-            var {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
+            {{ p.name }}ObjectIndices.Clear();
             stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, {{ p.name }}Filter);
             {{ if p.limit_comparer }}
             var {{ p.name }}Comparer = new global::{{ p.limit_comparer.type }}() {StateData = stateData};
@@ -83,7 +110,11 @@ namespace {{ namespace }}
 
                 {{- for c in precondition_list }}
                 {{ if param_index == c.loop_index }}
+                {{- if c.is_list_method }}
+                if (!({{ c.operand_a }}{{ c.operator }}({{ c.operand_b }})))
+                {{- else }}
                 if (!({{ c.operand_a }} {{ c.operator }} {{ c.operand_b }}))
+                {{- end }}
                     continue;
                 {{- end }}
                 {{- end }}
@@ -118,14 +149,6 @@ namespace {{ namespace }}
                 break;
             {{- end }}
             }
-            {{- end }}
-
-            {{- for p in parameter_list }}
-            {{ p.name }}ObjectIndices.Dispose();
-            {{- end }}
-
-            {{- for p in parameter_list }}
-            {{ p.name }}Filter.Dispose();
             {{- end }}
         }
 
@@ -203,27 +226,28 @@ namespace {{ namespace }}
 
         public void Execute(int jobIndex)
         {
+            if (!LocalContainersInitialized)
+                InitializeLocalContainers();
+
             m_StateDataContext.JobIndex = jobIndex;
 
             var stateEntityKey = m_StatesToExpand[jobIndex];
             var stateData = m_StateDataContext.GetStateData(stateEntityKey);
 
-            var argumentPermutations = new NativeList<ActionKey>(4, Allocator.Temp);
-            GenerateArgumentPermutations(stateData, argumentPermutations);
+            ArgumentPermutations.Clear();
+            GenerateArgumentPermutations(stateData, ArgumentPermutations);
 
-            var transitionInfo = new NativeArray<{{ action_name }}FixupReference>(argumentPermutations.Length, Allocator.Temp);
-            for (var i = 0; i < argumentPermutations.Length; i++)
+            TransitionInfo.Clear();
+            TransitionInfo.Capacity = math.max(TransitionInfo.Capacity, ArgumentPermutations.Length);
+            for (var i = 0; i < ArgumentPermutations.Length; i++)
             {
-                transitionInfo[i] = new {{ action_name }}FixupReference { TransitionInfo = ApplyEffects(argumentPermutations[i], stateEntityKey) };
+                TransitionInfo.Add(new {{ action_name }}FixupReference { TransitionInfo = ApplyEffects(ArgumentPermutations[i], stateEntityKey) });
             }
 
             // fixups
             var stateEntity = stateEntityKey.Entity;
             var fixupBuffer = m_StateDataContext.EntityCommandBuffer.AddBuffer<{{ action_name }}FixupReference>(jobIndex, stateEntity);
-            fixupBuffer.CopyFrom(transitionInfo);
-
-            transitionInfo.Dispose();
-            argumentPermutations.Dispose();
+            fixupBuffer.CopyFrom(TransitionInfo);
         }
 
         {{ for p in parameter_list }}

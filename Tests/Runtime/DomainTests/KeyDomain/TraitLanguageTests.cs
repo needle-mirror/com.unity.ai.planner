@@ -1,6 +1,6 @@
 ﻿using System.Collections;
 using NUnit.Framework;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Tests;
 using Unity.Entities;
 using Unity.Collections;
@@ -17,7 +17,7 @@ using UnityEditor;
 #endif
 
 
-namespace Unity.AI.DomainLanguage.TraitBased.Tests
+namespace Unity.AI.Traits.Tests
 {
     class KeyDomainTestFixture : ECSTestsFixture
     {
@@ -30,12 +30,12 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests
             KeyDomainUtility.Initialize(World);
             m_StateManager = World.GetOrCreateSystem<StateManager>();
 
-            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(World);
+            ScriptBehaviourUpdateOrder.AddWorldToCurrentPlayerLoop(World);
         }
 
         public override void TearDown()
         {
-            ScriptBehaviourUpdateOrder.UpdatePlayerLoop(null);
+            ScriptBehaviourUpdateOrder.RemoveWorldFromCurrentPlayerLoop(World);
             base.TearDown();
         }
 
@@ -49,7 +49,7 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests
     }
 }
 
-namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
+namespace Unity.AI.Traits.Tests.Unit
 {
     [Category("Unit")]
     class KeyDomainTests : KeyDomainTestFixture
@@ -213,9 +213,9 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
             var statesToExpand = new NativeList<StateEntityKey>(1, Allocator.TempJob);
             statesToExpand.Add(KeyDomainUtility.InitialStateKey);
 
-            var moveActionDataContext = m_StateManager.GetStateDataContext();
+            var moveActionDataContext = m_StateManager.StateDataContext;
             var moveActionECB = new EntityCommandBuffer(Allocator.TempJob);
-            moveActionDataContext.EntityCommandBuffer = moveActionECB.ToConcurrent();
+            moveActionDataContext.EntityCommandBuffer = moveActionECB.AsParallelWriter();
 
             var move = new MoveAction(statesToExpand, moveActionDataContext);
             var jobHandle = JobHandle.CombineDependencies(move.Schedule(statesToExpand, default), m_StateManager.EntityManager.ExclusiveEntityTransactionDependency);
@@ -227,11 +227,11 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
 
             var moveActionTransitions = m_StateManager.EntityManager.GetBuffer<MoveAction.FixupReference>(KeyDomainUtility.InitialStateKey.Entity);
 
+            var actionKey = moveActionTransitions[0].TransitionInfo.StateTransition.ActionKey;
             Assert.AreEqual(1, moveActionTransitions.Length);
 
-            var initialState = KeyDomainUtility.InitialState;
+            var initialState = KeyDomainUtility.InitialState; // causes GetStateData -> which may invalidate earlier buffer
             var firstRoomIndex = initialState.GetTraitBasedObjectIndex(KeyDomainUtility.FirstRoom);
-            var actionKey = moveActionTransitions[0].TransitionInfo.StateTransition.ActionKey;
 
             Assert.AreEqual(firstRoomIndex, actionKey[MoveAction.k_RoomIndex]);
         }
@@ -242,9 +242,9 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
             var statesToExpand = new NativeList<StateEntityKey>(1, Allocator.TempJob);
             statesToExpand.Add(KeyDomainUtility.InitialStateKey);
 
-            var unlockRoomDataContext = m_StateManager.GetStateDataContext();
+            var unlockRoomDataContext = m_StateManager.StateDataContext;
             var unlockRoomECB = new EntityCommandBuffer(Allocator.TempJob);
-            unlockRoomDataContext.EntityCommandBuffer = unlockRoomECB.ToConcurrent();
+            unlockRoomDataContext.EntityCommandBuffer = unlockRoomECB.AsParallelWriter();
 
             var unlockRoomAction = new UnlockRoomAction(statesToExpand, unlockRoomDataContext);
             var jobHandle = JobHandle.CombineDependencies(unlockRoomAction.Schedule(statesToExpand, default), m_StateManager.EntityManager.ExclusiveEntityTransactionDependency);
@@ -329,7 +329,7 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Unit
     }
 }
 
-namespace Unity.AI.DomainLanguage.TraitBased.Tests.Performance
+namespace Unity.AI.Traits.Tests.Performance
 {
 #if ENABLE_PERFORMANCE_TESTS
     [Category("Performance")]
@@ -366,12 +366,13 @@ namespace Unity.AI.DomainLanguage.TraitBased.Tests.Performance
         [Test, Performance]
         public void TestStateEquality500Rooms()
         {
-            var stateCopy = m_StateManager.CopyStateData(m_LargeStateData);
+            var originalStateData = m_LargeStateData;
+            var stateCopy = m_StateManager.CopyStateData(originalStateData);
             bool areEqual = true;
 
             Measure.Method(() =>
             {
-                areEqual |= m_StateManager.Equals(m_LargeStateData, stateCopy);
+                areEqual &= originalStateData.Equals(stateCopy);
             }).WarmupCount(1).MeasurementCount(30).IterationsPerMeasurement(1).Run();
 
             Assert.IsTrue(areEqual);

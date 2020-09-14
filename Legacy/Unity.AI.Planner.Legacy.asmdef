@@ -1,0 +1,20 @@
+{
+    "name": "Unity.AI.Planner.Legacy",
+    "references": [
+        "GUID:bbe56e3e9f0b37043afd10a13917e84c",
+        "GUID:5d7abd49047cd6749bac9593cc354ad1",
+        "GUID:d5039002ddf0f9b4b884a3fb9233b682",
+        "GUID:d626eb8ed9ac9014db2d05f57fc6504b"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "ENABLE_LEGACY_PLANNER"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

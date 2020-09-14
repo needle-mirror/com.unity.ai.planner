@@ -11,7 +11,7 @@ In circumstances in which you'd like to add custom methods or other logic to tra
 
 In order for the trait properties to be referenced by other authored assets, such as action definitions, you must also provide a trait definition asset for the custom trait specifying the field names and field types. If you specify a custom type for one of your trait's fields, ensure you have specified the fully qualified type name.
 
-For an example of a custom trait, see [Location](xref:Unity.AI.Planner.DomainLanguage.TraitBased.Location).
+For an example of a custom trait, see [Location](xref:Unity.AI.Planner.Traits.Location).
 
 
 ## Custom Methods for Planning
@@ -109,9 +109,9 @@ where  `state` contains the trait and object data for the state in which the ter
 
 
 
-### Heuristics 
+### Cumulative Reward Estimators 
 
-As the planning algorithm used in this package is, at its core, a heuristic graph search, you may wish to provide a custom heuristic for predicting the future cumulative reward (or cost) to be achieved from a given state. To do so, create a struct with implements the interface `ICustomHeuristic<TStateData>`, which requires the method
+As the planning algorithm used in this package is, at its core, a heuristic graph search, you may wish to provide a custom heuristic for predicting the future cumulative reward to be achieved from a given state. To do so, create a struct with implements the interface `ICustomCumulativeRewardEstimator<TStateData>`, which requires the method
 
 ```csharp
 BoundedValue Evaluate(TStateData stateData) { ... }
@@ -122,7 +122,7 @@ where
 * `stateData` is the state for which the estimate is made and
 * `BoundedValue` is an average/estimate, upper bound, and lower bound of the future cumulative reward from the given state onward. See [BoundedValue](xref:Unity.AI.Planner.BoundedValue).
 
-For tips on designing a custom heuristic, see [Improving Performance](PlannerPerformanceTips.md)
+For tips on designing a custom cumulative reward estimator, see [Improving Performance](PlannerPerformanceTips.md)
 
 
 

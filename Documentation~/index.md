@@ -13,7 +13,7 @@ To create an AI agent using the AI Planner, see the following guides:
 * [Defining the domain](DomainDefinition.md)
 * [Defining actions](ActionDefinition.md)
 * [Defining termination conditions](TerminationDefinition.md)
-* [Creating a plan definition](PlanDefinition.md)
+* [Creating a problem definition](ProblemDefinition.md)
 * [Configuring the scene](ConfigureScene.md)
 
 For debugging and advanced usage of the AI Planner, see 
@@ -36,7 +36,7 @@ For sample projects, see: [AI Planner Samples](https://github.com/Unity-Technolo
 ## Requirements
 
 This version of AI Planner is compatible with the following versions of the Unity Editor:
-* 2019.3
+* 2020.1
 
 
 ## Package contents
@@ -49,7 +49,7 @@ The following table indicates the runtime folders that will be of interest to yo
 |`Runtime/Modules`|Contains traits, actions, custom modifiers, and sample callback scripts for built-in functionality.|
 |`Runtime/Planner`|Contains the planning system.|
 |`Runtime/Serialization`|Contains serialized data definitions.|
-|`Runtime/TraitBasedLanguage`|Contains state and action representations used by the planner.|
+|`Runtime/Traits`|Contains state and action representations used by the planner.|
 |`Runtime/Utility`|Contains utility classes for the package.|
 |`Runtime/World`|Contains utility classes for monitoring game objects.|
 

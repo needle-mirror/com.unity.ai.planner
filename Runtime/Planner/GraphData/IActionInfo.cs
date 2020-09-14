@@ -10,11 +10,11 @@ namespace Unity.AI.Planner
         /// <summary>
         /// The bounded value estimate of the action.
         /// </summary>
-        BoundedValue ActionValue { get; }
+        BoundedValue CumulativeRewardEstimate { get; }
 
         /// <summary>
         /// Designates if the subgraph of the action is complete.
         /// </summary>
-        bool SubgraphComplete { get; }
+        bool SubplanIsComplete { get; }
     }
 }

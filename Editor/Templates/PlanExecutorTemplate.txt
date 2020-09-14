@@ -2,20 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Controller;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 using {{ state_representation_qualifier }};
 using {{ state_representation_qualifier }}.{{ plan_name }};
 
 namespace {{ namespace }}
 {
-    public struct DefaultHeuristic : IHeuristic<StateData>
+    public struct DefaultCumulativeRewardEstimator : ICumulativeRewardEstimator<StateData>
     {
         public BoundedValue Evaluate(StateData state)
         {
-            return new BoundedValue({{ default_heuristic.lower }}, {{ default_heuristic.avg }}, {{ default_heuristic.upper }});
+            return new BoundedValue({{ default_reward_estimate.lower }}, {{ default_reward_estimate.avg }}, {{ default_reward_estimate.upper }});
         }
     }
 
@@ -41,7 +40,7 @@ namespace {{ namespace }}
         }
     }
 
-    class {{ plan_name }}Executor : BaseTraitBasedPlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ heuristic }}, TerminationEvaluator, StateManager, ActionKey, DestroyStatesJobScheduler>
+    class {{ plan_name }}Executor : BaseTraitBasedPlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ reward_estimator }}, TerminationEvaluator, StateManager, ActionKey, DestroyStatesJobScheduler>
     {
         static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
         {
@@ -56,9 +55,9 @@ namespace {{ namespace }}
             return name;
         }
 
-        public override void Initialize(MonoBehaviour actor, PlanDefinition planDefinition, IActionExecutionInfo[] actionExecutionInfos)
+        public override void Initialize(MonoBehaviour actor, ProblemDefinition problemDefinition, IActionExecutionInfo[] actionExecutionInfos)
         {
-            base.Initialize(actor, planDefinition, actionExecutionInfos);
+            base.Initialize(actor, problemDefinition, actionExecutionInfos);
             m_StateManager.Destroying += () => PlannerScheduler.CurrentJobHandle.Complete();
         }
 
@@ -121,21 +120,22 @@ namespace {{ namespace }}
                 else // argument is an object
                 {
                     var planStateId = stateData.GetTraitBasedObjectId(traitBasedObjectIndex);
-                    ITraitBasedObjectData dataSource;
+                    GameObject dataSource;
                     if (m_PlanStateToGameStateIdLookup.TryGetValue(planStateId.Id, out var gameStateId))
                         dataSource = m_StateConverter.GetDataSource(new TraitBasedObjectId { Id = gameStateId });
                     else
                         dataSource = m_StateConverter.GetDataSource(planStateId);
 
                     Type expectedType = executeInfos.GetParameterType(i);
-                    if (typeof(ITraitBasedObjectData).IsAssignableFrom(expectedType))
-                    {
-                        arguments[i] = dataSource;
-                    }
-                    else
+                    // FIXME - if this is still needed
+                    // if (typeof(ITraitBasedObjectData).IsAssignableFrom(expectedType))
+                    // {
+                    //     arguments[i] = dataSource;
+                    // }
+                    // else
                     {
                         arguments[i] = null;
-                        var obj = dataSource.ParentObject;
+                        var obj = dataSource;
                         if (obj != null && obj is GameObject gameObject)
                         {
                             if (expectedType == typeof(GameObject))

@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Unity.AI.Planner.Controller;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
-using UnityEngine.Serialization;
+using Unity.AI.Planner.Traits;
+using UnityEngine;
 
-namespace UnityEngine.AI.Planner.Controller
+namespace Unity.AI.Planner.Controller
 {
     [Serializable]
     class ActionExecutionInfo : IActionExecutionInfo

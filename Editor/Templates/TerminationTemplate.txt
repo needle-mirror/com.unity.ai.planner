@@ -1,11 +1,11 @@
 using Unity.AI.Planner;
 using Unity.Collections;
 using Unity.Entities;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using {{ state_representation_qualifier }};
 using {{ state_representation_qualifier }}.{{ plan_name }};
 {{- if include_enums }}
-using {{ state_representation_qualifier }}.Enums;
+using Generated.Semantic.Traits.Enums;
 {{- end }}
 
 namespace {{ namespace }}
@@ -15,8 +15,8 @@ namespace {{ namespace }}
         public bool IsTerminal(StateData stateData)
         {
             {{- for p in parameter_list }}
-            var {{ p.name }}Filter = new NativeArray<ComponentType>({{p.required_traits.size + p.prohibited_traits.size}}, Allocator.Temp){ {{- for r in p.required_traits -}} [{{ for.index }}] = ComponentType.ReadWrite<{{ r }}>(),{{ end }}
-                                                            {{- for e in p.prohibited_traits }} [{{ for.index + p.required_traits.size }}] = ComponentType.Exclude<{{ e }}>(),{{ end }}  };
+            var {{ p.name }}Filter = new NativeArray<ComponentType>({{p.required_traits.size + p.prohibited_traits.size}}, Allocator.Temp){ {{- for r in p.required_traits -}} [{{ for.index }}] = ComponentType.ReadWrite<{{ r.name }}>(),{{ end }}
+                                                            {{- for e in p.prohibited_traits }} [{{ for.index + p.required_traits.size }}] = ComponentType.Exclude<{{ e.name }}>(),{{ end }}  };
             var {{ p.name }}ObjectIndices = new NativeList<int>(2, Allocator.Temp);
             stateData.GetTraitBasedObjectIndices({{ p.name }}ObjectIndices, {{ p.name }}Filter);
             {{- end }}

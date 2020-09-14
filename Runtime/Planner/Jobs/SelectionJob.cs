@@ -1,6 +1,7 @@
 using System;
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 
@@ -29,7 +30,7 @@ namespace Unity.AI.Planner.Jobs
     {
         public NativeHashMap<TStateKey, int> StateDepthLookup;
 
-        [ReadOnly] public int SearchBudget;
+        [ReadOnly] public int StateExpansionBudget;
         [ReadOnly] public NativeHashMap<TStateKey, StateInfo> StateInfoLookup;
         [ReadOnly] public NativeHashMap<StateActionPair<TStateKey, TActionKey>, ActionInfo> ActionInfoLookup;
         [ReadOnly] public TStateKey RootStateKey;
@@ -107,12 +108,12 @@ namespace Unity.AI.Planner.Jobs
 
         public void Execute()
         {
-            if (StateInfoLookup[RootStateKey].SubgraphComplete) // Completed root; no need to expand.
+            if (StateInfoLookup[RootStateKey].SubplanIsComplete) // Completed root; no need to expand.
                 return;
 
             // Working space containers
-            var data = new SelectionJobData(SearchBudget);
-            AssignBudgetToResultingState(RootStateKey, 0, SearchBudget, ref data);
+            var data = new SelectionJobData(StateExpansionBudget);
+            AssignBudgetToResultingState(RootStateKey, 0, StateExpansionBudget, ref data);
 
             // Walk graph until traversals terminate
             var queuedStates = data.QueuedStatesByHorizon;
@@ -168,7 +169,7 @@ namespace Unity.AI.Planner.Jobs
             do
             {
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
-                var actionLowerBound = ActionInfoLookup[stateActionPair].ActionValue.LowerBound;
+                var actionLowerBound = ActionInfoLookup[stateActionPair].CumulativeRewardEstimate.LowerBound;
                 if (actionLowerBound > maxLowerBound)
                 {
                     maxLowerBoundPair = stateActionPair;
@@ -191,18 +192,18 @@ namespace Unity.AI.Planner.Jobs
             {
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                 var actionInfo = ActionInfoLookup[stateActionPair];
-                if (actionInfo.SubgraphComplete) // skip complete subgraphs
+                if (actionInfo.SubplanIsComplete) // skip complete subgraphs
                     continue;
 
-                var actionValue = actionInfo.ActionValue;
-                if (actionValue.Average > maxAverage)
+                var cumulativeReward = actionInfo.CumulativeRewardEstimate;
+                if (cumulativeReward.Average > maxAverage)
                 {
                     maxAveragePair = stateActionPair;
-                    maxAverage = actionValue.Average;
+                    maxAverage = cumulativeReward.Average;
                 }
 
-                if (actionValue.UpperBound >= maxLowerBound)
-                    nonDominatedActions.Add(new StateActionPairUpperBoundInfo {StateActionPair = stateActionPair, UpperBound = actionInfo.ActionValue.UpperBound} );
+                if (cumulativeReward.UpperBound >= maxLowerBound)
+                    nonDominatedActions.Add(new StateActionPairUpperBoundInfo {StateActionPair = stateActionPair, UpperBound = actionInfo.CumulativeRewardEstimate.UpperBound} );
 
             } while (ActionLookup.TryGetNextValue(out actionKey, ref iterator));
 
@@ -230,7 +231,7 @@ namespace Unity.AI.Planner.Jobs
             do
             {
                 var resultingStateInfo = StateInfoLookup[resultingState];
-                if (resultingStateInfo.SubgraphComplete) // skip complete subgraphs
+                if (resultingStateInfo.SubplanIsComplete) // skip complete subgraphs
                     continue;
 
                 var stateTransitionInfo = StateTransitionInfoLookup[new StateTransition<TStateKey, TActionKey>(stateActionPair, resultingState)];
@@ -238,7 +239,7 @@ namespace Unity.AI.Planner.Jobs
                 weightedBoundsRanges.Add(new StateBoundsRange
                 {
                     StateKey = resultingState,
-                    WeightedBoundsRange = stateTransitionInfo.Probability * resultingStateInfo.PolicyValue.Range
+                    WeightedBoundsRange = stateTransitionInfo.Probability * resultingStateInfo.CumulativeRewardEstimate.Range
                 });
             } while (ResultingStateLookup.TryGetNextValue(out resultingState, ref iterator));
 
@@ -329,6 +330,11 @@ namespace Unity.AI.Planner.Jobs
         [WriteOnly] public NativeMultiHashMap<TStateKey, int>.ParallelWriter SelectedStateHorizons;
         [WriteOnly] public NativeHashMap<TStateKey, byte>.ParallelWriter SelectedUnexpandedStates;
 
+        // Local containers
+        [NativeDisableContainerSafetyRestriction] NativeList<StateActionPairUpperBoundInfo> m_NonDominatedActions;
+        [NativeDisableContainerSafetyRestriction] NativeList<WeightedStateBoundsRange> m_StateBoundsRanges;
+
+
         struct StateActionPairUpperBoundInfo : IComparable<StateActionPairUpperBoundInfo>
         {
             public StateActionPair<TStateKey, TActionKey> StateActionPair;
@@ -374,16 +380,16 @@ namespace Unity.AI.Planner.Jobs
             {
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                 var actionInfo = ActionInfoLookup[stateActionPair];
-                var actionValue = actionInfo.ActionValue;
+                var cumulativeReward = actionInfo.CumulativeRewardEstimate;
 
                 // Find max lower bound
-                maxLowerBound = math.max(maxLowerBound, actionValue.LowerBound);
+                maxLowerBound = math.max(maxLowerBound, cumulativeReward.LowerBound);
 
                 // Find best incomplete action
-                if (!actionInfo.SubgraphComplete && actionValue.Average > maxAverage)
+                if (!actionInfo.SubplanIsComplete && cumulativeReward.Average > maxAverage)
                 {
                     maxAverageAction = stateActionPair;
-                    maxAverage = actionValue.Average;
+                    maxAverage = cumulativeReward.Average;
                 }
             } while (ActionLookup.TryGetNextValue(out actionKey, ref iterator));
 
@@ -394,8 +400,16 @@ namespace Unity.AI.Planner.Jobs
         void AssignBudgetToActions(TStateKey stateKey, int budget, StateActionPair<TStateKey, TActionKey> maxAverageAction, float maxLowerBound)
         {
             // Containers for comparisons
-            var nonDominatedActions = new NativeList<StateActionPairUpperBoundInfo>(ActionLookup.CountValuesForKey(stateKey), Allocator.Temp);
-            var stateBoundsRanges = new NativeList<WeightedStateBoundsRange>(16, Allocator.Temp);
+            if (!m_NonDominatedActions.IsCreated)
+            {
+                m_NonDominatedActions = new NativeList<StateActionPairUpperBoundInfo>(ActionLookup.CountValuesForKey(stateKey), Allocator.Temp);
+                m_StateBoundsRanges = new NativeList<WeightedStateBoundsRange>(16, Allocator.Temp);
+            }
+            else
+            {
+                m_NonDominatedActions.Clear();
+                m_StateBoundsRanges.Clear();
+            }
 
             // Find non-dominated actions and max avg action
             ActionLookup.TryGetFirstValue(stateKey, out var actionKey, out var iterator);
@@ -403,21 +417,21 @@ namespace Unity.AI.Planner.Jobs
             {
                 var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
                 var actionInfo = ActionInfoLookup[stateActionPair];
-                var actionValue = actionInfo.ActionValue;
+                var cumulativeReward = actionInfo.CumulativeRewardEstimate;
 
                 // Skip complete subgraphs and dominated subgraphs
-                if (!actionInfo.SubgraphComplete && actionValue.UpperBound >= maxLowerBound)
-                    nonDominatedActions.Add(new StateActionPairUpperBoundInfo { StateActionPair = stateActionPair, UpperBound = actionValue.UpperBound });
+                if (!actionInfo.SubplanIsComplete && cumulativeReward.UpperBound >= maxLowerBound)
+                    m_NonDominatedActions.Add(new StateActionPairUpperBoundInfo { StateActionPair = stateActionPair, UpperBound = cumulativeReward.UpperBound });
 
             } while (ActionLookup.TryGetNextValue(out actionKey, ref iterator));
 
             // For non-dominated actions, add the exploration budget.
-            nonDominatedActions.Sort();
-            var toAssignOne = math.min(budget, nonDominatedActions.Length);
+            m_NonDominatedActions.Sort();
+            var toAssignOne = math.min(budget, m_NonDominatedActions.Length);
             for (int i = 0; i < toAssignOne; i++)
             {
-                var stateActionPair = nonDominatedActions[i].StateActionPair;
-                AssignBudgetToResultingStates(stateActionPair, stateActionPair.Equals(maxAverageAction) ? budget - toAssignOne + 1 : 1, stateBoundsRanges);
+                var stateActionPair = m_NonDominatedActions[i].StateActionPair;
+                AssignBudgetToResultingStates(stateActionPair, stateActionPair.Equals(maxAverageAction) ? budget - toAssignOne + 1 : 1, m_StateBoundsRanges);
             }
         }
 
@@ -430,13 +444,13 @@ namespace Unity.AI.Planner.Jobs
             {
                 var resultingStateInfo = StateInfoLookup[resultingState];
                 // skip complete subgraphs
-                if (!resultingStateInfo.SubgraphComplete)
+                if (!resultingStateInfo.SubplanIsComplete)
                 {
                     var stateTransitionInfo = StateTransitionInfoLookup[new StateTransition<TStateKey, TActionKey>(stateActionPair, resultingState)];
                     weightedRanges.Add(new WeightedStateBoundsRange
                     {
                         StateKey = resultingState,
-                        WeightedRange = stateTransitionInfo.Probability * resultingStateInfo.PolicyValue.Range,
+                        WeightedRange = stateTransitionInfo.Probability * resultingStateInfo.CumulativeRewardEstimate.Range,
                     });
                 }
 

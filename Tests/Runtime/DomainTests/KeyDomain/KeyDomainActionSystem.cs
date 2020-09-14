@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
@@ -84,15 +84,15 @@ namespace KeyDomain
         {
             var entityManager = StateManager.EntityManager;
 
-            var MoveActionDataContext = StateManager.GetStateDataContext();
+            var MoveActionDataContext = StateManager.StateDataContext;
             var MoveActionECB = StateManager.GetEntityCommandBuffer();
-            MoveActionDataContext.EntityCommandBuffer = MoveActionECB.ToConcurrent();
-            var PickupKeyActionDataContext = StateManager.GetStateDataContext();
+            MoveActionDataContext.EntityCommandBuffer = MoveActionECB.AsParallelWriter();
+            var PickupKeyActionDataContext = StateManager.StateDataContext;
             var PickupKeyActionECB = StateManager.GetEntityCommandBuffer();
-            PickupKeyActionDataContext.EntityCommandBuffer = PickupKeyActionECB.ToConcurrent();
-            var UnlockRoomActionDataContext = StateManager.GetStateDataContext();
+            PickupKeyActionDataContext.EntityCommandBuffer = PickupKeyActionECB.AsParallelWriter();
+            var UnlockRoomActionDataContext = StateManager.StateDataContext;
             var UnlockRoomActionECB = StateManager.GetEntityCommandBuffer();
-            UnlockRoomActionDataContext.EntityCommandBuffer = UnlockRoomActionECB.ToConcurrent();
+            UnlockRoomActionDataContext.EntityCommandBuffer = UnlockRoomActionECB.AsParallelWriter();
 
             var allActionJobs = new NativeArray<JobHandle>(4, Allocator.TempJob)
             {

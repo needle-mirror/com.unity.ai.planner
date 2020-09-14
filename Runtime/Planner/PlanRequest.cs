@@ -1,6 +1,5 @@
 using System;
 using Unity.AI.Planner.Jobs;
-using UnityEngine.AI.Planner;
 
 namespace Unity.AI.Planner
 {
@@ -13,7 +12,7 @@ namespace Unity.AI.Planner
         Running,
         /// <summary> Planning jobs paused. </summary>
         Paused,
-        /// <summary> Plan has met minimum search criteria. </summary>
+        /// <summary> Plan has met minimum planning criteria. </summary>
         Complete,
         /// <summary> Plan data deallocated. </summary>
         Disposed
@@ -33,15 +32,15 @@ namespace Unity.AI.Planner
         public IPlan Plan => m_Plan;
 
         internal PlanWrapper<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> m_Plan;
-        internal PlannerSearchSettings m_SearchSettings;
+        internal PlannerSettings m_PlannerSettings;
         internal Action<IPlan> m_OnPlanRequestComplete;
         internal int m_PlanningUpdates;
         internal int m_FramesSinceLastUpdate;
 
-        internal PlanRequest(PlanWrapper<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> plan, PlannerSearchSettings searchSettings = null, Action<IPlan> planRequestCompleteCallback = null)
+        internal PlanRequest(PlanWrapper<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> plan, PlannerSettings settings = null, Action<IPlan> planRequestCompleteCallback = null)
         {
             m_Plan = plan;
-            m_SearchSettings = searchSettings ?? new PlannerSearchSettings();
+            m_PlannerSettings = settings ?? new PlannerSettings();
             m_OnPlanRequestComplete = planRequestCompleteCallback;
         }
 
@@ -72,26 +71,26 @@ namespace Unity.AI.Planner
         }
 
         /// <inheritdoc cref="IPlanRequest"/>
-        public IPlanRequest SearchUntil(int? maximumUpdates = null, int? planSize = null, float? rootStateTolerance = null, Action<IPlan> requestCompleteCallback = null)
+        public IPlanRequest PlanUntil(int? maximumUpdates = null, int? planSize = null, float? rootStateTolerance = null, Action<IPlan> requestCompleteCallback = null)
         {
             CheckAndThrowIfDisposed();
 
             if (maximumUpdates.HasValue)
             {
-                m_SearchSettings.CapPlanUpdates = true;
-                m_SearchSettings.MaxUpdates = maximumUpdates.Value;
+                m_PlannerSettings.CapPlanUpdates = true;
+                m_PlannerSettings.MaxUpdates = maximumUpdates.Value;
             }
 
             if (planSize.HasValue)
             {
-                m_SearchSettings.CapPlanSize = true;
-                m_SearchSettings.MaxStatesInPlan = planSize.Value;
+                m_PlannerSettings.CapPlanSize = true;
+                m_PlannerSettings.MaxStatesInPlan = planSize.Value;
             }
 
             if (rootStateTolerance.HasValue)
             {
-                m_SearchSettings.StopPlanningWhenToleranceAchieved = true;
-                m_SearchSettings.RootPolicyValueTolerance = rootStateTolerance.Value;
+                m_PlannerSettings.StopPlanningWhenToleranceAchieved = true;
+                m_PlannerSettings.RootEstimatedRewardTolerance = rootStateTolerance.Value;
             }
 
             m_OnPlanRequestComplete = requestCompleteCallback ?? m_OnPlanRequestComplete;
@@ -100,15 +99,15 @@ namespace Unity.AI.Planner
         }
 
         /// <inheritdoc cref="IPlanRequest"/>
-        public IPlanRequest WithBudget(int? searchIterationsPerUpdate = null, int? stateExpansionsPerIteration = null)
+        public IPlanRequest WithBudget(int? planningIterationsPerUpdate = null, int? stateExpansionsPerIteration = null)
         {
             CheckAndThrowIfDisposed();
 
-            if (searchIterationsPerUpdate.HasValue)
-                m_SearchSettings.SearchIterationsPerUpdate = searchIterationsPerUpdate.Value;
+            if (planningIterationsPerUpdate.HasValue)
+                m_PlannerSettings.PlanningIterationsPerUpdate = planningIterationsPerUpdate.Value;
 
             if (stateExpansionsPerIteration.HasValue)
-                m_SearchSettings.StateExpansionBudgetPerIteration = stateExpansionsPerIteration.Value;
+                m_PlannerSettings.StateExpansionBudgetPerIteration = stateExpansionsPerIteration.Value;
 
             return this;
         }
@@ -120,24 +119,24 @@ namespace Unity.AI.Planner
 
             if (framesPerUpdate.HasValue)
             {
-                m_SearchSettings.UseCustomSearchFrequency = true;
-                m_SearchSettings.MinFramesPerSearchUpdate = framesPerUpdate.Value;
+                m_PlannerSettings.UseCustomPlanningFrequency = true;
+                m_PlannerSettings.MinFramesPerPlanningUpdate = framesPerUpdate.Value;
             }
 
             if (selectionJobMode.HasValue)
-                m_SearchSettings.GraphSelectionJobMode = selectionJobMode.Value;
+                m_PlannerSettings.GraphSelectionJobMode = selectionJobMode.Value;
 
             if (backpropagationJobMode.HasValue)
-                m_SearchSettings.GraphBackpropagationJobMode = backpropagationJobMode.Value;
+                m_PlannerSettings.GraphBackpropagationJobMode = backpropagationJobMode.Value;
 
             return this;
         }
 
         /// <inheritdoc cref="IPlanRequest"/>
-        public IPlanRequest WithSettings(PlannerSearchSettings searchSettings)
+        public IPlanRequest WithSettings(PlannerSettings settings)
         {
             CheckAndThrowIfDisposed();
-            m_SearchSettings = searchSettings;
+            this.m_PlannerSettings = settings;
             return this;
         }
 

@@ -3,9 +3,14 @@
     "references": [
         "Unity.PlayableGraphVisualizer.Editor",
         "Unity.AI.Planner",
-        "Unity.Entities"
+        "Unity.Entities",
+        "Unity.Semantic.Traits",
+        "Unity.Semantic.Traits.Editor",
+        "Unity.DynamicStructs",
+        "Unity.Collections",
+        "Unity.Semantic.Traits.Queries",
+        "Unity.Semantic.Traits.Queries.Editor"
     ],
-    "optionalUnityReferences": [],
     "includePlatforms": [
         "Editor"
     ],
@@ -15,5 +20,6 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": []
+    "versionDefines": [],
+    "noEngineReferences": false
 }

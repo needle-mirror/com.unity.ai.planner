@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
@@ -43,6 +44,19 @@ namespace UnityEditor.AI.Planner.Utility
         {
             var assetPath = AssetDatabase.GetAssetPath(@object);
             return AssetDatabase.AssetPathToGUID(assetPath);
+        }
+
+        public static IEnumerable<T> AllAssetsOfType<T>() where T : UnityObject
+        {
+            var assets = new List<T>();
+            var guids = AssetDatabase.FindAssets($"t:{nameof(T)}");
+            foreach (var guid in guids)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                assets.Add(AssetDatabase.LoadAssetAtPath<T>(path));
+            }
+
+            return assets;
         }
     }
 }

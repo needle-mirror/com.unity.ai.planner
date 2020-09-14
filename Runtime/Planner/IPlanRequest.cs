@@ -1,6 +1,5 @@
 using System;
 using Unity.AI.Planner.Jobs;
-using UnityEngine.AI.Planner;
 
 namespace Unity.AI.Planner
 {
@@ -47,7 +46,7 @@ namespace Unity.AI.Planner
         /// <param name="rootStateTolerance">A threshold of convergence between the upper and lower bound for the root state of the plan</param>
         /// <param name="requestCompleteCallback">A callback to be invoked once the plan request has completed</param>
         /// <returns>The updated plan request</returns>
-        IPlanRequest SearchUntil(int? maximumUpdates = null, int? planSize = null, float? rootStateTolerance = null, Action<IPlan> requestCompleteCallback = null);
+        IPlanRequest PlanUntil(int? maximumUpdates = null, int? planSize = null, float? rootStateTolerance = null, Action<IPlan> requestCompleteCallback = null);
 
         /// <summary>
         /// Sets the frequency and job modes for the planning jobs
@@ -59,18 +58,18 @@ namespace Unity.AI.Planner
         IPlanRequest SchedulingMode(int? framesPerUpdate = null, SelectionJobMode? selectionJobMode = null, BackpropagationJobMode? backpropagationJobMode = null);
 
         /// <summary>
-        /// Sets the number of search iterations per update to perform as well as the number of states to expand per iteration.
+        /// Sets the number of planning iterations per update to perform as well as the number of states to expand per iteration.
         /// </summary>
-        /// <param name="searchIterationsPerUpdate">The number of search iterations to perform at each update</param>
-        /// <param name="stateExpansionsPerIteration">The number of states in the plan to expand during each search iteration</param>
+        /// <param name="planningIterationsPerUpdate">The number of planning iterations to perform at each update</param>
+        /// <param name="stateExpansionsPerIteration">The number of states in the plan to expand during each planning iteration</param>
         /// <returns>The updated plan request</returns>
-        IPlanRequest WithBudget(int? searchIterationsPerUpdate = null, int? stateExpansionsPerIteration = null);
+        IPlanRequest WithBudget(int? planningIterationsPerUpdate = null, int? stateExpansionsPerIteration = null);
 
         /// <summary>
-        /// Sets the search settings.
+        /// Sets the planning settings.
         /// </summary>
         /// <param name="settings"></param>
         /// <returns></returns>
-        IPlanRequest WithSettings(PlannerSearchSettings settings);
+        IPlanRequest WithSettings(PlannerSettings settings);
     }
 }

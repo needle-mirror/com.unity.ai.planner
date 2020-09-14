@@ -1,7 +1,7 @@
 ﻿using NUnit.Framework;
+using Unity.AI.Planner.Traits;
 using UnityEditor.AI.Planner.CodeGen;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 using UnityEngine.TestTools;
 
 namespace UnityEditor.AI.Planner.Tests

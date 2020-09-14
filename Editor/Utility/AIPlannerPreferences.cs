@@ -24,7 +24,7 @@ namespace UnityEditor.AI.Planner
 
         const string k_DisplayControllerAdvancedSettingsPrefs = "AI.Planner.DisplayControllerAdvancedSettings";
         const string k_DisplayActionDefinitionAdvancedSettingsPrefs =  "AI.Planner.DisplayActionDefinitionAdvancedSettings";
-        const string k_DisplayPlanDefinitionAdvancedSettingsPrefs =  "AI.Planner.DisplayPlanDefinitionAdvancedSettings";
+        const string k_DisplayProblemDefinitionAdvancedSettingsPrefs =  "AI.Planner.DisplayProblemDefinitionAdvancedSettings";
 
         static AIPlannerPreferences s_Preferences;
 
@@ -63,10 +63,10 @@ namespace UnityEditor.AI.Planner
             set => EditorPrefs.SetBool(k_DisplayActionDefinitionAdvancedSettingsPrefs, value);
         }
 
-        public static bool displayPlanDefinitionAdvancedSettings
+        public static bool displayProblemDefinitionAdvancedSettings
         {
-            get => EditorPrefs.GetBool(k_DisplayPlanDefinitionAdvancedSettingsPrefs, GetOrCreatePreferences().m_ExpertMode);
-            set => EditorPrefs.SetBool(k_DisplayPlanDefinitionAdvancedSettingsPrefs, value);
+            get => EditorPrefs.GetBool(k_DisplayProblemDefinitionAdvancedSettingsPrefs, GetOrCreatePreferences().m_ExpertMode);
+            set => EditorPrefs.SetBool(k_DisplayProblemDefinitionAdvancedSettingsPrefs, value);
         }
 
         static void SaveSettings()
@@ -86,7 +86,7 @@ namespace UnityEditor.AI.Planner
             var provider = new SettingsProvider("Preferences/AI Planner", SettingsScope.User)
             {
                 deactivateHandler = SaveSettings,
-                guiHandler = searchContext =>
+                guiHandler = _ =>
                 {
                     var settings = GetSerializedPreferences();
 
@@ -118,7 +118,7 @@ namespace UnityEditor.AI.Planner
                         {
                             EditorPrefs.DeleteKey(k_DisplayControllerAdvancedSettingsPrefs);
                             EditorPrefs.DeleteKey(k_DisplayActionDefinitionAdvancedSettingsPrefs);
-                            EditorPrefs.DeleteKey(k_DisplayPlanDefinitionAdvancedSettingsPrefs);
+                            EditorPrefs.DeleteKey(k_DisplayProblemDefinitionAdvancedSettingsPrefs);
                         }
                     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using GraphVisualizer;
 using Unity.AI.Planner;
 using UnityEditor.AI.Planner.Editors;
@@ -12,16 +13,19 @@ namespace UnityEditor.AI.Planner.Visualizer
     {
         static bool s_ActionsGUIFoldout = true;
         static bool s_StateGUIFoldout = true;
+        static string s_StateFilter = string.Empty;
 
         public IStateKey StateKey => (IStateKey)content;
         bool m_RootState;
+        string m_CachedStateString = string.Empty;
+        string m_CachedFilterString = string.Empty;
 
         struct Successor : IComparable<Successor>
         {
             public IActionKey ActionKey;
             public ActionInfo ActionInfo;
 
-            public int CompareTo(Successor other) => other.ActionInfo.ActionValue.Average.CompareTo(ActionInfo.ActionValue.Average);
+            public int CompareTo(Successor other) => other.ActionInfo.CumulativeRewardEstimate.Average.CompareTo(ActionInfo.CumulativeRewardEstimate.Average);
         }
 
         // Local cache
@@ -65,17 +69,23 @@ namespace UnityEditor.AI.Planner.Visualizer
             {
                 base.DrawInspector(visualizer);
 
-                EditorGUILayout.LabelField("Policy Value", $"{stateInfo.PolicyValue}", EditorStyles.whiteLabel);
-                EditorGUILayout.LabelField("Complete", $"{stateInfo.SubgraphComplete}", EditorStyles.whiteLabel);
+                EditorGUILayout.LabelField("Estimated Total Reward", $"{stateInfo.CumulativeRewardEstimate}", EditorStyles.whiteLabel);
+                EditorGUILayout.LabelField("Subplan Is Complete", $"{stateInfo.SubplanIsComplete}", EditorStyles.whiteLabel);
 
                 if (m_Plan.TryGetOptimalAction(StateKey, out var optimalActionKey))
                 {
-                    EditorGUILayout.LabelField("Optimal Action", m_PlanExecutor.GetActionName(optimalActionKey), EditorStyles.whiteLabel);
+                    EditorGUILayout.LabelField("Best Action", m_PlanExecutor.GetActionName(optimalActionKey), EditorStyles.whiteLabel);
                 }
+
+                if (string.IsNullOrEmpty(m_CachedStateString))
+                    m_CachedStateString = m_Plan.GetStateData(StateKey)?.ToString();
+
+                if (string.IsNullOrEmpty(m_CachedStateString)) // State may no longer exist but be selected as an override.
+                    return;
 
                 if (!m_RootState || active)
                 {
-                     s_ActionsGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("Successor Actions"), s_ActionsGUIFoldout);
+                     s_ActionsGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("Actions"), s_ActionsGUIFoldout);
                     if (s_ActionsGUIFoldout)
                     {
                         using (new EditorGUI.IndentLevelScope())
@@ -109,7 +119,7 @@ namespace UnityEditor.AI.Planner.Visualizer
                                     }
                                     GUI.enabled = true;
 
-                                    EditorGUILayout.LabelField( new GUIContent(m_PlanExecutor.GetActionName(actionKey)), new GUIContent($"{actionInfo.ActionValue.Average:0.000}", $"{actionInfo.ActionValue}"), EditorStyles.whiteLabel);
+                                    EditorGUILayout.LabelField( new GUIContent(m_PlanExecutor.GetActionName(actionKey)), new GUIContent($"{actionInfo.CumulativeRewardEstimate.Average:0.000}", $"{actionInfo.CumulativeRewardEstimate}"), EditorStyles.whiteLabel);
                                     EditorGUILayout.EndHorizontal();
 
                                     using (new EditorGUI.IndentLevelScope())
@@ -126,39 +136,82 @@ namespace UnityEditor.AI.Planner.Visualizer
                     }
                 }
 
-            }
+                EditorGUILayout.Space();
+                s_StateGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("State information"), s_StateGUIFoldout);
+                var displayString = m_CachedStateString;
 
-            var stateString = m_Plan.GetStateData(StateKey)?.ToString();
-            if (string.IsNullOrEmpty(stateString)) // State may no longer exist but be selected as an override.
-                return;
-
-            EditorGUILayout.Space();
-            s_StateGUIFoldout = EditorStyleHelper.DrawSubHeader(new GUIContent("State information"), s_StateGUIFoldout);
-            if (s_StateGUIFoldout)
-            {
-                using (new EditorGUI.IndentLevelScope())
+				if (s_StateGUIFoldout)
                 {
-                    EditorGUILayout.LabelField(stateString, EditorStyleHelper.inspectorStyleLabel);
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        EditorGUI.BeginChangeCheck();
+                        s_StateFilter = EditorGUILayout.DelayedTextField(s_StateFilter);
+                        if (EditorGUI.EndChangeCheck())
+                            m_CachedFilterString = string.Empty;
+
+                        if (!string.IsNullOrEmpty(s_StateFilter))
+                        {
+                            if (string.IsNullOrEmpty(m_CachedFilterString))
+                            {
+                                var stateStringSplit = m_CachedStateString.Split('\n');
+                                var linesToInclude = new SortedSet<int>();
+                                var lastEmptyLine = 0;
+                                for (var i = 0; i < stateStringSplit.Length; i++)
+                                {
+                                    var stateStringLine = stateStringSplit[i];
+                                    if (string.IsNullOrWhiteSpace(stateStringLine))
+                                    {
+                                        lastEmptyLine = i;
+                                    }
+                                    else if (stateStringLine.IndexOf(s_StateFilter, StringComparison.OrdinalIgnoreCase) >= 0)
+                                    {
+                                        var nextEmptyLine = i;
+                                        while (!string.IsNullOrWhiteSpace(stateStringSplit[nextEmptyLine]))
+                                        {
+                                            nextEmptyLine++;
+                                            if (nextEmptyLine == stateStringSplit.Length - 1)
+                                                break;
+                                        }
+
+                                        for (var j = lastEmptyLine; j < nextEmptyLine; j++)
+                                            linesToInclude.Add(j);
+                                    }
+                                }
+
+                                var sb = new StringBuilder();
+                                foreach (var line in linesToInclude)
+                                {
+                                    sb.AppendLine(stateStringSplit[line]);
+                                }
+                                m_CachedFilterString = sb.ToString();
+                            }
+
+                            displayString = m_CachedFilterString;
+                        }
+
+                        EditorGUILayout.LabelField(displayString, EditorStyleHelper.inspectorStyleLabel);
+                    }
                 }
+
+                if (GUILayout.Button("Copy State", EditorStyles.miniButton))
+                    displayString.CopyToClipboard();
             }
-            if (GUILayout.Button("Copy State", EditorStyles.miniButton))
-                stateString.CopyToClipboard();
         }
 
-        void SortSuccessorActions(List<IActionKey> actions, ref List<Successor> successors, out float minActionValue, out float maxActionValue)
+        void SortSuccessorActions(List<IActionKey> actions, ref List<Successor> successors, out float minCumulativeReward, out float maxCumulativeReward)
         {
             // Grab all child nodes and sort them
-            minActionValue = float.MaxValue;
-            maxActionValue = float.MinValue;
+            minCumulativeReward = float.MaxValue;
+            maxCumulativeReward = float.MinValue;
             successors.Clear();
             for (var i = 0; i < actions.Count; i++)
             {
                 var actionKey = actions[i];
                 if (m_Plan.TryGetActionInfo(StateKey, actionKey, out var actionInfo))
                 {
-                    var actionValue = actionInfo.ActionValue;
-                    minActionValue = Mathf.Min(minActionValue, actionValue.Average);
-                    maxActionValue = Mathf.Max(maxActionValue, actionValue.Average);
+                    var cumulativeReward = actionInfo.CumulativeRewardEstimate;
+                    minCumulativeReward = Mathf.Min(minCumulativeReward, cumulativeReward.Average);
+                    maxCumulativeReward = Mathf.Max(maxCumulativeReward, cumulativeReward.Average);
 
                     successors.Add(new Successor()
                     {
@@ -189,7 +242,7 @@ namespace UnityEditor.AI.Planner.Visualizer
             }
 
             var successors = new List<Successor>();
-            SortSuccessorActions(s_Actions, ref successors, out var minActionValue, out var maxActionValue);
+            SortSuccessorActions(s_Actions, ref successors, out var minCumulativeReward, out var maxCumulativeReward);
 
             // Yield children
             if (m_Plan.TryGetOptimalAction(StateKey, out var optimalActionKey))
@@ -207,7 +260,7 @@ namespace UnityEditor.AI.Planner.Visualizer
 
                     var nodeWeight = actionKey.Equals(optimalActionKey)
                         ? float.MaxValue
-                        : Mathf.InverseLerp(minActionValue, maxActionValue, successor.ActionInfo.ActionValue.Average);
+                        : Mathf.InverseLerp(minCumulativeReward, maxCumulativeReward, successor.ActionInfo.CumulativeRewardEstimate.Average);
 
                     yield return new ActionNode(m_PlanExecutor, stateActionKey, weight: nodeWeight);
 

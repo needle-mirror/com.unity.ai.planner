@@ -2,9 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Jobs;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using UnityEngine;
@@ -37,7 +38,7 @@ namespace KeyDomain
         }
     }
 
-    struct Heuristic : IHeuristic<StateData>
+    struct CumulativeRewardEstimator : ICumulativeRewardEstimator<StateData>
     {
         public BoundedValue Evaluate(StateData state)
         {
@@ -278,20 +279,21 @@ namespace KeyDomain
         static readonly int s_LockableType =  TypeManager.GetTypeIndex<Lockable>();
         static readonly int s_EndType =       TypeManager.GetTypeIndex<End>();
 
-        public StateData(JobComponentSystem system, Entity stateEntity, bool readWrite = false)
+        public StateData(ExclusiveEntityTransaction transaction, Entity stateEntity, bool readWrite = false)
         {
             StateEntity = stateEntity;
-            TraitBasedObjects = system.GetBufferFromEntity<TraitBasedObject>(!readWrite)[stateEntity];
-            TraitBasedObjectIds = system.GetBufferFromEntity<TraitBasedObjectId>(!readWrite)[stateEntity];
-            ColoredBuffer = system.GetBufferFromEntity<Colored>(!readWrite)[stateEntity];
-            CarrierBuffer = system.GetBufferFromEntity<Carrier>(!readWrite)[stateEntity];
-            CarriableBuffer = system.GetBufferFromEntity<Carriable>(!readWrite)[stateEntity];
-            LocalizedBuffer = system.GetBufferFromEntity<Localized>(!readWrite)[stateEntity];
-            LockableBuffer = system.GetBufferFromEntity<Lockable>(!readWrite)[stateEntity];
-            EndBuffer = system.GetBufferFromEntity<End>(!readWrite)[stateEntity];
+            TraitBasedObjects = transaction.GetBuffer<TraitBasedObject>(stateEntity);
+            TraitBasedObjectIds = transaction.GetBuffer<TraitBasedObjectId>(stateEntity);
+
+            ColoredBuffer = transaction.GetBuffer<Colored>(stateEntity);
+            CarrierBuffer = transaction.GetBuffer<Carrier>(stateEntity);
+            CarriableBuffer = transaction.GetBuffer<Carriable>(stateEntity);
+            LocalizedBuffer = transaction.GetBuffer<Localized>(stateEntity);
+            LockableBuffer = transaction.GetBuffer<Lockable>(stateEntity);
+            EndBuffer = transaction.GetBuffer<End>(stateEntity);
         }
 
-        public StateData(int jobIndex, EntityCommandBuffer.Concurrent entityCommandBuffer, Entity stateEntity)
+        public StateData(int jobIndex, EntityCommandBuffer.ParallelWriter entityCommandBuffer, Entity stateEntity)
         {
             StateEntity = stateEntity;
             TraitBasedObjects = entityCommandBuffer.AddBuffer<TraitBasedObject>(jobIndex, stateEntity);
@@ -304,7 +306,7 @@ namespace KeyDomain
             EndBuffer = entityCommandBuffer.AddBuffer<End>(jobIndex, stateEntity);
         }
 
-        public StateData Copy(int jobIndex, EntityCommandBuffer.Concurrent entityCommandBuffer)
+        public StateData Copy(int jobIndex, EntityCommandBuffer.ParallelWriter entityCommandBuffer)
         {
             var stateEntity = entityCommandBuffer.Instantiate(jobIndex, StateEntity);
             var traitBasedObjects = entityCommandBuffer.SetBuffer<TraitBasedObject>(jobIndex, stateEntity);
@@ -339,7 +341,7 @@ namespace KeyDomain
             };
         }
 
-        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, TraitBasedObjectId traitBasedObjectId, NativeString64 name = default)
+        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, TraitBasedObjectId traitBasedObjectId, FixedString64 name = default)
         {
             traitBasedObject = TraitBasedObject.Default;
 #if DEBUG
@@ -384,13 +386,18 @@ namespace KeyDomain
             TraitBasedObjects.Add(traitBasedObject);
         }
 
-        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, NativeString64 name = default)
+        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, FixedString64 name = default)
         {
             traitBasedObjectId = new TraitBasedObjectId() { Id = ObjectId.GetNext() };
             AddObject(types, out traitBasedObject, traitBasedObjectId, name);
         }
 
-        public void AddTraitBasedObject(ComponentType[] types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, NativeString64 name = default)
+        public void ConvertAndSetPlannerTrait(Entity sourceEntity, EntityManager sourceEntityManager, NativeArray<ComponentType> sourceTraitTypes, IDictionary<Entity, TraitBasedObjectId> entityToObjectId, ref TraitBasedObject traitBasedObject)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void AddTraitBasedObject(ComponentType[] types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId traitBasedObjectId, FixedString64 name = default)
         {
             traitBasedObject = TraitBasedObject.Default;
             traitBasedObjectId = new TraitBasedObjectId() { Id = ObjectId.GetNext() };
@@ -519,7 +526,8 @@ namespace KeyDomain
             traitBuffer.RemoveAt(lastBufferIndex);
 
             // Update index for object with last trait in buffer
-            for (int i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (int i = 0; i < numObjects; i++)
             {
                 var otherTraitBasedObject = TraitBasedObjects[i];
                 if (otherTraitBasedObject[objectTraitIndex] == lastBufferIndex)
@@ -531,7 +539,7 @@ namespace KeyDomain
             }
 
             // Update traitBasedObject in buffer (ref is to a copy)
-            for (int i = 0; i < TraitBasedObjects.Length; i++)
+            for (int i = 0; i < numObjects; i++)
             {
                 if (traitBasedObject.Equals(TraitBasedObjects[i]))
                 {
@@ -624,7 +632,8 @@ namespace KeyDomain
             traitBuffer.RemoveAt(lastBufferIndex);
 
             // Update index for object with last trait in buffer
-            for (int i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (int i = 0; i < numObjects; i++)
             {
                 var otherTraitBasedObject = TraitBasedObjects[i];
                 if (otherTraitBasedObject[objectTraitIndex] == lastBufferIndex)
@@ -658,7 +667,8 @@ namespace KeyDomain
 
         public NativeArray<int> GetTraitBasedObjectIndices(NativeList<int> traitBasedObjects, NativeArray<ComponentType> traitFilter)
         {
-            for (var i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (var i = 0; i < numObjects; i++)
             {
                 var traitBasedObject = TraitBasedObjects[i];
                 if (traitBasedObject.MatchesTraitFilter(traitFilter))
@@ -670,7 +680,8 @@ namespace KeyDomain
 
         public NativeArray<int> GetTraitBasedObjectIndices(NativeList<int> traitBasedObjects, params ComponentType[] traitFilter)
         {
-            for (var i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (var i = 0; i < numObjects; i++)
             {
                 var traitBasedObject = TraitBasedObjects[i];
                 if (traitBasedObject.MatchesTraitFilter(traitFilter))
@@ -682,10 +693,10 @@ namespace KeyDomain
 
         public void GetTraitBasedObjectIndices(TraitBasedObject traitSubset, NativeList<int> traitBasedObjects)
         {
-            var traitBasedObjectArray = TraitBasedObjects.AsNativeArray();
-            for (var i = 0; i < traitBasedObjectArray.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (var i = 0; i < numObjects; i++)
             {
-                if (traitBasedObjectArray[i].HasTraitSubset(traitSubset))
+                if (TraitBasedObjects[i].HasTraitSubset(traitSubset))
                     traitBasedObjects.Add(i);
             }
         }
@@ -693,7 +704,8 @@ namespace KeyDomain
         public int GetTraitBasedObjectIndex(TraitBasedObject traitBasedObject)
         {
             var objectIndex = -1;
-            for (int i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (int i = 0; i < numObjects; i++)
             {
                 if (TraitBasedObjects[i].Equals(traitBasedObject))
                 {
@@ -888,7 +900,8 @@ namespace KeyDomain
             objectMap.Initialize(TraitBasedObjectIds, rhsState.TraitBasedObjectIds);
 
             bool statesEqual = true;
-            for (int lhsIndex = 0; lhsIndex < TraitBasedObjects.Length; lhsIndex++)
+            var numObjects = TraitBasedObjects.Length;
+            for (int lhsIndex = 0; lhsIndex < numObjects; lhsIndex++)
             {
                 var lhsId = TraitBasedObjectIds[lhsIndex].Id;
                 if (objectMap.TryGetValue(lhsId, out _)) // already matched
@@ -896,7 +909,7 @@ namespace KeyDomain
 
                 // todo lhsIndex to start? would require swapping rhs on assignments, though
                 bool matchFound = true;
-                for (var rhsIndex = 0; rhsIndex < rhsState.TraitBasedObjects.Length; rhsIndex++)
+                for (var rhsIndex = 0; rhsIndex < numObjects; rhsIndex++)
                 {
                     var rhsId = rhsState.TraitBasedObjectIds[rhsIndex].Id;
                     if (objectMap.ContainsRHS(rhsId)) // skip if already assigned todo optimize this
@@ -991,7 +1004,8 @@ namespace KeyDomain
         {
             var sb = new StringBuilder();
 
-            for (var traitBasedObjectIndex = 0; traitBasedObjectIndex < TraitBasedObjects.Length; traitBasedObjectIndex++)
+            var numObjects = TraitBasedObjects.Length;
+            for (var traitBasedObjectIndex = 0; traitBasedObjectIndex < numObjects; traitBasedObjectIndex++)
             {
                 var traitBasedObject = TraitBasedObjects[traitBasedObjectIndex];
                 sb.AppendLine(TraitBasedObjectIds[traitBasedObjectIndex].ToString());
@@ -1031,18 +1045,19 @@ namespace KeyDomain
 
     struct StateDataContext : ITraitBasedStateDataContext<TraitBasedObject, StateEntityKey, StateData>
     {
-        internal EntityCommandBuffer.Concurrent EntityCommandBuffer;
+        public bool IsCreated;
+        internal EntityCommandBuffer.ParallelWriter EntityCommandBuffer;
         internal EntityArchetype m_StateArchetype;
         internal int JobIndex;
 
-        [ReadOnly] public BufferFromEntity<TraitBasedObject> TraitBasedObjects;
-        [ReadOnly] public BufferFromEntity<TraitBasedObjectId> TraitBasedObjectIds;
-        [ReadOnly] public BufferFromEntity<Colored> ColoredData;
-        [ReadOnly] public BufferFromEntity<Carrier> CarrierData;
-        [ReadOnly] public BufferFromEntity<Carriable> CarriableData;
-        [ReadOnly] public BufferFromEntity<Localized> LocalizedData;
-        [ReadOnly] public BufferFromEntity<Lockable> LockableData;
-        [ReadOnly] public BufferFromEntity<End> EndData;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<TraitBasedObject> TraitBasedObjects;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<TraitBasedObjectId> TraitBasedObjectIds;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<Colored> ColoredData;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<Carrier> CarrierData;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<Carriable> CarriableData;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<Localized> LocalizedData;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<Lockable> LockableData;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<End> EndData;
 
         public StateDataContext(JobComponentSystem system, EntityArchetype stateArchetype)
         {
@@ -1057,7 +1072,8 @@ namespace KeyDomain
             EndData = system.GetBufferFromEntity<End>(true);
 
             m_StateArchetype = stateArchetype;
-            JobIndex = 0; // todo set on all actions
+            JobIndex = 0;
+            IsCreated = true;
         }
 
         public StateData GetStateData(StateEntityKey stateKey)
@@ -1113,18 +1129,53 @@ namespace KeyDomain
     [DisableAutoCreation]
     class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>
     {
-        public ExclusiveEntityTransaction ExclusiveEntityTransaction;
+        public new EntityManager EntityManager
+        {
+            get
+            {
+                if (m_EntityTransactionActive)
+                    EndEntityExclusivity();
+
+                return base.EntityManager;
+            }
+        }
+
+        ExclusiveEntityTransaction m_ExclusiveEntityTransaction;
+        public ExclusiveEntityTransaction ExclusiveEntityTransaction
+        {
+            get
+            {
+                if (!m_EntityTransactionActive)
+                    BeginEntityExclusivity();
+
+                return m_ExclusiveEntityTransaction;
+            }
+        }
+
+        StateDataContext m_StateDataContext;
+        public StateDataContext StateDataContext
+        {
+            get
+            {
+                if (m_StateDataContext.IsCreated)
+                    return m_StateDataContext;
+
+                m_StateDataContext = new StateDataContext(this, m_StateArchetype);
+                return m_StateDataContext;
+            }
+        }
+
         public event Action Destroying;
 
         List<EntityCommandBuffer> m_EntityCommandBuffers;
         EntityArchetype m_StateArchetype;
+        bool m_EntityTransactionActive = false;
 
         protected override void OnCreate()
         {
             m_StateArchetype = EntityManager.CreateArchetype(typeof(State), typeof(TraitBasedObject), typeof(TraitBasedObjectId), typeof(HashCode),
                 typeof(Colored),typeof(Carrier),typeof(Carriable),typeof(Localized),typeof(Lockable),typeof(End));
 
-            BeginEntityExclusivity();
             m_EntityCommandBuffers = new List<EntityCommandBuffer>();
         }
 
@@ -1132,6 +1183,7 @@ namespace KeyDomain
         {
             Destroying?.Invoke();
             EndEntityExclusivity();
+            ClearECBs();
             base.OnDestroy();
         }
 
@@ -1142,33 +1194,27 @@ namespace KeyDomain
             return ecb;
         }
 
-       public StateData CreateStateData()
+        public StateData CreateStateData()
         {
-            EndEntityExclusivity();
-            var stateEntity = EntityManager.CreateEntity(m_StateArchetype);
-            BeginEntityExclusivity();
-            return new StateData(this, stateEntity, true);
+            var stateEntity = ExclusiveEntityTransaction.CreateEntity(m_StateArchetype);
+            return new StateData(ExclusiveEntityTransaction, stateEntity, true);;
         }
 
         public StateData GetStateData(StateEntityKey stateKey, bool readWrite = false)
         {
-            return !Enabled ? default : new StateData(this, stateKey.Entity, readWrite);
+            return !Enabled || !ExclusiveEntityTransaction.Exists(stateKey.Entity) ?
+                default : new StateData(ExclusiveEntityTransaction, stateKey.Entity, readWrite);
         }
 
         public void DestroyState(StateEntityKey stateKey)
         {
             var stateEntity = stateKey.Entity;
-            if (EntityManager != null && EntityManager.IsCreated && EntityManager.Exists(stateEntity))
+            if (EntityManager != default && EntityManager.World.IsCreated && EntityManager.Exists(stateEntity))
             {
                 EndEntityExclusivity();
                 EntityManager.DestroyEntity(stateEntity);
                 BeginEntityExclusivity();
             }
-        }
-
-        public StateDataContext GetStateDataContext()
-        {
-            return new StateDataContext(this, m_StateArchetype);
         }
 
         public StateEntityKey GetStateDataKey(StateData stateData)
@@ -1178,10 +1224,8 @@ namespace KeyDomain
 
         public StateData CopyStateData(StateData stateData)
         {
-            EndEntityExclusivity();
-            var copyStateEntity = EntityManager.Instantiate(stateData.StateEntity);
-            BeginEntityExclusivity();
-            return new StateData(this, copyStateEntity, true);
+            var copyStateEntity = ExclusiveEntityTransaction.Instantiate(stateData.StateEntity);
+            return new StateData(ExclusiveEntityTransaction, copyStateEntity, true);
         }
 
         public StateEntityKey CopyState(StateEntityKey stateKey)
@@ -1193,7 +1237,24 @@ namespace KeyDomain
             return new StateEntityKey { Entity = copyStateEntity, HashCode = stateData.GetHashCode()};
         }
 
-        protected override JobHandle OnUpdate(JobHandle inputDeps) => JobHandle.CombineDependencies(inputDeps, EntityManager.ExclusiveEntityTransactionDependency);
+        protected override JobHandle OnUpdate(JobHandle inputDeps)
+        {
+            if (!EntityManager.ExclusiveEntityTransactionDependency.IsCompleted)
+                return inputDeps;
+
+            EntityManager.ExclusiveEntityTransactionDependency.Complete();
+            ClearECBs();
+            return inputDeps;
+        }
+
+        void ClearECBs()
+        {
+            foreach (var ecb in m_EntityCommandBuffers)
+            {
+                ecb.Dispose();
+            }
+            m_EntityCommandBuffers.Clear();
+        }
 
         public bool Equals(StateData x, StateData y)
         {
@@ -1207,19 +1268,16 @@ namespace KeyDomain
 
         void BeginEntityExclusivity()
         {
-            ExclusiveEntityTransaction = EntityManager.BeginExclusiveEntityTransaction();
+            m_StateDataContext = new StateDataContext(this, m_StateArchetype);
+            m_ExclusiveEntityTransaction = base.EntityManager.BeginExclusiveEntityTransaction();
+            m_EntityTransactionActive = true;
         }
 
         void EndEntityExclusivity()
         {
-            EntityManager.EndExclusiveEntityTransaction();
-
-            foreach (var ecb in m_EntityCommandBuffers)
-            {
-                if (ecb.IsCreated)
-                    ecb.Dispose();
-            }
-            m_EntityCommandBuffers.Clear();
+            base.EntityManager.EndExclusiveEntityTransaction();
+            m_EntityTransactionActive = false;
+            m_StateDataContext = default;
         }
     }
 
@@ -1233,9 +1291,9 @@ namespace KeyDomain
             var entityManager = StateManager.EntityManager;
             inputDeps = JobHandle.CombineDependencies(inputDeps, entityManager.ExclusiveEntityTransactionDependency);
 
-            var stateDataContext = StateManager.GetStateDataContext();
+            var stateDataContext = StateManager.StateDataContext;
             var ecb = StateManager.GetEntityCommandBuffer();
-            stateDataContext.EntityCommandBuffer = ecb.ToConcurrent();
+            stateDataContext.EntityCommandBuffer = ecb.AsParallelWriter();
             var destroyStatesJobHandle = new DestroyStatesJob<StateEntityKey, StateData, StateDataContext>()
             {
                 StateDataContext = stateDataContext,

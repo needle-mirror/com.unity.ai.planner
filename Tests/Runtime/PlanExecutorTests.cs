@@ -2,15 +2,14 @@
 using System.Collections.Generic;
 using KeyDomain;
 using NUnit.Framework;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 using UnityEngine.TestTools;
 
 namespace Unity.AI.Planner.Tests.Integration
 {
-    using KeyDomainBaseExecutor = BaseTraitBasedPlanExecutor<TraitBasedObject,StateEntityKey,StateData,StateDataContext,ActionScheduler,DefaultHeuristic<StateData>,DefaultTerminalStateEvaluator<StateData>,StateManager,ActionKey,DestroyStatesJobScheduler>;
-    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideHeuristic<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
+    using KeyDomainBaseExecutor = BaseTraitBasedPlanExecutor<TraitBasedObject,StateEntityKey,StateData,StateDataContext,ActionScheduler,DefaultCumulativeRewardEstimator<StateData>,DefaultTerminalStateEvaluator<StateData>,StateManager,ActionKey,DestroyStatesJobScheduler>;
+    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideCumulativeRewardEstimator<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
 
     class PlanExecutorTests
     {
@@ -38,7 +37,7 @@ namespace Unity.AI.Planner.Tests.Integration
         public void SetUp()
         {
             m_Executor = new MockKeyDomainPlanExecutor();
-            m_Executor.Initialize(new GameObject("TestGameObject").AddComponent<MockMonoBehaviour>(), ScriptableObject.CreateInstance<PlanDefinition>(), null);
+            m_Executor.Initialize(new GameObject("TestGameObject").AddComponent<MockMonoBehaviour>(), ScriptableObject.CreateInstance<ProblemDefinition>(), null);
             m_StateManager = m_Executor.StateManager;
 
             m_Scheduler = new KeyDomainScheduler();
@@ -71,7 +70,7 @@ namespace Unity.AI.Planner.Tests.Integration
             m_Scheduler.Initialize(m_StateManager, terminationEvaluator: new TestManualOverrideTerminationEvaluator<StateData> { TerminationReturnValue = true });
 
             // Initiate query
-            var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey).SearchUntil(maximumUpdates: 1);
+            var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey).PlanUntil(maximumUpdates: 1);
 
             // Schedule single iteration
             m_Scheduler.Schedule(default);
@@ -98,8 +97,8 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             // Initiate query
             var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey)
-                .SearchUntil(maximumUpdates: 1)
-                .WithBudget(searchIterationsPerUpdate: 2, stateExpansionsPerIteration: 4);
+                .PlanUntil(maximumUpdates: 1)
+                .WithBudget(planningIterationsPerUpdate: 2, stateExpansionsPerIteration: 4);
 
             // Schedule single iteration
             m_Scheduler.Schedule(default);
@@ -123,8 +122,8 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             // Initiate query
             var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey)
-                .SearchUntil(maximumUpdates: 1)
-                .WithBudget(searchIterationsPerUpdate: 2, stateExpansionsPerIteration: 4);
+                .PlanUntil(maximumUpdates: 1)
+                .WithBudget(planningIterationsPerUpdate: 2, stateExpansionsPerIteration: 4);
 
             // Schedule single iteration
             m_Scheduler.Schedule(default);
@@ -157,8 +156,8 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             // Initiate query
             var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey)
-                .SearchUntil(maximumUpdates: 1)
-                .WithBudget(searchIterationsPerUpdate: 2, stateExpansionsPerIteration: 4);
+                .PlanUntil(maximumUpdates: 1)
+                .WithBudget(planningIterationsPerUpdate: 2, stateExpansionsPerIteration: 4);
 
             // Schedule single iteration
             m_Scheduler.Schedule(default);

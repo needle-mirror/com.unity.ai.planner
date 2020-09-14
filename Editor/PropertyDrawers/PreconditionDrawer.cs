@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Unity.AI.Planner.Traits;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Editors
 {
@@ -10,10 +10,11 @@ namespace UnityEditor.AI.Planner.Editors
     {
         static readonly string[] k_DefaultComparison = { "==", "!=" };
         static readonly string[] k_NumberComparison = { "==", "!=", "<", ">", "<=", ">=" };
+        static readonly string[] k_ListComparison = { "==", "!=", "<", ">", "<=", ">=", "contains", "!contains" };
 
         internal static void PropertyField(Rect rect, IList<ParameterDefinition> parameters, SerializedProperty precondition, Type[] types)
         {
-            const int operatorSize = 50;
+            const int operatorSize = 65;
             const int spacer = 5;
 
             var w = rect.width;
@@ -35,7 +36,7 @@ namespace UnityEditor.AI.Planner.Editors
                     var operandA = precondition.FindPropertyRelative("m_OperandA");
                     var operandB = precondition.FindPropertyRelative("m_OperandB");
 
-                    TraitGUIUtility.DrawOperandSelectorField(rect, operandA, parameters, true, false, property =>
+                    TraitGUIUtility.DrawOperandSelectorField(rect, operandA, @operator, parameters, true, false, property =>
                     {
                         TraitGUIUtility.ClearOperandProperty(operandB);
                     });
@@ -67,7 +68,8 @@ namespace UnityEditor.AI.Planner.Editors
                     if (validLeftOperand)
                     {
                         string unknownType = default;
-                        TraitGUIUtility.DrawOperandSelectorField(rect, operandB, parameters, TraitGUIUtility.GetOperandValuePropertyType(operandA, ref unknownType), unknownType);
+                        TraitGUIUtility.DrawOperandSelectorField(rect, operandB, @operator, parameters,
+                            TraitGUIUtility.GetOperandValuePropertyType(operandA, @operator, ref unknownType), unknownType);
                     }
                     else
                     {
@@ -115,7 +117,9 @@ namespace UnityEditor.AI.Planner.Editors
 
         static string[] GetComparisonOperators(SerializedProperty operand)
         {
-            return TraitGUIUtility.IsNumberOperand(operand)? k_NumberComparison : k_DefaultComparison;
+            return TraitGUIUtility.IsNumberOperand(operand)? k_NumberComparison :
+                TraitGUIUtility.IsListOperand(operand) ?
+                    k_ListComparison : k_DefaultComparison;
         }
     }
 }

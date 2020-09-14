@@ -1,5 +1,5 @@
 using System;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 
 namespace Unity.AI.Planner
 {

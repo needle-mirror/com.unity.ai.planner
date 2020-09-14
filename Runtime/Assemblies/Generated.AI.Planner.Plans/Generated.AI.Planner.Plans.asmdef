@@ -9,6 +9,8 @@
         "Unity.Mathematics",
         "Generated.AI.Planner.StateRepresentation",
         "AI.Planner.Custom",
+        "Unity.Semantic.Traits",
+        "Generated.Semantic.Traits",
         "Unity.FullDotNet"
     ],
     "includePlatforms": [],
@@ -18,9 +20,15 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [
+        "SEMANTIC_TRAITS_GENERATED",
         "PLANNER_STATE_REPRESENTATION_GENERATED"
     ],
     "versionDefines": [
+        {
+            "name": "generated.semantic.traits",
+            "expression": "0.0",
+            "define": "SEMANTIC_TRAITS_GENERATED"
+        },
         {
             "name": "generated.ai.planner.staterepresentation",
             "expression": "0.0",

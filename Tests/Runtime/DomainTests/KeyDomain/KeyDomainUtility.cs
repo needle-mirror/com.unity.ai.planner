@@ -1,4 +1,4 @@
-﻿using Unity.AI.Planner.DomainLanguage.TraitBased;
+﻿using Unity.AI.Planner.Traits;
 using Unity.Collections;
 using Unity.Entities;
 

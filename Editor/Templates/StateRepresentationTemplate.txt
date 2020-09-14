@@ -2,11 +2,13 @@ using System;
 using System.Text;
 using System.Collections.Generic;
 using Unity.AI.Planner;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Jobs;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
+using PlanningAgent = Unity.AI.Planner.Traits.PlanningAgent;
 
 namespace {{ namespace }}
 {
@@ -118,8 +120,12 @@ namespace {{ namespace }}
             for (int i = 0; i < componentTypes.Length; i++)
             {
                 var t = componentTypes[i];
-                {{~ for trait in trait_list }}
-                {{ if for.index != 0 }}else {{ end }}if (t.TypeIndex == s_{{ trait.name }}TypeIndex)
+                if (t == default || t.TypeIndex == 0)
+                {
+                    // This seems to be necessary for Burst compilation; Doesn't happen with non-Burst compilation
+                }
+                {{- for trait in trait_list }}
+                else if (t.TypeIndex == s_{{ trait.name }}TypeIndex)
                 {
                     if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ {{ trait.name }}Index == Unset)
                         return false;
@@ -137,8 +143,12 @@ namespace {{ namespace }}
             for (int i = 0; i < componentTypes.Length; i++)
             {
                 var t = componentTypes[i];
-                {{~ for trait in trait_list }}
-                {{ if for.index != 0 }}else {{ end }}if (t.TypeIndex == s_{{ trait.name }}TypeIndex)
+                if (t == default || t == null || t.TypeIndex == 0)
+                {
+                    // This seems to be necessary for Burst compilation; Doesn't happen with non-Burst compilation
+                }
+                {{- for trait in trait_list }}
+                else if (t.TypeIndex == s_{{ trait.name }}TypeIndex)
                 {
                     if (t.AccessModeType == ComponentType.AccessMode.Exclude ^ {{ trait.name }}Index == Unset)
                         return false;
@@ -164,17 +174,17 @@ namespace {{ namespace }}
         static readonly int s_{{trait.name}}TypeIndex = TypeManager.GetTypeIndex<{{trait.name}}>();
         {{- end }}
 
-        public StateData(JobComponentSystem system, Entity stateEntity, bool readWrite = false)
+        public StateData(ExclusiveEntityTransaction transaction, Entity stateEntity)
         {
             StateEntity = stateEntity;
-            TraitBasedObjects = system.GetBufferFromEntity<TraitBasedObject>(!readWrite)[stateEntity];
-            TraitBasedObjectIds = system.GetBufferFromEntity<TraitBasedObjectId>(!readWrite)[stateEntity];
+            TraitBasedObjects = transaction.GetBuffer<TraitBasedObject>(stateEntity);
+            TraitBasedObjectIds = transaction.GetBuffer<TraitBasedObjectId>(stateEntity);
             {{~ for trait in trait_list }}
-            {{trait.name}}Buffer = system.GetBufferFromEntity<{{trait.name}}>(!readWrite)[stateEntity];
+            {{trait.name}}Buffer = transaction.GetBuffer<{{trait.name}}>(stateEntity);
             {{- end }}
         }
 
-        public StateData(int jobIndex, EntityCommandBuffer.Concurrent entityCommandBuffer, Entity stateEntity)
+        public StateData(int jobIndex, EntityCommandBuffer.ParallelWriter entityCommandBuffer, Entity stateEntity)
         {
             StateEntity = stateEntity;
             TraitBasedObjects = entityCommandBuffer.AddBuffer<TraitBasedObject>(jobIndex, stateEntity);
@@ -184,7 +194,7 @@ namespace {{ namespace }}
             {{- end }}
         }
 
-        public StateData Copy(int jobIndex, EntityCommandBuffer.Concurrent entityCommandBuffer)
+        public StateData Copy(int jobIndex, EntityCommandBuffer.ParallelWriter entityCommandBuffer)
         {
             var stateEntity = entityCommandBuffer.Instantiate(jobIndex, StateEntity);
             var traitBasedObjects = entityCommandBuffer.SetBuffer<TraitBasedObject>(jobIndex, stateEntity);
@@ -207,7 +217,7 @@ namespace {{ namespace }}
             };
         }
 
-        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, TraitBasedObjectId objectId, NativeString64 name = default)
+        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, TraitBasedObjectId objectId, FixedString64 name = default)
         {
             traitBasedObject = TraitBasedObject.Default;
 #if DEBUG
@@ -230,10 +240,43 @@ namespace {{ namespace }}
             TraitBasedObjects.Add(traitBasedObject);
         }
 
-        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId objectId, NativeString64 name = default)
+        public void AddObject(NativeArray<ComponentType> types, out TraitBasedObject traitBasedObject, out TraitBasedObjectId objectId, FixedString64 name = default)
         {
             objectId = new TraitBasedObjectId() { Id = ObjectId.GetNext() };
             AddObject(types, out traitBasedObject, objectId, name);
+        }
+
+        public void ConvertAndSetPlannerTrait(Entity sourceEntity, EntityManager sourceEntityManager,
+            NativeArray<ComponentType> sourceTraitTypes, IDictionary<Entity, TraitBasedObjectId> entityToObjectId,
+            ref TraitBasedObject traitBasedObject)
+        {
+            unsafe
+            {
+                foreach (var type in sourceTraitTypes)
+                {
+                    {{- for trait in trait_list }}
+                    {{- if !trait.attributes.empty? || !trait.relations.empty? }}
+                    if (type == typeof(Generated.Semantic.Traits.{{ trait.name }}Data))
+                    {
+                        var traitData = sourceEntityManager.GetComponentData<Generated.Semantic.Traits.{{ trait.name }}Data>(sourceEntity);
+                        var plannerTraitData = new {{ trait.name }}();
+                        {{- if trait.relations.empty? }}
+                        UnsafeUtility.CopyStructureToPtr(ref traitData, UnsafeUtility.AddressOf(ref plannerTraitData));
+                        {{- else }}
+                        {{- for attribute in trait.attributes }}
+                        plannerTraitData.{{ attribute.field_name }} = traitData.{{ attribute.field_name }};
+                        {{- end }}
+                        {{- for relation in trait.relations }}
+                        if (entityToObjectId.TryGetValue(traitData.{{ relation.name }}, out var {{ relation.name }}))
+                            plannerTraitData.{{ relation.name }} = {{ relation.name }};
+                        {{- end }}
+                        {{- end }}
+                        SetTraitOnObject(plannerTraitData, ref traitBasedObject);
+                    }
+                    {{- end }}
+                    {{- end }}
+                }
+            }
         }
 
         public void SetTraitOnObject(ITrait trait, ref TraitBasedObject traitBasedObject)
@@ -318,7 +361,8 @@ namespace {{ namespace }}
             traitBuffer.RemoveAt(lastBufferIndex);
 
             // Update index for object with last trait in buffer
-            for (int i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (int i = 0; i < numObjects; i++)
             {
                 var otherTraitBasedObject = TraitBasedObjects[i];
                 if (otherTraitBasedObject[objectTraitIndex] == lastBufferIndex)
@@ -330,7 +374,7 @@ namespace {{ namespace }}
             }
 
             // Update traitBasedObject in buffer (ref is to a copy)
-            for (int i = 0; i < TraitBasedObjects.Length; i++)
+            for (int i = 0; i < numObjects; i++)
             {
                 if (traitBasedObject.Equals(TraitBasedObjects[i]))
                 {
@@ -416,7 +460,8 @@ namespace {{ namespace }}
             traitBuffer.RemoveAt(lastBufferIndex);
 
             // Update index for object with last trait in buffer
-            for (int i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (int i = 0; i < numObjects; i++)
             {
                 var otherTraitBasedObject = TraitBasedObjects[i];
                 if (otherTraitBasedObject[objectTraitIndex] == lastBufferIndex)
@@ -448,7 +493,8 @@ namespace {{ namespace }}
 
         public NativeArray<int> GetTraitBasedObjectIndices(NativeList<int> traitBasedObjectIndices, NativeArray<ComponentType> traitFilter)
         {
-            for (var i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (var i = 0; i < numObjects; i++)
             {
                 var traitBasedObject = TraitBasedObjects[i];
                 if (traitBasedObject.MatchesTraitFilter(traitFilter))
@@ -460,7 +506,8 @@ namespace {{ namespace }}
 
         public NativeArray<int> GetTraitBasedObjectIndices(NativeList<int> traitBasedObjectIndices, params ComponentType[] traitFilter)
         {
-            for (var i = 0; i < TraitBasedObjects.Length; i++)
+            var numObjects = TraitBasedObjects.Length;
+            for (var i = 0; i < numObjects; i++)
             {
                 var traitBasedObject = TraitBasedObjects[i];
                 if (traitBasedObject.MatchesTraitFilter(traitFilter))
@@ -568,12 +615,13 @@ namespace {{ namespace }}
             return TryGetObjectMapping(rhsState, objectMap);
         }
 
-        bool TryGetObjectMapping(StateData rhsState, ObjectCorrespondence objectMap)
+        internal bool TryGetObjectMapping(StateData rhsState, ObjectCorrespondence objectMap)
         {
             objectMap.Initialize(TraitBasedObjectIds, rhsState.TraitBasedObjectIds);
 
             bool statesEqual = true;
-            for (int lhsIndex = 0; lhsIndex < TraitBasedObjects.Length; lhsIndex++)
+            var numObjects = TraitBasedObjects.Length;
+            for (int lhsIndex = 0; lhsIndex < numObjects; lhsIndex++)
             {
                 var lhsId = TraitBasedObjectIds[lhsIndex].Id;
                 if (objectMap.TryGetValue(lhsId, out _)) // already matched
@@ -581,7 +629,8 @@ namespace {{ namespace }}
 
                 // todo lhsIndex to start? would require swapping rhs on assignments, though
                 bool matchFound = true;
-                for (var rhsIndex = 0; rhsIndex < rhsState.TraitBasedObjects.Length; rhsIndex++)
+
+                for (var rhsIndex = 0; rhsIndex < numObjects; rhsIndex++)
                 {
                     var rhsId = rhsState.TraitBasedObjectIds[rhsIndex].Id;
                     if (objectMap.ContainsRHS(rhsId)) // skip if already assigned todo optimize this
@@ -697,15 +746,17 @@ namespace {{ namespace }}
             // h = 3860031 + (h+y)*2779 + (h*y*2)   // from How to Hash a Set by Richard O’Keefe
             var stateHashValue = 3860031 + (397 + TraitBasedObjectIds.Length) * 2779 + (397 * TraitBasedObjectIds.Length * 2);
 
+            int bufferLength;
             {{~ for trait in trait_list }}
-            for (int i = 0; i < {{trait.name}}Buffer.Length; i++)
+            bufferLength = {{trait.name}}Buffer.Length;
+            for (int i = 0; i < bufferLength; i++)
             {
                 {{- if !trait.attributes.empty?}}
                 var element = {{trait.name}}Buffer[i];
                 {{- end }}
                 var value = 397
                 {{- for attribute in trait.attributes }}
-                    {{- if (attribute.field_type | string.contains ".Enums.") }}
+                    {{- if (attribute.field_type | string.contains ".Enums.") && !(attribute.field_type | string.contains "FixedList") }}
                     ^ (int) element.{{ attribute.field_name }}
                     {{- else }}
                     ^ element.{{ attribute.field_name }}.GetHashCode()
@@ -724,7 +775,8 @@ namespace {{ namespace }}
                 return string.Empty;
 
             var sb = new StringBuilder();
-            for (var traitBasedObjectIndex = 0; traitBasedObjectIndex < TraitBasedObjects.Length; traitBasedObjectIndex++)
+            var numObjects = TraitBasedObjects.Length;
+            for (var traitBasedObjectIndex = 0; traitBasedObjectIndex < numObjects; traitBasedObjectIndex++)
             {
                 var traitBasedObject = TraitBasedObjects[traitBasedObjectIndex];
                 sb.AppendLine(TraitBasedObjectIds[traitBasedObjectIndex].ToString());
@@ -746,15 +798,18 @@ namespace {{ namespace }}
 
     public struct StateDataContext : ITraitBasedStateDataContext<TraitBasedObject, StateEntityKey, StateData>
     {
-        internal EntityCommandBuffer.Concurrent EntityCommandBuffer;
+        public bool IsCreated;
+        internal EntityCommandBuffer.ParallelWriter EntityCommandBuffer;
         internal EntityArchetype m_StateArchetype;
         internal int JobIndex;
 
-        [ReadOnly] public BufferFromEntity<TraitBasedObject> TraitBasedObjects;
-        [ReadOnly] public BufferFromEntity<TraitBasedObjectId> TraitBasedObjectIds;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<TraitBasedObject> TraitBasedObjects;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<TraitBasedObjectId> TraitBasedObjectIds;
         {{~ for trait in trait_list }}
-        [ReadOnly] public BufferFromEntity<{{trait.name}}> {{trait.name}}Data;
+        [ReadOnly,NativeDisableContainerSafetyRestriction] public BufferFromEntity<{{trait.name}}> {{trait.name}}Data;
         {{- end }}
+
+        [NativeDisableContainerSafetyRestriction,ReadOnly] ObjectCorrespondence m_ObjectCorrespondence;
 
         public StateDataContext(JobComponentSystem system, EntityArchetype stateArchetype)
         {
@@ -767,6 +822,8 @@ namespace {{ namespace }}
 
             m_StateArchetype = stateArchetype;
             JobIndex = 0;
+            m_ObjectCorrespondence = default;
+            IsCreated = true;
         }
 
         public StateData GetStateData(StateEntityKey stateKey)
@@ -806,7 +863,15 @@ namespace {{ namespace }}
 
         public bool Equals(StateData x, StateData y)
         {
-            return x.Equals(y);
+            if (x.TraitBasedObjectIds.Length != y.TraitBasedObjectIds.Length)
+                return false;
+
+            if (!m_ObjectCorrespondence.IsCreated)
+                m_ObjectCorrespondence = new ObjectCorrespondence(x.TraitBasedObjectIds.Length, Allocator.Temp);
+
+            m_ObjectCorrespondence.Initialize(x.TraitBasedObjectIds, y.TraitBasedObjectIds);
+
+            return x.TryGetObjectMapping(y, m_ObjectCorrespondence);
         }
 
         public int GetHashCode(StateData obj)
@@ -818,21 +883,56 @@ namespace {{ namespace }}
     [DisableAutoCreation, AlwaysUpdateSystem]
     public class StateManager : JobComponentSystem, ITraitBasedStateManager<TraitBasedObject, StateEntityKey, StateData, StateDataContext>
     {
-        public ExclusiveEntityTransaction ExclusiveEntityTransaction;
+        public new EntityManager EntityManager
+        {
+            get
+            {
+                if (!m_EntityTransactionActive)
+                    BeginEntityExclusivity();
+
+                return ExclusiveEntityTransaction.EntityManager;
+            }
+        }
+
+        ExclusiveEntityTransaction m_ExclusiveEntityTransaction;
+        public ExclusiveEntityTransaction ExclusiveEntityTransaction
+        {
+            get
+            {
+                if (!m_EntityTransactionActive)
+                    BeginEntityExclusivity();
+
+                return m_ExclusiveEntityTransaction;
+            }
+        }
+
+        StateDataContext m_StateDataContext;
+        public StateDataContext StateDataContext
+        {
+            get
+            {
+                if (m_StateDataContext.IsCreated)
+                    return m_StateDataContext;
+
+                m_StateDataContext = new StateDataContext(this, m_StateArchetype);
+                return m_StateDataContext;
+            }
+        }
+
         public event Action Destroying;
 
         List<EntityCommandBuffer> m_EntityCommandBuffers;
         EntityArchetype m_StateArchetype;
+        bool m_EntityTransactionActive = false;
 
         protected override void OnCreate()
         {
-            m_StateArchetype = EntityManager.CreateArchetype(typeof(State), typeof(TraitBasedObject), typeof(TraitBasedObjectId), typeof(HashCode),
+            m_StateArchetype = base.EntityManager.CreateArchetype(typeof(State), typeof(TraitBasedObject), typeof(TraitBasedObjectId), typeof(HashCode),
                 {{- for trait in trait_list }}
                 typeof({{trait.name}}){{ if for.index != for.length - 1 }},{{end}}
                 {{- end }});
 
             m_EntityCommandBuffers = new List<EntityCommandBuffer>();
-            BeginEntityExclusivity();
         }
 
         protected override void OnDestroy()
@@ -852,32 +952,21 @@ namespace {{ namespace }}
 
         public StateData CreateStateData()
         {
-            EndEntityExclusivity();
-            var stateEntity = EntityManager.CreateEntity(m_StateArchetype);
-            BeginEntityExclusivity();
-            return new StateData(this, stateEntity, true);
+            var stateEntity = ExclusiveEntityTransaction.CreateEntity(m_StateArchetype);
+            return new StateData(ExclusiveEntityTransaction, stateEntity);;
         }
 
         public StateData GetStateData(StateEntityKey stateKey, bool readWrite = false)
         {
-            return !Enabled || !EntityManager.Exists(stateKey.Entity) ?
-                default : new StateData(this, stateKey.Entity, readWrite);
+            return !Enabled || !ExclusiveEntityTransaction.Exists(stateKey.Entity) ?
+                default : new StateData(ExclusiveEntityTransaction, stateKey.Entity);
         }
 
         public void DestroyState(StateEntityKey stateKey)
         {
             var stateEntity = stateKey.Entity;
-            if (EntityManager != null && EntityManager.IsCreated && EntityManager.Exists(stateEntity))
-            {
-                EndEntityExclusivity();
-                EntityManager.DestroyEntity(stateEntity);
-                BeginEntityExclusivity();
-            }
-        }
-
-        public StateDataContext GetStateDataContext()
-        {
-            return new StateDataContext(this, m_StateArchetype);
+            if (ExclusiveEntityTransaction.Exists(stateEntity))
+                ExclusiveEntityTransaction.DestroyEntity(stateEntity);
         }
 
         public StateEntityKey GetStateDataKey(StateData stateData)
@@ -887,28 +976,26 @@ namespace {{ namespace }}
 
         public StateData CopyStateData(StateData stateData)
         {
-            EndEntityExclusivity();
-            var copyStateEntity = EntityManager.Instantiate(stateData.StateEntity);
-            BeginEntityExclusivity();
-            return new StateData(this, copyStateEntity, true);
+            var copyStateEntity = ExclusiveEntityTransaction.Instantiate(stateData.StateEntity);
+            return new StateData(ExclusiveEntityTransaction, copyStateEntity);
         }
 
         public StateEntityKey CopyState(StateEntityKey stateKey)
         {
-            EndEntityExclusivity();
-            var copyStateEntity = EntityManager.Instantiate(stateKey.Entity);
-            BeginEntityExclusivity();
-            var stateData = GetStateData(stateKey);
+            var copyStateEntity = ExclusiveEntityTransaction.Instantiate(stateKey.Entity);
+            var stateData = new StateData(ExclusiveEntityTransaction, copyStateEntity);
             return new StateEntityKey { Entity = copyStateEntity, HashCode = stateData.GetHashCode()};
         }
 
         protected override JobHandle OnUpdate(JobHandle inputDeps)
         {
-            if (!EntityManager.ExclusiveEntityTransactionDependency.IsCompleted)
-                return inputDeps;
+            var jobDependencyHandle = ExclusiveEntityTransaction.EntityManager.ExclusiveEntityTransactionDependency;
+            if (jobDependencyHandle.IsCompleted)
+            {
+                jobDependencyHandle.Complete();
+                ClearECBs();
+            }
 
-            EntityManager.ExclusiveEntityTransactionDependency.Complete();
-            ClearECBs();
             return inputDeps;
         }
 
@@ -933,12 +1020,16 @@ namespace {{ namespace }}
 
         void BeginEntityExclusivity()
         {
-            ExclusiveEntityTransaction = EntityManager.BeginExclusiveEntityTransaction();
+            m_StateDataContext = new StateDataContext(this, m_StateArchetype);
+            m_ExclusiveEntityTransaction = base.EntityManager.BeginExclusiveEntityTransaction();
+            m_EntityTransactionActive = true;
         }
 
         void EndEntityExclusivity()
         {
-            EntityManager.EndExclusiveEntityTransaction();
+            base.EntityManager.EndExclusiveEntityTransaction();
+            m_EntityTransactionActive = false;
+            m_StateDataContext = default;
         }
     }
 
@@ -949,12 +1040,9 @@ namespace {{ namespace }}
 
         public JobHandle Schedule(JobHandle inputDeps)
         {
-            var entityManager = StateManager.EntityManager;
-            inputDeps = JobHandle.CombineDependencies(inputDeps, entityManager.ExclusiveEntityTransactionDependency);
-
-            var stateDataContext = StateManager.GetStateDataContext();
+            var stateDataContext = StateManager.StateDataContext;
             var ecb = StateManager.GetEntityCommandBuffer();
-            stateDataContext.EntityCommandBuffer = ecb.ToConcurrent();
+            stateDataContext.EntityCommandBuffer = ecb.AsParallelWriter();
             var destroyStatesJobHandle = new DestroyStatesJob<StateEntityKey, StateData, StateDataContext>()
             {
                 StateDataContext = stateDataContext,
@@ -967,6 +1055,7 @@ namespace {{ namespace }}
                 EntityCommandBuffer = ecb
             }.Schedule(destroyStatesJobHandle);
 
+            var entityManager = StateManager.ExclusiveEntityTransaction.EntityManager;
             entityManager.ExclusiveEntityTransactionDependency = playbackECBJobHandle;
             return playbackECBJobHandle;
         }

@@ -1,6 +1,5 @@
 using System;
 using Unity.Jobs;
-using UnityEngine.AI.Planner;
 
 namespace Unity.AI.Planner
 {
@@ -19,9 +18,9 @@ namespace Unity.AI.Planner
         /// </summary>
         /// <param name="rootState">The root or initial state of the plan</param>
         /// <param name="onRequestComplete">A callback to be invoked once the request has completed</param>
-        /// <param name="searchSettings">Settings to configure the planning process</param>
+        /// <param name="settings">Settings to configure the planning process</param>
         /// <returns>Returns the plan request to run</returns>
-        IPlanRequest RequestPlan(IStateKey rootState, Action<IPlan> onRequestComplete = null, PlannerSearchSettings searchSettings = null);
+        IPlanRequest RequestPlan(IStateKey rootState, Action<IPlan> onRequestComplete = null, PlannerSettings settings = null);
 
         /// <summary>
         /// Sets the starting state of the current plan request to the specified state.
@@ -35,7 +34,7 @@ namespace Unity.AI.Planner
         JobHandle CurrentJobHandle { get; }
 
         /// <summary>
-        /// Schedules a single iteration of the search process.
+        /// Schedules a single iteration of the planning process.
         /// </summary>
         /// <param name="inputDeps"></param>
         /// <param name="forceComplete">Option to force the completion of the previously scheduled planning jobs.</param>

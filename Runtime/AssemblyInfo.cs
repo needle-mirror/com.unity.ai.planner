@@ -6,3 +6,4 @@
 [assembly: InternalsVisibleTo("Generated.AI.Planner.StateRepresentation")]
 [assembly: InternalsVisibleTo("Generated.AI.Planner.Plans")]
 [assembly: InternalsVisibleTo("AI.Planner.Custom")]
+[assembly: InternalsVisibleTo("Unity.AI.Planner.Legacy")]

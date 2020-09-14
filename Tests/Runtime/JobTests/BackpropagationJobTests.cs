@@ -5,10 +5,6 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 
-#if ENABLE_PERFORMANCE_TESTS
-using Unity.PerformanceTesting;
-#endif
-
 namespace Unity.AI.Planner.Tests.Unit
 {
     [Category("Unit")]
@@ -28,8 +24,8 @@ namespace Unity.AI.Planner.Tests.Unit
         const int k_ActionOne = 1;
         const int k_ActionTwo = 2;
 
-        PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> m_PolicyGraph;
-        PolicyGraphBuilder<int,int> m_Builder;
+        PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> m_PlanGraph;
+        PlanGraphBuilder<int,int> m_Builder;
         NativeHashMap<int, int> m_DepthMap;
         NativeMultiHashMap<int, int> m_SelectedStates;
 
@@ -42,10 +38,10 @@ namespace Unity.AI.Planner.Tests.Unit
         {
             if (!m_DepthMap.IsCreated)
             {
-                m_DepthMap = new NativeHashMap<int, int>(m_PolicyGraph.Size, Allocator.TempJob);
+                m_DepthMap = new NativeHashMap<int, int>(m_PlanGraph.Size, Allocator.TempJob);
                 using (var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.Temp))
                 {
-                    m_PolicyGraph.GetExpandedDepthMap(k_RootState, m_DepthMap, queue);
+                    m_PlanGraph.GetExpandedDepthMap(k_RootState, m_DepthMap, queue);
                 }
             }
 
@@ -65,7 +61,7 @@ namespace Unity.AI.Planner.Tests.Unit
             var backpropJob = new BackpropagationJob<int, int>
             {
                 DepthMap = m_DepthMap,
-                PolicyGraph = m_PolicyGraph,
+                planGraph = m_PlanGraph,
                 SelectedStates = m_SelectedStates,
                 DiscountFactor = discountFactor,
             };
@@ -116,13 +112,13 @@ namespace Unity.AI.Planner.Tests.Unit
                     DiscountFactor = discountFactor,
                     StatesToUpdate = horizonStateList.AsDeferredJobArray(),
 
-                    // policy graph info
-                    ActionLookup = m_PolicyGraph.ActionLookup,
-                    PredecessorGraph = m_PolicyGraph.PredecessorGraph,
-                    ResultingStateLookup = m_PolicyGraph.ResultingStateLookup,
-                    StateInfoLookup = m_PolicyGraph.StateInfoLookup,
-                    ActionInfoLookup = m_PolicyGraph.ActionInfoLookup,
-                    StateTransitionInfoLookup = m_PolicyGraph.StateTransitionInfoLookup,
+                    // plan graph info
+                    ActionLookup = m_PlanGraph.ActionLookup,
+                    PredecessorGraph = m_PlanGraph.PredecessorGraph,
+                    ResultingStateLookup = m_PlanGraph.ResultingStateLookup,
+                    StateInfoLookup = m_PlanGraph.StateInfoLookup,
+                    ActionInfoLookup = m_PlanGraph.ActionInfoLookup,
+                    StateTransitionInfoLookup = m_PlanGraph.StateTransitionInfoLookup,
 
                     PredecessorStatesToUpdate = predecessorStates.AsParallelWriter(),
                 }.Schedule(horizonStateList, default, jobHandle);
@@ -132,7 +128,7 @@ namespace Unity.AI.Planner.Tests.Unit
             jobHandle = new UpdateCompleteStatusJob<int, int>
             {
                 StatesToUpdate = predecessorStates,
-                PolicyGraph = m_PolicyGraph,
+                planGraph = m_PlanGraph,
             }.Schedule(jobHandle);
 
             jobHandle.Complete();
@@ -143,7 +139,7 @@ namespace Unity.AI.Planner.Tests.Unit
         }
 
         [SetUp]
-        public void SetupPartialPolicyGraph()
+        public void SetupPartialPlanGraph()
         {
             /*
             DOT format: (Visual editor for convenience: http://magjac.com/graphviz-visual-editor/)
@@ -167,23 +163,23 @@ namespace Unity.AI.Planner.Tests.Unit
                 | s2 - inc, V=20 |
                 +----------------+
             */
-            m_PolicyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(10, 10, 10);
-            m_Builder = new PolicyGraphBuilder<int, int>() { PolicyGraph = m_PolicyGraph };
+            m_PlanGraph = new PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(10, 10, 10);
+            m_Builder = new PlanGraphBuilder<int, int>() { planGraph = m_PlanGraph };
             m_SelectedStates = new NativeMultiHashMap<int, int>(1, Allocator.TempJob);
 
-            // Build common policy graph
+            // Build common plan graph
             var stateContext = m_Builder.AddState(k_RootState);
             stateContext.AddAction(k_ActionOne).AddResultingState(k_StateOne, transitionUtility: 0);
             stateContext.AddAction(k_ActionTwo).AddResultingState(k_StateTwo, transitionUtility: 1);
 
-            m_Builder.WithState(k_StateOne).UpdateInfo(policyValue: 20);
-            m_Builder.WithState(k_StateTwo).UpdateInfo(policyValue: 20);
+            m_Builder.WithState(k_StateOne).UpdateInfo(estimatedReward: 20);
+            m_Builder.WithState(k_StateTwo).UpdateInfo(estimatedReward: 20);
         }
 
         [TearDown]
         public void TearDownContainers()
         {
-            m_PolicyGraph.Dispose();
+            m_PlanGraph.Dispose();
 
             if (m_DepthMap.IsCreated)
                 m_DepthMap.Dispose();
@@ -221,14 +217,14 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate();
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var stateInfo);
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out var actionTwoInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var stateInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out var actionTwoInfo);
 
             // Tests -> No values should be updated.
-            Assert.IsTrue(Math.Abs(stateInfo.PolicyValue.Average - 0f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(actionOneInfo.ActionValue.Average - 0f) < float.Epsilon, "Incorrect action value.");
-            Assert.IsTrue(Math.Abs(actionTwoInfo.ActionValue.Average - 0f) < float.Epsilon, "Incorrect action value.");
+            Assert.IsTrue(Math.Abs(stateInfo.CumulativeRewardEstimate.Average - 0f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(actionOneInfo.CumulativeRewardEstimate.Average - 0f) < float.Epsilon, "Incorrect action reward value.");
+            Assert.IsTrue(Math.Abs(actionTwoInfo.CumulativeRewardEstimate.Average - 0f) < float.Epsilon, "Incorrect action reward value.");
         }
 
         [Test]
@@ -263,13 +259,13 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(0.95f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var stateInfo);
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out var actionTwoInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var stateInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out var actionTwoInfo);
 
-            Assert.IsTrue(Math.Abs(stateInfo.PolicyValue.Average -20f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(actionOneInfo.ActionValue.Average - 19f) < float.Epsilon, "Incorrect action value.");
-            Assert.IsTrue(Math.Abs(actionTwoInfo.ActionValue.Average - 20f) < float.Epsilon, "Incorrect action value.");
+            Assert.IsTrue(Math.Abs(stateInfo.CumulativeRewardEstimate.Average -20f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(actionOneInfo.CumulativeRewardEstimate.Average - 19f) < float.Epsilon, "Incorrect action reward value.");
+            Assert.IsTrue(Math.Abs(actionTwoInfo.CumulativeRewardEstimate.Average - 20f) < float.Epsilon, "Incorrect action reward value.");
         }
 
         [Test]
@@ -304,13 +300,13 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(0.95f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out _);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out _);
 
-            Assert.IsTrue(stateOneInfo.SubgraphComplete, "State with no actions is not marked complete.");
-            Assert.IsTrue(stateOneInfo.PolicyValue.Approximately(default), "Incorrect policy value.");
-            Assert.IsTrue(actionOneInfo.ActionValue.Approximately(default), "Incorrect action value.");
+            Assert.IsTrue(stateOneInfo.SubplanIsComplete, "State with no actions is not marked complete.");
+            Assert.IsTrue(stateOneInfo.CumulativeRewardEstimate.Approximately(default), "Incorrect reward value.");
+            Assert.IsTrue(actionOneInfo.CumulativeRewardEstimate.Approximately(default), "Incorrect action reward value.");
         }
 
         [Test]
@@ -348,8 +344,8 @@ namespace Unity.AI.Planner.Tests.Unit
             m_Builder.WithState(k_StateTwo)
                 .AddAction(k_ActionTwo).AddResultingState(k_StateFour, transitionUtility: 1);
 
-            m_Builder.WithState(k_StateThree).UpdateInfo(policyValue: 25);
-            m_Builder.WithState(k_StateFour).UpdateInfo(policyValue: 22);
+            m_Builder.WithState(k_StateThree).UpdateInfo(estimatedReward: 25);
+            m_Builder.WithState(k_StateFour).UpdateInfo(estimatedReward: 22);
 
             m_SelectedStates.Add(k_StateOne, 1);
             m_SelectedStates.Add(k_StateTwo, 1);
@@ -358,13 +354,13 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(1f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateTwo, out var stateTwoInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateTwo, out var stateTwoInfo);
 
-            Assert.IsTrue(Math.Abs(rootStateInfo.PolicyValue.Average -25f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateOneInfo.PolicyValue.Average -25f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateTwoInfo.PolicyValue.Average -23f) < float.Epsilon, "Incorrect policy value.");
+            Assert.IsTrue(Math.Abs(rootStateInfo.CumulativeRewardEstimate.Average -25f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateOneInfo.CumulativeRewardEstimate.Average -25f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateTwoInfo.CumulativeRewardEstimate.Average -23f) < float.Epsilon, "Incorrect reward value.");
         }
 
         [Test]
@@ -404,7 +400,7 @@ namespace Unity.AI.Planner.Tests.Unit
                 .AddAction(k_ActionTwo).AddResultingState(k_StateThree, transitionUtility: 1);
             m_Builder.WithState(k_StateThree)
                 .AddAction(k_ActionOne).AddResultingState(k_StateFour, transitionUtility: 0);
-            m_Builder.WithState(k_StateFour).UpdateInfo(policyValue: 25);
+            m_Builder.WithState(k_StateFour).UpdateInfo(estimatedReward: 25);
 
             m_SelectedStates.Add(k_StateThree, 2);
 
@@ -412,15 +408,15 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(1f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateTwo, out var stateTwoInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateThree, out var stateThreeInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateTwo, out var stateTwoInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateThree, out var stateThreeInfo);
 
-            Assert.IsTrue(Math.Abs(rootStateInfo.PolicyValue.Average -27f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateOneInfo.PolicyValue.Average -25f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateTwoInfo.PolicyValue.Average -26f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateThreeInfo.PolicyValue.Average -25f) < float.Epsilon, "Incorrect policy value.");
+            Assert.IsTrue(Math.Abs(rootStateInfo.CumulativeRewardEstimate.Average -27f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateOneInfo.CumulativeRewardEstimate.Average -25f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateTwoInfo.CumulativeRewardEstimate.Average -26f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateThreeInfo.CumulativeRewardEstimate.Average -25f) < float.Epsilon, "Incorrect reward value.");
         }
 
         [Test]
@@ -462,8 +458,8 @@ namespace Unity.AI.Planner.Tests.Unit
             m_Builder.WithState(k_StateFour)
                 .AddAction(k_ActionOne).AddResultingState(k_StateFive, transitionUtility: 0);
 
-            m_Builder.WithState(k_StateThree).UpdateInfo(policyValue: 25);
-            m_Builder.WithState(k_StateFive).UpdateInfo(policyValue: 20);
+            m_Builder.WithState(k_StateThree).UpdateInfo(estimatedReward: 25);
+            m_Builder.WithState(k_StateFive).UpdateInfo(estimatedReward: 20);
 
             m_SelectedStates.Add(k_StateOne, 1);
             m_SelectedStates.Add(k_StateFour, 2);
@@ -472,15 +468,15 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(1f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateTwo, out var stateTwoInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateFour, out var stateFourInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateTwo, out var stateTwoInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateFour, out var stateFourInfo);
 
-            Assert.IsTrue(Math.Abs(rootStateInfo.PolicyValue.Average -25f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateOneInfo.PolicyValue.Average -25f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateTwoInfo.PolicyValue.Average -20f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateFourInfo.PolicyValue.Average -20f) < float.Epsilon, "Incorrect policy value.");
+            Assert.IsTrue(Math.Abs(rootStateInfo.CumulativeRewardEstimate.Average -25f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateOneInfo.CumulativeRewardEstimate.Average -25f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateTwoInfo.CumulativeRewardEstimate.Average -20f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateFourInfo.CumulativeRewardEstimate.Average -20f) < float.Epsilon, "Incorrect reward value.");
         }
 
         [Test]
@@ -511,13 +507,13 @@ namespace Unity.AI.Planner.Tests.Unit
             */
             // Setup
             m_Builder.WithState(k_StateOne)
-                .UpdateInfo(policyValue: 0f)
+                .UpdateInfo(estimatedReward: 0f)
                 .AddAction(k_ActionOne).AddResultingState(k_StateOne, transitionUtility: 15);
 
-            m_DepthMap = new NativeHashMap<int, int>(m_PolicyGraph.Size, Allocator.TempJob);
+            m_DepthMap = new NativeHashMap<int, int>(m_PlanGraph.Size, Allocator.TempJob);
             using (var queue = new NativeQueue<StateHorizonPair<int>>(Allocator.Temp))
             {
-                m_PolicyGraph.GetExpandedDepthMap(k_RootState, m_DepthMap, queue);
+                m_PlanGraph.GetExpandedDepthMap(k_RootState, m_DepthMap, queue);
             }
             m_DepthMap[k_StateOne] = 2; // visit state 1 twice
 
@@ -527,11 +523,11 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(1f);
 
             // Test
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
-            m_PolicyGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out var actionTwoInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionOne), out var actionOneInfo);
+            m_PlanGraph.ActionInfoLookup.TryGetValue(new StateActionPair<int, int>(k_RootState, k_ActionTwo), out var actionTwoInfo);
 
-            Assert.IsTrue(actionOneInfo.ActionValue.Average > actionTwoInfo.ActionValue.Average);
-            // Note: Testing the policy values here is undesirable as the exact policy values depend on the
+            Assert.IsTrue(actionOneInfo.CumulativeRewardEstimate.Average > actionTwoInfo.CumulativeRewardEstimate.Average);
+            // Note: Testing the reward values here is undesirable as the exact reward values depend on the
             // order in which states are updated. If StateOne is updated before RootState, the value is updated
             // three times; otherwise the value is updated twice.
         }
@@ -570,7 +566,7 @@ namespace Unity.AI.Planner.Tests.Unit
                 .AddAction(k_ActionOne).AddResultingState(k_StateThree, complete: true, transitionUtility: 25);
             m_Builder.WithState(k_StateOne)
                 .AddAction(k_ActionTwo).AddResultingState(k_StateFour, complete: true, transitionUtility: 30);
-            m_Builder.WithState(k_StateOne).UpdateInfo(policyValue: 30, complete: false);
+            m_Builder.WithState(k_StateOne).UpdateInfo(estimatedReward: 30, complete: false);
 
             m_SelectedStates.Add(k_StateOne, 1);
 
@@ -578,12 +574,12 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(1f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
 
-            Assert.IsTrue(Math.Abs(rootStateInfo.PolicyValue.Average -30f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateOneInfo.PolicyValue.Average -30f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(stateOneInfo.SubgraphComplete);
+            Assert.IsTrue(Math.Abs(rootStateInfo.CumulativeRewardEstimate.Average -30f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateOneInfo.CumulativeRewardEstimate.Average -30f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(stateOneInfo.SubplanIsComplete);
         }
 
         [Test]
@@ -628,11 +624,11 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(1f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
 
-            Assert.AreEqual(100, rootStateInfo.PolicyValue.Average, "Incorrect policy value.");
-            Assert.IsTrue(stateOneInfo.SubgraphComplete);
+            Assert.AreEqual(100, rootStateInfo.CumulativeRewardEstimate.Average, "Incorrect reward value.");
+            Assert.IsTrue(stateOneInfo.SubplanIsComplete);
         }
 
         [Test]
@@ -669,8 +665,8 @@ namespace Unity.AI.Planner.Tests.Unit
                 .AddAction(k_ActionOne).AddResultingState(k_StateThree, complete: false, transitionUtility: 25);
             m_Builder.WithState(k_StateOne)
                 .AddAction(k_ActionTwo).AddResultingState(k_StateFour, complete: false, transitionUtility: 30);
-            m_Builder.WithState(k_StateOne).UpdateInfo(policyValue: 30, complete: false);
-            m_Builder.WithState(k_RootState).UpdateInfo(policyValue: 0, complete: false); // set value to test for later
+            m_Builder.WithState(k_StateOne).UpdateInfo(estimatedReward: 30, complete: false);
+            m_Builder.WithState(k_RootState).UpdateInfo(estimatedReward: 0, complete: false); // set value to test for later
 
             m_SelectedStates.Add(k_StateOne, 1);
 
@@ -678,14 +674,14 @@ namespace Unity.AI.Planner.Tests.Unit
             Backpropagate(1f);
 
             // Test
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
-            m_PolicyGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_RootState, out var rootStateInfo);
+            m_PlanGraph.StateInfoLookup.TryGetValue(k_StateOne, out var stateOneInfo);
 
             // As backup terminates early (at k_StateOne), the root node should not be updated. In truth, the root
-            // state should have a policy value of 30, but we're testing that the value is not updated by this
+            // state should have a reward value of 30, but we're testing that the value is not updated by this
             // process, so we're maintaining the original value of 0.
-            Assert.IsTrue(Math.Abs(rootStateInfo.PolicyValue.Average - 0f) < float.Epsilon, "Incorrect policy value.");
-            Assert.IsTrue(Math.Abs(stateOneInfo.PolicyValue.Average - 30f) < float.Epsilon, "Incorrect policy value.");
+            Assert.IsTrue(Math.Abs(rootStateInfo.CumulativeRewardEstimate.Average - 0f) < float.Epsilon, "Incorrect reward value.");
+            Assert.IsTrue(Math.Abs(stateOneInfo.CumulativeRewardEstimate.Average - 30f) < float.Epsilon, "Incorrect reward value.");
         }
     }
 }
@@ -693,6 +689,8 @@ namespace Unity.AI.Planner.Tests.Unit
 #if ENABLE_PERFORMANCE_TESTS
 namespace Unity.AI.Planner.Tests.Performance
 {
+    using PerformanceTesting;
+
     [Category("Performance")]
     public class BackpropagationJobPerformanceTests
     {
@@ -703,10 +701,11 @@ namespace Unity.AI.Planner.Tests.Performance
         [Performance, Test]
         public void BackupFromMultipleStates()
         {
-            PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> policyGraph = default;
+            PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> planGraph = default;
             NativeHashMap<int, int> depthMap = default;
+            NativeQueue<StateHorizonPair<int>> queue = default;
             NativeMultiHashMap<int, int> m_SelectedStates = default;
-            var builder = new PolicyGraphBuilder<int, int>();
+            var builder = new PlanGraphBuilder<int, int>();
 
             Measure.Method(() =>
             {
@@ -714,26 +713,28 @@ namespace Unity.AI.Planner.Tests.Performance
                 {
                     DiscountFactor = 1f,
                     DepthMap = depthMap,
-                    PolicyGraph = policyGraph,
+                    planGraph = planGraph,
                     SelectedStates = m_SelectedStates,
                 };
                 backpropJob.Schedule().Complete();
-                Assert.IsTrue(policyGraph.StateInfoLookup[0].PolicyValue.Approximately(new BoundedValue(1,1,1)));
+                Assert.IsTrue(planGraph.StateInfoLookup[0].CumulativeRewardEstimate.Approximately(new BoundedValue(1,1,1)));
             }).SetUp(() =>
             {
-                policyGraph = PolicyGraphUtility.BuildTree(kActionsPerState, 1, kMaxDepth);
-                depthMap = policyGraph.GetExpandedDepthMap(kRootState);
+                var nodeCount = PlanGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth);
+                var leafNodeStart = PlanGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 1);
+                var expandedNodeStart = PlanGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 2);
 
-                var nodeCount = PolicyGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth);
-                var leafNodeStart = PolicyGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 1);
-                var expandedNodeStart = PolicyGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 2);
                 m_SelectedStates = new NativeMultiHashMap<int, int>(leafNodeStart - expandedNodeStart, Allocator.TempJob);
+                depthMap = new NativeHashMap<int, int>(nodeCount, Allocator.TempJob);
+                queue = new NativeQueue<StateHorizonPair<int>>(Allocator.TempJob);
+                planGraph = PlanGraphUtility.BuildTree(kActionsPerState, 1, kMaxDepth);
+                planGraph.GetExpandedDepthMap(kRootState, depthMap, queue);
 
                 // Provide the leaf nodes with some value to propagate to the root
-                builder.PolicyGraph = policyGraph;
+                builder.planGraph = planGraph;
                 for (var i = leafNodeStart; i < nodeCount; i++)
                 {
-                    builder.WithState(i).UpdateInfo(policyValue: 1);
+                    builder.WithState(i).UpdateInfo(estimatedReward: 1);
                 }
 
                 // Ignore the leaf nodes as those would be expanded this turn; We backup the parents of those nodes
@@ -745,7 +746,8 @@ namespace Unity.AI.Planner.Tests.Performance
             {
                 m_SelectedStates.Dispose();
                 depthMap.Dispose();
-                policyGraph.Dispose();
+                queue.Dispose();
+                planGraph.Dispose();
             }).WarmupCount(1).MeasurementCount(30).IterationsPerMeasurement(1).Run();
 
             PerformanceUtility.AssertRange(0.4, 0.7);
@@ -754,8 +756,8 @@ namespace Unity.AI.Planner.Tests.Performance
         [Performance, Test]
         public void BackupFromMultipleStatesParallel()
         {
-            var builder = new PolicyGraphBuilder<int, int>();
-            PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> policyGraph = default;
+            var builder = new PlanGraphBuilder<int, int>();
+            PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> planGraph = default;
 
             var m_SelectedStatesByHorizon = new NativeMultiHashMap<int, int>(kMaxDepth, Allocator.TempJob);
             var predecessorStates = new NativeHashMap<int, byte>(1, Allocator.TempJob);
@@ -783,13 +785,13 @@ namespace Unity.AI.Planner.Tests.Performance
                         DiscountFactor = 1f,
                         StatesToUpdate = horizonStateList.AsDeferredJobArray(),
 
-                        // policy graph info
-                        ActionLookup = policyGraph.ActionLookup,
-                        PredecessorGraph = policyGraph.PredecessorGraph,
-                        ResultingStateLookup = policyGraph.ResultingStateLookup,
-                        StateInfoLookup = policyGraph.StateInfoLookup,
-                        ActionInfoLookup = policyGraph.ActionInfoLookup,
-                        StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                        // Plan graph info
+                        ActionLookup = planGraph.ActionLookup,
+                        PredecessorGraph = planGraph.PredecessorGraph,
+                        ResultingStateLookup = planGraph.ResultingStateLookup,
+                        StateInfoLookup = planGraph.StateInfoLookup,
+                        ActionInfoLookup = planGraph.ActionInfoLookup,
+                        StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                         PredecessorStatesToUpdate = predecessorStates.AsParallelWriter(),
                     }.Schedule(horizonStateList, default, jobHandle);
@@ -799,28 +801,28 @@ namespace Unity.AI.Planner.Tests.Performance
                 jobHandle = new UpdateCompleteStatusJob<int, int>
                 {
                     StatesToUpdate = predecessorStates,
-                    PolicyGraph = policyGraph,
+                    planGraph = planGraph,
                 }.Schedule(jobHandle);
 
                 jobHandle.Complete();
-                Assert.IsTrue(policyGraph.StateInfoLookup[0].PolicyValue.Approximately(new BoundedValue(1,1,1)));
+                Assert.IsTrue(planGraph.StateInfoLookup[0].CumulativeRewardEstimate.Approximately(new BoundedValue(1,1,1)));
 
             }).SetUp(() =>
             {
-                // Rebuild policy graph
-                policyGraph = PolicyGraphUtility.BuildTree(kActionsPerState, 1, kMaxDepth);
-                builder.PolicyGraph = policyGraph;
+                // Rebuild plan graph
+                planGraph = PlanGraphUtility.BuildTree(kActionsPerState, 1, kMaxDepth);
+                builder.planGraph = planGraph;
 
                 // Provide the leaf nodes with some value to propagate to the root
-                var nodeCount = PolicyGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth);
-                var leafNodeStart = PolicyGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 1);
-                var expandedNodeStart = PolicyGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 2);
+                var nodeCount = PlanGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth);
+                var leafNodeStart = PlanGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 1);
+                var expandedNodeStart = PlanGraphUtility.GetTotalNodeCountForTreeDepth(kActionsPerState, kMaxDepth - 2);
 
                 // Provide the leaf nodes with some value to propagate to the root
-                builder.PolicyGraph = policyGraph;
+                builder.planGraph = planGraph;
                 for (var i = leafNodeStart; i < nodeCount; i++)
                 {
-                    builder.WithState(i).UpdateInfo(policyValue: 1);
+                    builder.WithState(i).UpdateInfo(estimatedReward: 1);
                 }
 
                 // Ignore the leaf nodes as those would be expanded this turn; We backup the parents of those nodes
@@ -830,14 +832,14 @@ namespace Unity.AI.Planner.Tests.Performance
                 }
 
                 // Misc job containers
-                var numStates = policyGraph.StateInfoLookup.Length;
+                var numStates = planGraph.StateInfoLookup.Count();
                 m_SelectedStatesByHorizon.Capacity = numStates;
                 predecessorStates.Capacity = numStates;
                 horizonStateList.Capacity = numStates;
 
             }).CleanUp(() =>
             {
-                policyGraph.Dispose();
+                planGraph.Dispose();
 
                 m_SelectedStatesByHorizon.Clear();
                 predecessorStates.Clear();

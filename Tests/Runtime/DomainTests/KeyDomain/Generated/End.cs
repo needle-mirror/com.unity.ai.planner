@@ -1,11 +1,11 @@
 using System;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.Entities;
 
 namespace KeyDomain
 {
     [Serializable]
-    internal struct End : ITrait, IEquatable<End>
+    internal struct End : ITrait, IBufferElementData, IEquatable<End>
     {
         public object GetField(string fieldName)
         {

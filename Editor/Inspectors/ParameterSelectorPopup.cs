@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Editors
 {
@@ -21,7 +20,7 @@ namespace UnityEditor.AI.Planner.Editors
             if (expectedType != null && typeof(ITrait).IsAssignableFrom(expectedType))
             {
                 m_ExpectedTrait = expectedType.Name;
-                m_ParameterNames = parameters.Where(param => param.RequiredTraits.Any(t => t.Name == m_ExpectedTrait)).Select(param => param.Name).ToList();
+                m_ParameterNames = parameters.Where(param => param.RequiredTraits.Any(t => t.name == m_ExpectedTrait)).Select(param => param.Name).ToList();
             }
             else
             {

@@ -16,14 +16,14 @@ namespace Unity.AI.Planner.Tests.Unit
         const int k_StateThree = 3;
         const int k_StateFour = 4;
 
-        PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> m_PolicyGraph;
+        PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> m_PlanGraph;
 
         [SetUp]
-        public void SetupPartialPolicyGraph()
+        public void SetupPartialPlanGraph()
         {
-            m_PolicyGraph = new PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(10, 10, 10);
+            m_PlanGraph = new PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo>(10, 10, 10);
 
-            var builder = new PolicyGraphBuilder<int, int>() { PolicyGraph = m_PolicyGraph };
+            var builder = new PlanGraphBuilder<int, int>() { planGraph = m_PlanGraph };
             var stateContext = builder.AddState(k_RootState);
             stateContext.AddAction(k_ActionOne).AddResultingState(k_StateOne);
             stateContext.AddAction(k_ActionTwo).AddResultingState(k_StateTwo);
@@ -36,13 +36,13 @@ namespace Unity.AI.Planner.Tests.Unit
         [TearDown]
         public void TearDown()
         {
-            m_PolicyGraph.Dispose();
+            m_PlanGraph.Dispose();
         }
 
         NativeMultiHashMap<int, int> GetBinnedStateKeys()
         {
-            var binned = new NativeMultiHashMap<int, int>(m_PolicyGraph.StateInfoLookup.Count(), Allocator.Persistent);
-            using (var stateKeys = m_PolicyGraph.StateInfoLookup.GetKeyArray(Allocator.Temp))
+            var binned = new NativeMultiHashMap<int, int>(m_PlanGraph.StateInfoLookup.Count(), Allocator.Persistent);
+            using (var stateKeys = m_PlanGraph.StateInfoLookup.GetKeyArray(Allocator.Temp))
             {
                 foreach (var stateKey in stateKeys)
                 {
@@ -60,8 +60,8 @@ namespace Unity.AI.Planner.Tests.Unit
             statesToProcess.Add(new StateTransitionInfoPair<int, int, StateTransitionInfo>(k_StateTwo, k_ActionTwo, k_StateTwo, new StateTransitionInfo { Probability = 1, TransitionUtilityValue = 1}));
 
             var binnedStateKeys = GetBinnedStateKeys();
-            var stateTransitionInfoLookup = m_PolicyGraph.StateTransitionInfoLookup;
-            var resultingStateLookup = m_PolicyGraph.ResultingStateLookup;
+            var stateTransitionInfoLookup = m_PlanGraph.StateTransitionInfoLookup;
+            var resultingStateLookup = m_PlanGraph.ResultingStateLookup;
             var newStatesQueue = new NativeQueue<int>(Allocator.TempJob);
             var newStatesToDestroy = new NativeQueue<int>(Allocator.TempJob);
             var expansionJob = new GraphExpansionJob<int, int, TestStateDataContext, int>
@@ -69,12 +69,12 @@ namespace Unity.AI.Planner.Tests.Unit
                 BinnedStateKeys = binnedStateKeys,
                 NewStateTransitionInfoPairs = statesToProcess.AsDeferredJobArray(),
 
-                ActionLookup = m_PolicyGraph.ActionLookup.AsParallelWriter(),
-                ActionInfoLookup = m_PolicyGraph.ActionInfoLookup.AsParallelWriter(),
+                ActionLookup = m_PlanGraph.ActionLookup.AsParallelWriter(),
+                ActionInfoLookup = m_PlanGraph.ActionInfoLookup.AsParallelWriter(),
                 StateTransitionInfoLookup = stateTransitionInfoLookup.AsParallelWriter(),
                 ResultingStateLookup = resultingStateLookup.AsParallelWriter(),
                 NewStates = newStatesQueue.AsParallelWriter(),
-                PredecessorGraph = m_PolicyGraph.PredecessorGraph.AsParallelWriter(),
+                PredecessorGraph = m_PlanGraph.PredecessorGraph.AsParallelWriter(),
                 StateDataContext = new TestStateDataContext(),
                 StatesToDestroy = newStatesToDestroy.AsParallelWriter(),
             };
@@ -111,8 +111,8 @@ namespace Unity.AI.Planner.Tests.Unit
             statesToProcess.Add(new StateTransitionInfoPair<int, int, StateTransitionInfo>(k_StateTwo, k_ActionTwo, k_StateFour, new StateTransitionInfo(){ Probability = 1, TransitionUtilityValue = 1}));
 
             var binnedStateKeys =  GetBinnedStateKeys();
-            var stateTransitionInfoLookup = m_PolicyGraph.StateTransitionInfoLookup;
-            var resultingStateLookup = m_PolicyGraph.ResultingStateLookup;
+            var stateTransitionInfoLookup = m_PlanGraph.StateTransitionInfoLookup;
+            var resultingStateLookup = m_PlanGraph.ResultingStateLookup;
             var newStatesQueue = new NativeQueue<int>(Allocator.TempJob);
             var newStatesToDestroy = new NativeQueue<int>(Allocator.TempJob);
             var expansionJob = new GraphExpansionJob<int, int, TestStateDataContext, int>
@@ -120,12 +120,12 @@ namespace Unity.AI.Planner.Tests.Unit
                 BinnedStateKeys = binnedStateKeys,
                 NewStateTransitionInfoPairs = statesToProcess.AsDeferredJobArray(),
 
-                ActionLookup = m_PolicyGraph.ActionLookup.AsParallelWriter(),
-                ActionInfoLookup = m_PolicyGraph.ActionInfoLookup.AsParallelWriter(),
+                ActionLookup = m_PlanGraph.ActionLookup.AsParallelWriter(),
+                ActionInfoLookup = m_PlanGraph.ActionInfoLookup.AsParallelWriter(),
                 StateTransitionInfoLookup = stateTransitionInfoLookup.AsParallelWriter(),
                 ResultingStateLookup = resultingStateLookup.AsParallelWriter(),
                 NewStates = newStatesQueue.AsParallelWriter(),
-                PredecessorGraph = m_PolicyGraph.PredecessorGraph.AsParallelWriter(),
+                PredecessorGraph = m_PlanGraph.PredecessorGraph.AsParallelWriter(),
                 StateDataContext = new TestStateDataContext(),
                 StatesToDestroy = newStatesToDestroy.AsParallelWriter(),
             };
@@ -162,8 +162,8 @@ namespace Unity.AI.Planner.Tests.Unit
             statesToProcess.Add(new StateTransitionInfoPair<int, int, StateTransitionInfo>(k_StateTwo, k_ActionTwo, k_StateFour, new StateTransitionInfo(){ Probability = 1, TransitionUtilityValue = 1}));
 
             var binnedStateKeys =  GetBinnedStateKeys();
-            var stateTransitionInfoLookup = m_PolicyGraph.StateTransitionInfoLookup;
-            var resultingStateLookup = m_PolicyGraph.ResultingStateLookup;
+            var stateTransitionInfoLookup = m_PlanGraph.StateTransitionInfoLookup;
+            var resultingStateLookup = m_PlanGraph.ResultingStateLookup;
             var newStatesQueue = new NativeQueue<int>(Allocator.TempJob);
             var newStatesToDestroy = new NativeQueue<int>(Allocator.TempJob);
 
@@ -172,12 +172,12 @@ namespace Unity.AI.Planner.Tests.Unit
                 BinnedStateKeys = binnedStateKeys,
                 NewStateTransitionInfoPairs = statesToProcess.AsDeferredJobArray(),
 
-                ActionLookup = m_PolicyGraph.ActionLookup.AsParallelWriter(),
-                ActionInfoLookup = m_PolicyGraph.ActionInfoLookup.AsParallelWriter(),
+                ActionLookup = m_PlanGraph.ActionLookup.AsParallelWriter(),
+                ActionInfoLookup = m_PlanGraph.ActionInfoLookup.AsParallelWriter(),
                 StateTransitionInfoLookup = stateTransitionInfoLookup.AsParallelWriter(),
                 ResultingStateLookup = resultingStateLookup.AsParallelWriter(),
                 NewStates = newStatesQueue.AsParallelWriter(),
-                PredecessorGraph = m_PolicyGraph.PredecessorGraph.AsParallelWriter(),
+                PredecessorGraph = m_PlanGraph.PredecessorGraph.AsParallelWriter(),
                 StateDataContext = new TestStateDataContext(),
                 StatesToDestroy = newStatesToDestroy.AsParallelWriter(),
             };
@@ -213,9 +213,9 @@ namespace Unity.AI.Planner.Tests.Unit
 
             var binnedStateKeys = GetBinnedStateKeys();
             var newStatesQueue = new NativeQueue<int>(Allocator.TempJob);
-            var stateTransitionInfoLookup = m_PolicyGraph.StateTransitionInfoLookup;
-            var resultingStateLookup = m_PolicyGraph.ResultingStateLookup;
-            var predecessorGraph = m_PolicyGraph.PredecessorGraph;
+            var stateTransitionInfoLookup = m_PlanGraph.StateTransitionInfoLookup;
+            var resultingStateLookup = m_PlanGraph.ResultingStateLookup;
+            var predecessorGraph = m_PlanGraph.PredecessorGraph;
             var newStatesToDestroy = new NativeQueue<int>(Allocator.TempJob);
 
             var expansionJob = new GraphExpansionJob<int, int, TestStateDataContext, int>
@@ -223,8 +223,8 @@ namespace Unity.AI.Planner.Tests.Unit
                 BinnedStateKeys = binnedStateKeys,
                 NewStateTransitionInfoPairs = statesToProcess.AsDeferredJobArray(),
 
-                ActionLookup = m_PolicyGraph.ActionLookup.AsParallelWriter(),
-                ActionInfoLookup = m_PolicyGraph.ActionInfoLookup.AsParallelWriter(),
+                ActionLookup = m_PlanGraph.ActionLookup.AsParallelWriter(),
+                ActionInfoLookup = m_PlanGraph.ActionInfoLookup.AsParallelWriter(),
                 StateTransitionInfoLookup = stateTransitionInfoLookup.AsParallelWriter(),
                 ResultingStateLookup = resultingStateLookup.AsParallelWriter(),
                 NewStates = newStatesQueue.AsParallelWriter(),
@@ -263,10 +263,10 @@ namespace Unity.AI.Planner.Tests.Performance
     [Category("Performance")]
     public class ExpansionJobPerformanceTests
     {
-        NativeMultiHashMap<int, int> GetBinnedStateKeys(PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> policyGraph)
+        NativeMultiHashMap<int, int> GetBinnedStateKeys(PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> planGraph)
         {
-            var binned = new NativeMultiHashMap<int, int>(policyGraph.StateInfoLookup.Length, Allocator.Persistent);
-            using (var stateKeys = policyGraph.StateInfoLookup.GetKeyArray(Allocator.Temp))
+            var binned = new NativeMultiHashMap<int, int>(planGraph.StateInfoLookup.Count(), Allocator.Persistent);
+            using (var stateKeys = planGraph.StateInfoLookup.GetKeyArray(Allocator.Temp))
             {
                 foreach (var stateKey in stateKeys)
                 {
@@ -282,7 +282,7 @@ namespace Unity.AI.Planner.Tests.Performance
             const int kRootState = 0;
             const int kActionCount = 1000;
 
-            PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> policyGraph = default;
+            PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> planGraph = default;
             NativeMultiHashMap<int, int> binnedStateKeys = default;
             NativeQueue<int> newStatesQueue = default;
             NativeList<StateTransitionInfoPair<int, int, StateTransitionInfo>> statesToProcess = default;
@@ -290,20 +290,20 @@ namespace Unity.AI.Planner.Tests.Performance
 
             Measure.Method(() =>
             {
-                var stateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup;
-                var resultingStateLookup = policyGraph.ResultingStateLookup;
+                var stateTransitionInfoLookup = planGraph.StateTransitionInfoLookup;
+                var resultingStateLookup = planGraph.ResultingStateLookup;
 
                 var expansionJob = new GraphExpansionJob<int, int, TestStateDataContext, int>
                 {
                     BinnedStateKeys = binnedStateKeys,
                     NewStateTransitionInfoPairs = statesToProcess.AsDeferredJobArray(),
 
-                    ActionLookup = policyGraph.ActionLookup.AsParallelWriter(),
-                    ActionInfoLookup = policyGraph.ActionInfoLookup.AsParallelWriter(),
+                    ActionLookup = planGraph.ActionLookup.AsParallelWriter(),
+                    ActionInfoLookup = planGraph.ActionInfoLookup.AsParallelWriter(),
                     StateTransitionInfoLookup = stateTransitionInfoLookup.AsParallelWriter(),
                     ResultingStateLookup = resultingStateLookup.AsParallelWriter(),
                     NewStates = newStatesQueue.AsParallelWriter(),
-                    PredecessorGraph = policyGraph.PredecessorGraph.AsParallelWriter(),
+                    PredecessorGraph = planGraph.PredecessorGraph.AsParallelWriter(),
                     StateDataContext = new TestStateDataContext(),
                     StatesToDestroy = newStatesToDestroy.AsParallelWriter(),
                 };
@@ -312,8 +312,8 @@ namespace Unity.AI.Planner.Tests.Performance
             }).SetUp(() =>
             {
                 // One root node and all children nodes of a single depth
-                policyGraph = PolicyGraphUtility.BuildTree(kActionCount, 1, 1);
-                policyGraph.ExpandBy(kActionCount, kActionCount);
+                planGraph = PlanGraphUtility.BuildTree(kActionCount, 1, 1);
+                planGraph.ExpandBy(kActionCount, kActionCount);
 
                 newStatesQueue = new NativeQueue<int>(Allocator.TempJob);
                 newStatesToDestroy = new NativeQueue<int>(Allocator.TempJob);
@@ -325,10 +325,10 @@ namespace Unity.AI.Planner.Tests.Performance
                     statesToProcess.Add(new StateTransitionInfoPair<int, int, StateTransitionInfo>(kRootState, i, kActionCount + i, new StateTransitionInfo() { Probability = 1, TransitionUtilityValue = 1 }));
                 }
 
-                binnedStateKeys = GetBinnedStateKeys(policyGraph);
+                binnedStateKeys = GetBinnedStateKeys(planGraph);
             }).CleanUp(() =>
             {
-                policyGraph.Dispose();
+                planGraph.Dispose();
                 newStatesQueue.Dispose();
                 statesToProcess.Dispose();
                 binnedStateKeys.Dispose();
@@ -344,7 +344,7 @@ namespace Unity.AI.Planner.Tests.Performance
             const int kRootState = 0;
             const int kActionCount = 1000;
 
-            PolicyGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> policyGraph = default;
+            PlanGraph<int, StateInfo, int, ActionInfo, StateTransitionInfo> planGraph = default;
             NativeMultiHashMap<int, int> binnedStateKeys = default;
             NativeQueue<int> newStatesQueue = default;
             NativeList<StateTransitionInfoPair<int, int, StateTransitionInfo>> statesToProcess = default;
@@ -352,20 +352,20 @@ namespace Unity.AI.Planner.Tests.Performance
 
             Measure.Method(() =>
             {
-                var stateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup;
-                var resultingStateLookup = policyGraph.ResultingStateLookup;
+                var stateTransitionInfoLookup = planGraph.StateTransitionInfoLookup;
+                var resultingStateLookup = planGraph.ResultingStateLookup;
 
                 var expansionJob = new GraphExpansionJob<int, int, TestStateDataContext, int>
                 {
                     BinnedStateKeys = binnedStateKeys,
                     NewStateTransitionInfoPairs = statesToProcess.AsDeferredJobArray(),
 
-                    ActionLookup = policyGraph.ActionLookup.AsParallelWriter(),
-                    ActionInfoLookup = policyGraph.ActionInfoLookup.AsParallelWriter(),
+                    ActionLookup = planGraph.ActionLookup.AsParallelWriter(),
+                    ActionInfoLookup = planGraph.ActionInfoLookup.AsParallelWriter(),
                     StateTransitionInfoLookup = stateTransitionInfoLookup.AsParallelWriter(),
                     ResultingStateLookup = resultingStateLookup.AsParallelWriter(),
                     NewStates = newStatesQueue.AsParallelWriter(),
-                    PredecessorGraph = policyGraph.PredecessorGraph.AsParallelWriter(),
+                    PredecessorGraph = planGraph.PredecessorGraph.AsParallelWriter(),
                     StateDataContext = new TestStateDataContext(),
                     StatesToDestroy = newStatesToDestroy.AsParallelWriter(),
                 };
@@ -374,8 +374,8 @@ namespace Unity.AI.Planner.Tests.Performance
             }).SetUp(() =>
             {
                 // One root node and all children nodes of a single depth
-                policyGraph = PolicyGraphUtility.BuildTree(kActionCount, 1, 1);
-                policyGraph.ExpandBy(kActionCount, kActionCount);
+                planGraph = PlanGraphUtility.BuildTree(kActionCount, 1, 1);
+                planGraph.ExpandBy(kActionCount, kActionCount);
 
                 newStatesQueue = new NativeQueue<int>(Allocator.TempJob);
                 newStatesToDestroy = new NativeQueue<int>(Allocator.TempJob);
@@ -387,10 +387,10 @@ namespace Unity.AI.Planner.Tests.Performance
                     statesToProcess.Add(new StateTransitionInfoPair<int, int, StateTransitionInfo>(kRootState, i, i, new StateTransitionInfo() { Probability = 1, TransitionUtilityValue = 1 }));
                 }
 
-                binnedStateKeys = GetBinnedStateKeys(policyGraph);
+                binnedStateKeys = GetBinnedStateKeys(planGraph);
             }).CleanUp(() =>
             {
-                policyGraph.Dispose();
+                planGraph.Dispose();
                 newStatesQueue.Dispose();
                 statesToProcess.Dispose();
                 binnedStateKeys.Dispose();

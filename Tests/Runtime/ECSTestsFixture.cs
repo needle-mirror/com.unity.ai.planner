@@ -40,7 +40,9 @@ namespace Unity.AI.Planner.Tests
         [TearDown]
         public virtual void TearDown()
         {
-            if (m_Manager != null && m_Manager.IsCreated)
+            m_Manager.ExclusiveEntityTransactionDependency.Complete();
+            m_Manager.EndExclusiveEntityTransaction();
+            if (m_Manager != default && m_Manager.World.IsCreated)
             {
                 // Clean up systems before calling CheckInternalConsistency because we might have filters etc
                 // holding on SharedComponentData making checks fail
@@ -51,11 +53,11 @@ namespace Unity.AI.Planner.Tests
                 m_ManagerDebug.CheckInternalConsistency();
 
                 World.Dispose();
-                World = null;
+                World = default;
 
                 World.DefaultGameObjectInjectionWorld = m_PreviousWorld;
                 m_PreviousWorld = null;
-                m_Manager = null;
+                m_Manager = default;
             }
 
 #if UNITY_DOTSPLAYER

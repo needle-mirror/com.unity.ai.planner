@@ -58,9 +58,9 @@ namespace UnityEditor.AI.Planner.Visualizer
                 return;
             }
 
-            // If the root has not yet been expanded, root the graph at the policy graph node.
-            var rootPolicyNode = CreateStateNode(rootStateKey, 1f, true, rootState: true);
-            AddNodeHierarchy(rootPolicyNode);
+            // If the root has not yet been expanded, root the graph at the plan graph node.
+            var rootPlanNode = CreateStateNode(rootStateKey, 1f, true, rootState: true);
+            AddNodeHierarchy(rootPlanNode);
         }
 
         void PopulateWithRootOverride()

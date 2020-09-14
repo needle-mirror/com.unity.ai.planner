@@ -5,19 +5,18 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.AI.Planner;
 using UnityEngine.Assertions;
 
 namespace Unity.AI.Planner
 {
-    class PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, THeuristic, TTerminationEvaluator, TDestroyStatesScheduler> : IPlannerScheduler, IDisposable
+    class PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, TCumulativeRewardEstimator, TTerminationEvaluator, TDestroyStatesScheduler> : IPlannerScheduler, IDisposable
         where TStateKey : struct, IEquatable<TStateKey>
         where TActionKey : struct, IEquatable<TActionKey>
         where TStateManager : IStateManager<TStateKey, TStateData, TStateDataContext>
         where TStateData : struct
         where TStateDataContext : struct, IStateDataContext<TStateKey, TStateData>
         where TActionScheduler : struct, IActionScheduler<TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey>
-        where THeuristic : struct, IHeuristic<TStateData>
+        where TCumulativeRewardEstimator : struct, ICumulativeRewardEstimator<TStateData>
         where TTerminationEvaluator : struct, ITerminationEvaluator<TStateData>
         where TDestroyStatesScheduler : struct, IDestroyStatesScheduler<TStateKey, TStateData, TStateDataContext, TStateManager>
     {
@@ -28,15 +27,15 @@ namespace Unity.AI.Planner
         /// <inheritdoc />
         public JobHandle CurrentJobHandle
         {
-            get => m_SearchContext?.m_PlanningJobHandle ?? default;
-            private set => m_SearchContext.m_PlanningJobHandle = value;
+            get => planData?.m_PlanningJobHandle ?? default;
+            private set => planData.m_PlanningJobHandle = value;
         }
 
-        internal SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> m_SearchContext;
+        internal PlanData<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> planData;
 
         // Configuration data
         TStateManager m_StateManager;
-        THeuristic m_Heuristic;
+        TCumulativeRewardEstimator m_CumulativeRewardEstimator;
         TTerminationEvaluator m_TerminationEvaluator;
         float m_DiscountFactor;
 
@@ -66,13 +65,13 @@ namespace Unity.AI.Planner
         /// Initialize a planner scheduler instance
         /// </summary>
         /// <param name="stateManager">StateManager instance</param>
-        /// <param name="heuristic">Heuristic</param>
+        /// <param name="rewardEstimator">CumulativeRewardEstimator</param>
         /// <param name="terminationEvaluator">State termination evaluator</param>
         /// <param name="discountFactor">Multiplicative factor ([0 -> 1]) for discounting future rewards.</param>
-        public void Initialize(TStateManager stateManager, THeuristic heuristic = default, TTerminationEvaluator terminationEvaluator = default, float discountFactor = 0.95f)
+        public void Initialize(TStateManager stateManager, TCumulativeRewardEstimator rewardEstimator = default, TTerminationEvaluator terminationEvaluator = default, float discountFactor = 1.0f)
         {
             m_StateManager = stateManager;
-            m_Heuristic = heuristic;
+            m_CumulativeRewardEstimator = rewardEstimator;
             m_TerminationEvaluator = terminationEvaluator;
             m_DiscountFactor = discountFactor;
 
@@ -98,12 +97,12 @@ namespace Unity.AI.Planner
             m_HorizonStateList = new NativeList<TStateKey>(1, Allocator.Persistent);
         }
 
-        public IPlanRequest RequestPlan(IStateKey rootState, Action<IPlan> onRequestComplete = null, PlannerSearchSettings searchSettings = null)
+        public IPlanRequest RequestPlan(IStateKey rootState, Action<IPlan> onRequestComplete = null, PlannerSettings settings = null)
         {
             if (!(rootState is TStateKey stateKey))
                 throw new ArgumentException($"Expected state key of type {typeof(TStateKey)}. Received key of type {rootState?.GetType()}");
 
-            return RequestPlan(stateKey, onRequestComplete, searchSettings);
+            return RequestPlan(stateKey, onRequestComplete, settings);
         }
 
         public void UpdatePlanRequestRootState(IStateKey newRootState)
@@ -116,59 +115,59 @@ namespace Unity.AI.Planner
 
         public void UpdatePlanRequestRootState(TStateKey stateKey)
         {
-            var oldSearchContext = m_SearchContext;
-            var oldPolicyGraph = m_SearchContext.PolicyGraph;
-            var newSearchContext = new SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(m_StateManager,
-                oldPolicyGraph.StateInfoLookup.Count(),
-                oldPolicyGraph.ActionInfoLookup.Count(),
-                oldPolicyGraph.StateTransitionInfoLookup.Count());
+            var oldPlanData = planData;
+            var oldPlanGraph = planData.PlanGraph;
+            var newPlanData = new PlanData<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(m_StateManager,
+                oldPlanGraph.StateInfoLookup.Count(),
+                oldPlanGraph.ActionInfoLookup.Count(),
+                oldPlanGraph.StateTransitionInfoLookup.Count());
 
-            // Replace old search context
-            CurrentPlanRequest.m_Plan.m_SearchContext = newSearchContext;
-            m_SearchContext = newSearchContext;
+            // Replace old plan data
+            CurrentPlanRequest.m_Plan.planData = newPlanData;
+            planData = newPlanData;
 
             // Check for existence of state
-            var rootFoundInPlan = oldSearchContext.FindMatchingStateInPlan(stateKey, out var planStateKey);
+            var rootFoundInPlan = oldPlanData.FindMatchingStateInPlan(stateKey, out var planStateKey);
             var newRoot =  rootFoundInPlan ? planStateKey : m_StateManager.CopyState(stateKey);
 
             // Check if we can skip copying the subgraph from the new root
             if (!rootFoundInPlan)
             {
-                newSearchContext.UpdateRootState(newRoot); // Sets new state info
-                oldSearchContext.Dispose(CurrentJobHandle); // no data to copy
+                newPlanData.UpdateRootState(newRoot); // Sets new state info
+                oldPlanData.Dispose(CurrentJobHandle); // no data to copy
                 return;
             }
 
             // Set root
-            newSearchContext.RootStateKey = newRoot;
+            newPlanData.RootStateKey = newRoot;
 
-            var statesToCopy = new NativeList<TStateKey>(oldPolicyGraph.Size, Allocator.TempJob);
-            var statesToCopyLookup = new NativeHashMap<TStateKey, byte>(oldPolicyGraph.Size, Allocator.TempJob);
-            var stateKeys = oldPolicyGraph.StateInfoLookup.GetKeyArray(Allocator.TempJob);
+            var statesToCopy = new NativeList<TStateKey>(oldPlanGraph.Size, Allocator.TempJob);
+            var statesToCopyLookup = new NativeHashMap<TStateKey, byte>(oldPlanGraph.Size, Allocator.TempJob);
+            var stateKeys = oldPlanGraph.StateInfoLookup.GetKeyArray(Allocator.TempJob);
             var jobHandle = CurrentJobHandle;
 
             jobHandle = new CollectReachableStatesJob()
             {
                 RootStateKey = newRoot,
-                PolicyGraph = oldPolicyGraph,
+                planGraph = oldPlanGraph,
                 StateKeys = stateKeys,
 
-                ReachableStateDepthMap = newSearchContext.StateDepthLookup,
+                ReachableStateDepthMap = newPlanData.StateDepthLookup,
                 StatesToCopy = statesToCopy,
                 StatesToCopyLookup = statesToCopyLookup,
                 StatesToDestroy = m_StatesToDestroy,
                 GraphTraversalQueue = m_GraphTraversalQueue,
             }.Schedule(jobHandle);
 
-            jobHandle = new CopySearchDataJob()
+            jobHandle = new CopyPlanDataJob()
             {
                 StatesToCopy = statesToCopy.AsDeferredJobArray(),
                 StatesToCopyLookup = statesToCopyLookup,
 
-                SourcePolicyGraph = oldPolicyGraph,
+                sourcePlanGraph = oldPlanGraph,
 
-                PolicyGraph = newSearchContext.PolicyGraph.AsParallelWriter(),
-                BinnedStateKeyLookup = newSearchContext.BinnedStateKeyLookup.AsParallelWriter(),
+                PlanGraph = newPlanData.PlanGraph.AsParallelWriter(),
+                BinnedStateKeyLookup = newPlanData.BinnedStateKeyLookup.AsParallelWriter(),
             }.Schedule(statesToCopy, default, jobHandle);
 
             // Destroy states
@@ -177,11 +176,11 @@ namespace Unity.AI.Planner
             destroyStatesScheduler.StatesToDestroy = m_StatesToDestroy;
             jobHandle = destroyStatesScheduler.Schedule(jobHandle);
 
-            // Dispose temp containers and old search context
+            // Dispose temp containers and old plan data
             statesToCopy.Dispose(jobHandle);
             statesToCopyLookup.Dispose(jobHandle);
             stateKeys.Dispose(jobHandle);
-            oldSearchContext.Dispose(jobHandle);
+            oldPlanData.Dispose(jobHandle);
 
             // Update job handle
             CurrentJobHandle = JobHandle.CombineDependencies(jobHandle, CurrentJobHandle);
@@ -190,9 +189,9 @@ namespace Unity.AI.Planner
         [BurstCompile]
         struct CollectReachableStatesJob : IJob
         {
-            // Info for search
+            // Info for planning
             public TStateKey RootStateKey;
-            public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> PolicyGraph;
+            public PlanGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> planGraph;
             public NativeArray<TStateKey> StateKeys;
 
             public NativeHashMap<TStateKey, int> ReachableStateDepthMap;
@@ -207,7 +206,7 @@ namespace Unity.AI.Planner
                 StatesToCopy.Clear();
                 ReachableStateDepthMap.Clear();
 
-                PolicyGraph.GetReachableDepthMap(RootStateKey, ReachableStateDepthMap, GraphTraversalQueue);
+                planGraph.GetReachableDepthMap(RootStateKey, ReachableStateDepthMap, GraphTraversalQueue);
 
                 for (int i = 0; i < StateKeys.Length; i++)
                 {
@@ -221,72 +220,72 @@ namespace Unity.AI.Planner
                         StatesToDestroy.Enqueue(stateKey);
                 }
 
-                Assert.AreEqual(PolicyGraph.StateInfoLookup.Count(), StatesToCopy.Length + StatesToDestroy.Count);
+                Assert.AreEqual(planGraph.StateInfoLookup.Count(), StatesToCopy.Length + StatesToDestroy.Count);
             }
         }
 
         [BurstCompile]
-        struct CopySearchDataJob : IJobParallelForDefer
+        struct CopyPlanDataJob : IJobParallelForDefer
         {
             [ReadOnly] public NativeArray<TStateKey> StatesToCopy;
             [ReadOnly] public NativeHashMap<TStateKey, byte> StatesToCopyLookup;
 
-            [ReadOnly] public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> SourcePolicyGraph;
+            [ReadOnly] public PlanGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo> sourcePlanGraph;
 
-            [WriteOnly] public PolicyGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo>.ParallelWriter PolicyGraph;
+            [WriteOnly] public PlanGraph<TStateKey, StateInfo, TActionKey, ActionInfo, StateTransitionInfo>.ParallelWriter PlanGraph;
             [WriteOnly] public NativeMultiHashMap<int, TStateKey>.ParallelWriter BinnedStateKeyLookup;
 
             public void Execute(int index)
             {
                 var stateKey = StatesToCopy[index];
 
-                // Search info
+                // Plan info
                 BinnedStateKeyLookup.Add(stateKey.GetHashCode(), stateKey);
 
                 // State info
-                PolicyGraph.StateInfoLookup.TryAdd(stateKey, SourcePolicyGraph.StateInfoLookup[stateKey]);
+                PlanGraph.StateInfoLookup.TryAdd(stateKey, sourcePlanGraph.StateInfoLookup[stateKey]);
 
                 // Action info
-                if (SourcePolicyGraph.ActionLookup.TryGetFirstValue(stateKey, out var actionKey, out var actionIterator))
+                if (sourcePlanGraph.ActionLookup.TryGetFirstValue(stateKey, out var actionKey, out var actionIterator))
                 {
                     do
                     {
                         var stateActionPair = new StateActionPair<TStateKey, TActionKey>(stateKey, actionKey);
-                        PolicyGraph.ActionLookup.Add(stateKey, actionKey);
-                        PolicyGraph.ActionInfoLookup.TryAdd(stateActionPair, SourcePolicyGraph.ActionInfoLookup[stateActionPair]);
+                        PlanGraph.ActionLookup.Add(stateKey, actionKey);
+                        PlanGraph.ActionInfoLookup.TryAdd(stateActionPair, sourcePlanGraph.ActionInfoLookup[stateActionPair]);
 
                         // Transition info
-                        if (SourcePolicyGraph.ResultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingState, out var transitionIterator))
+                        if (sourcePlanGraph.ResultingStateLookup.TryGetFirstValue(stateActionPair, out var resultingState, out var transitionIterator))
                         {
                             do
                             {
                                 var transition = new StateTransition<TStateKey, TActionKey>(stateActionPair, resultingState);
-                                PolicyGraph.ResultingStateLookup.Add(stateActionPair, resultingState);
-                                PolicyGraph.StateTransitionInfoLookup.TryAdd(transition, SourcePolicyGraph.StateTransitionInfoLookup[transition]);
-                            } while (SourcePolicyGraph.ResultingStateLookup.TryGetNextValue(out resultingState, ref transitionIterator));
+                                PlanGraph.ResultingStateLookup.Add(stateActionPair, resultingState);
+                                PlanGraph.StateTransitionInfoLookup.TryAdd(transition, sourcePlanGraph.StateTransitionInfoLookup[transition]);
+                            } while (sourcePlanGraph.ResultingStateLookup.TryGetNextValue(out resultingState, ref transitionIterator));
                         }
-                    } while (SourcePolicyGraph.ActionLookup.TryGetNextValue(out actionKey, ref actionIterator));
+                    } while (sourcePlanGraph.ActionLookup.TryGetNextValue(out actionKey, ref actionIterator));
                 }
 
                 // Predecessor links
-                if (SourcePolicyGraph.PredecessorGraph.TryGetFirstValue(stateKey, out var predecessor, out var predecessorIterator))
+                if (sourcePlanGraph.PredecessorGraph.TryGetFirstValue(stateKey, out var predecessor, out var predecessorIterator))
                 {
                     do
                     {
                         if (StatesToCopyLookup.ContainsKey(predecessor))
-                            PolicyGraph.PredecessorGraph.Add(stateKey, predecessor);
-                    } while (SourcePolicyGraph.PredecessorGraph.TryGetNextValue(out predecessor, ref predecessorIterator));
+                            PlanGraph.PredecessorGraph.Add(stateKey, predecessor);
+                    } while (sourcePlanGraph.PredecessorGraph.TryGetNextValue(out predecessor, ref predecessorIterator));
                 }
             }
         }
 
-        public IPlanRequest RequestPlan(TStateKey rootState, Action<IPlan> onRequestComplete = null, PlannerSearchSettings searchSettings = null)
+        public IPlanRequest RequestPlan(TStateKey rootState, Action<IPlan> onRequestComplete = null, PlannerSettings settings = null)
         {
             PlanWrapper<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext> plan;
             if (CurrentPlanRequest == null)
             {
-                m_SearchContext = new SearchContext<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(m_StateManager, 10, 10);
-                plan = new PlanWrapper<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(m_SearchContext);
+                planData = new PlanData<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(m_StateManager, 10, 10);
+                plan = new PlanWrapper<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(planData);
             }
             else
             {
@@ -295,9 +294,9 @@ namespace Unity.AI.Planner
             }
 
             CurrentJobHandle.Complete();
-            m_SearchContext.UpdateRootState(rootState);
+            planData.UpdateRootState(rootState);
 
-            CurrentPlanRequest = new PlanRequest<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(plan, searchSettings, onRequestComplete);
+            CurrentPlanRequest = new PlanRequest<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext>(plan, settings, onRequestComplete);
 
             return CurrentPlanRequest;
         }
@@ -319,28 +318,28 @@ namespace Unity.AI.Planner
             const int kPermittedLifetime = 4;
 
             // Force complete every 4 frames (TempJob allocation constraint)
-            var framesSinceComplete = m_SearchContext.m_FramesSinceComplete;
+            var framesSinceComplete = planData.m_FramesSinceComplete;
             framesSinceComplete = ++framesSinceComplete % kPermittedLifetime;
-            m_SearchContext.m_FramesSinceComplete = framesSinceComplete;
+            planData.m_FramesSinceComplete = framesSinceComplete;
             if (CurrentJobHandle.IsCompleted || framesSinceComplete == 0 || forceComplete)
             {
                 CurrentJobHandle.Complete();
-                m_SearchContext.m_FramesSinceComplete = 0;
+                planData.m_FramesSinceComplete = 0;
             }
 
-            var searchSettings = CurrentPlanRequest.m_SearchSettings;
+            var plannerSettings = CurrentPlanRequest.m_PlannerSettings;
             CurrentPlanRequest.m_FramesSinceLastUpdate++;
 
             // Check if any update should occur
             if (!CurrentJobHandle.IsCompleted || CurrentPlanRequest.Status != PlanRequestStatus.Running
-                || (searchSettings.UseCustomSearchFrequency && CurrentPlanRequest.m_FramesSinceLastUpdate < searchSettings.MinFramesPerSearchUpdate))
+                || (plannerSettings.UseCustomPlanningFrequency && CurrentPlanRequest.m_FramesSinceLastUpdate < plannerSettings.MinFramesPerPlanningUpdate))
                 return inputDeps;
 
             // Check if plan request termination condition(s) have been met
-            if ((m_SearchContext.PolicyGraph.StateInfoLookup.TryGetValue(m_SearchContext.RootStateKey, out var rootInfo) && rootInfo.SubgraphComplete) ||
-                (searchSettings.CapPlanUpdates && CurrentPlanRequest.m_PlanningUpdates >= searchSettings.MaxUpdates) ||
-                (searchSettings.CapPlanSize && m_SearchContext.PolicyGraph.Size > searchSettings.MaxStatesInPlan) ||
-                (searchSettings.StopPlanningWhenToleranceAchieved && m_SearchContext.RootsConverged(searchSettings.RootPolicyValueTolerance)) )
+            if ((planData.PlanGraph.StateInfoLookup.TryGetValue(planData.RootStateKey, out var rootInfo) && rootInfo.SubplanIsComplete)
+                || (plannerSettings.CapPlanUpdates && CurrentPlanRequest.m_PlanningUpdates >= plannerSettings.MaxUpdates)
+                || (plannerSettings.CapPlanSize && planData.PlanGraph.Size > plannerSettings.MaxStatesInPlan)
+                || (plannerSettings.StopPlanningWhenToleranceAchieved && planData.RootsConverged(plannerSettings.RootEstimatedRewardTolerance)))
             {
                 CurrentPlanRequest.Status = PlanRequestStatus.Complete;
                 CurrentPlanRequest.m_OnPlanRequestComplete?.Invoke(CurrentPlanRequest.Plan);
@@ -352,19 +351,19 @@ namespace Unity.AI.Planner
             // Increment update count
             CurrentPlanRequest.m_PlanningUpdates++;
             CurrentPlanRequest.m_FramesSinceLastUpdate = 0;
-            CurrentJobHandle = ScheduleAllIterations(inputDeps, searchSettings);
+            CurrentJobHandle = ScheduleAllIterations(inputDeps, plannerSettings);
 
             return CurrentJobHandle;
         }
 
-        JobHandle ScheduleAllIterations(JobHandle inputDeps, PlannerSearchSettings searchSettings)
+        JobHandle ScheduleAllIterations(JobHandle inputDeps, PlannerSettings settings)
         {
-            if (searchSettings.GraphSelectionJobMode == SelectionJobMode.Parallel ||
-                searchSettings.GraphBackpropagationJobMode == BackpropagationJobMode.Parallel)
+            if (settings.GraphSelectionJobMode == SelectionJobMode.Parallel ||
+                settings.GraphBackpropagationJobMode == BackpropagationJobMode.Parallel)
             {
                 // Find upper bound on number of selection and backpropagation iterations
                 m_MaxDepth = 0;
-                using (var depths = m_SearchContext.StateDepthLookup.GetValueArray(Allocator.Temp))
+                using (var depths = planData.StateDepthLookup.GetValueArray(Allocator.Temp))
                 {
                     for (int i = 0; i < depths.Length; i++)
                     {
@@ -374,13 +373,13 @@ namespace Unity.AI.Planner
             }
 
             var jobHandle = inputDeps;
-            for (int scheduleIteration = 0; scheduleIteration < searchSettings.SearchIterationsPerUpdate; scheduleIteration++)
+            for (int scheduleIteration = 0; scheduleIteration < settings.PlanningIterationsPerUpdate; scheduleIteration++)
             {
                 jobHandle = ScheduleSingleIteration(jobHandle,
                     scheduleIteration,
-                    searchSettings.StateExpansionBudgetPerIteration,
-                    searchSettings.GraphSelectionJobMode,
-                    searchSettings.GraphBackpropagationJobMode);
+                    settings.StateExpansionBudgetPerIteration,
+                    settings.GraphSelectionJobMode,
+                    settings.GraphBackpropagationJobMode);
             }
 
             return jobHandle;
@@ -410,18 +409,18 @@ namespace Unity.AI.Planner
 
         JobHandle ScheduleSelectionSequential(JobHandle inputDeps, int budget)
         {
-            var policyGraph = m_SearchContext.PolicyGraph;
+            var planGraph = planData.PlanGraph;
 
             var jobHandle = new SelectionJob<TStateKey, TActionKey>()
             {
-                SearchBudget = budget,
-                RootStateKey = m_SearchContext.RootStateKey,
-                StateDepthLookup = m_SearchContext.StateDepthLookup,
-                StateInfoLookup = policyGraph.StateInfoLookup,
-                ActionLookup = policyGraph.ActionLookup,
-                ActionInfoLookup = policyGraph.ActionInfoLookup,
-                ResultingStateLookup = policyGraph.ResultingStateLookup,
-                StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                StateExpansionBudget = budget,
+                RootStateKey = planData.RootStateKey,
+                StateDepthLookup = planData.StateDepthLookup,
+                StateInfoLookup = planGraph.StateInfoLookup,
+                ActionLookup = planGraph.ActionLookup,
+                ActionInfoLookup = planGraph.ActionInfoLookup,
+                ResultingStateLookup = planGraph.ResultingStateLookup,
+                StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                 SelectedUnexpandedStates = m_SelectedUnexpandedStatesList,
                 AllSelectedStates = m_AllSelectedStates,
@@ -435,9 +434,9 @@ namespace Unity.AI.Planner
             // Setup input containers
             var jobHandle = new SetupParallelSelectionJob<TStateKey>
             {
-                RootStateKey = m_SearchContext.RootStateKey,
+                RootStateKey = planData.RootStateKey,
                 Budget = budget,
-                StateInfoLookup = m_SearchContext.PolicyGraph.StateInfoLookup,
+                StateInfoLookup = planData.PlanGraph.StateInfoLookup,
 
                 SelectionInputBudgets = m_SelectionInputBudgets,
                 SelectionInputStates = m_SelectionInputStates,
@@ -446,18 +445,18 @@ namespace Unity.AI.Planner
                 AllSelectedStates = m_AllSelectedStates,
             }.Schedule(inputDeps);
 
-            var policyGraph = m_SearchContext.PolicyGraph;
+            var planGraph = planData.PlanGraph;
             for (int iteration = 0; iteration <= m_MaxDepth + scheduleIteration; iteration++)
             {
                 // Selection job
                 jobHandle = new ParallelSelectionJob<TStateKey, TActionKey>
                 {
-                    StateDepthLookup = m_SearchContext.StateDepthLookup,
-                    StateInfoLookup = policyGraph.StateInfoLookup,
-                    ActionInfoLookup = policyGraph.ActionInfoLookup,
-                    ActionLookup = policyGraph.ActionLookup,
-                    ResultingStateLookup = policyGraph.ResultingStateLookup,
-                    StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                    StateDepthLookup = planData.StateDepthLookup,
+                    StateInfoLookup = planGraph.StateInfoLookup,
+                    ActionInfoLookup = planGraph.ActionInfoLookup,
+                    ActionLookup = planGraph.ActionLookup,
+                    ResultingStateLookup = planGraph.ResultingStateLookup,
+                    StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                     Horizon = iteration,
                     InputStates = m_SelectionInputStates.AsDeferredJobArray(),
@@ -499,25 +498,25 @@ namespace Unity.AI.Planner
         {
             var prepareForExpansionJobHandle = new PrepareForExpansionJob<TStateKey, TActionKey>
             {
-                PolicyGraph = m_SearchContext.PolicyGraph,
+                planGraph = planData.PlanGraph,
                 InputStateExpansionInfo = m_CreatedStateInfoQueue,
                 OutputStateExpansionInfo = m_CreatedStateInfoList,
-                BinnedStateKeys = m_SearchContext.BinnedStateKeyLookup,
+                BinnedStateKeys = planData.BinnedStateKeyLookup,
             }.Schedule(actionsJobHandle);
 
-            var policyGraph = m_SearchContext.PolicyGraph;
+            var planGraph = planData.PlanGraph;
             var graphExpansionJobHandle = new GraphExpansionJob<TStateKey, TStateData, TStateDataContext, TActionKey>
             {
                 NewStateTransitionInfoPairs = m_CreatedStateInfoList.AsDeferredJobArray(),
-                StateDataContext = m_StateManager.GetStateDataContext(),
+                StateDataContext = m_StateManager.StateDataContext,
 
-                ActionLookup = policyGraph.ActionLookup.AsParallelWriter(),
-                ActionInfoLookup = policyGraph.ActionInfoLookup.AsParallelWriter(),
+                ActionLookup = planGraph.ActionLookup.AsParallelWriter(),
+                ActionInfoLookup = planGraph.ActionInfoLookup.AsParallelWriter(),
                 NewStates = m_NewStateQueueParallelWriter,
-                StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup.AsParallelWriter(),
-                PredecessorGraph = policyGraph.PredecessorGraph.AsParallelWriter(),
-                BinnedStateKeys = m_SearchContext.BinnedStateKeyLookup,
-                ResultingStateLookup = policyGraph.ResultingStateLookup.AsParallelWriter(),
+                StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup.AsParallelWriter(),
+                PredecessorGraph = planGraph.PredecessorGraph.AsParallelWriter(),
+                BinnedStateKeys = planData.BinnedStateKeyLookup,
+                ResultingStateLookup = planGraph.ResultingStateLookup.AsParallelWriter(),
                 StatesToDestroy = m_StatesToDestroyParallelWriter,
             }.Schedule(m_CreatedStateInfoList, 0, prepareForExpansionJobHandle);
 
@@ -535,15 +534,15 @@ namespace Unity.AI.Planner
                 OutputList = m_NewStateList,
             }.Schedule(graphExpansionJob);
 
-            return new EvaluateNewStatesJob<TStateKey, TStateData, TStateDataContext, THeuristic, TTerminationEvaluator>
+            return new EvaluateNewStatesJob<TStateKey, TStateData, TStateDataContext, TCumulativeRewardEstimator, TTerminationEvaluator>
             {
                 States = m_NewStateList.AsDeferredJobArray(),
-                StateDataContext = m_StateManager.GetStateDataContext(),
-                Heuristic = m_Heuristic,
+                StateDataContext = m_StateManager.StateDataContext,
+                CumulativeRewardEstimator = m_CumulativeRewardEstimator,
                 TerminationEvaluator = m_TerminationEvaluator,
 
-                StateInfoLookup = m_SearchContext.PolicyGraph.StateInfoLookup.AsParallelWriter(),
-                BinnedStateKeys = m_SearchContext.BinnedStateKeyLookup.AsParallelWriter(),
+                StateInfoLookup = planData.PlanGraph.StateInfoLookup.AsParallelWriter(),
+                BinnedStateKeys = planData.BinnedStateKeyLookup.AsParallelWriter(),
             }.Schedule(m_NewStateList, 0, newStateQueueToListJobHandle);
         }
 
@@ -551,8 +550,8 @@ namespace Unity.AI.Planner
         {
             return new BackpropagationJob<TStateKey, TActionKey>
             {
-                DepthMap = m_SearchContext.StateDepthLookup,
-                PolicyGraph = m_SearchContext.PolicyGraph,
+                DepthMap = planData.StateDepthLookup,
+                planGraph = planData.PlanGraph,
                 SelectedStates = m_AllSelectedStates,
                 DiscountFactor = m_DiscountFactor,
             }.Schedule(evaluateNewStatesJobHandle);
@@ -565,14 +564,14 @@ namespace Unity.AI.Planner
                 SelectedStates = m_AllSelectedStates,
                 MaxDepth = m_MaxDepth + scheduleIteration,
 
-                DepthMap = m_SearchContext.StateDepthLookup,
+                DepthMap = planData.StateDepthLookup,
                 SelectedStatesByHorizon = m_SelectedStatesByHorizon,
                 PredecessorStates = m_PredecessorStates,
                 HorizonStateList = m_HorizonStateList,
             }.Schedule(evaluateNewStatesJobHandle);
 
             // Schedule maxDepth iterations of backpropagation
-            var policyGraph = m_SearchContext.PolicyGraph;
+            var planGraph = planData.PlanGraph;
             for (int horizon = m_MaxDepth + scheduleIteration + 1; horizon >= 0; horizon--)
             {
                 // Prepare info
@@ -591,13 +590,13 @@ namespace Unity.AI.Planner
                     // Params
                     DiscountFactor = m_DiscountFactor,
 
-                    // Policy graph info
-                    ActionLookup = policyGraph.ActionLookup,
-                    PredecessorGraph = policyGraph.PredecessorGraph,
-                    ResultingStateLookup = policyGraph.ResultingStateLookup,
-                    StateInfoLookup = policyGraph.StateInfoLookup,
-                    ActionInfoLookup = policyGraph.ActionInfoLookup,
-                    StateTransitionInfoLookup = policyGraph.StateTransitionInfoLookup,
+                    // Plan graph info
+                    ActionLookup = planGraph.ActionLookup,
+                    PredecessorGraph = planGraph.PredecessorGraph,
+                    ResultingStateLookup = planGraph.ResultingStateLookup,
+                    StateInfoLookup = planGraph.StateInfoLookup,
+                    ActionInfoLookup = planGraph.ActionInfoLookup,
+                    StateTransitionInfoLookup = planGraph.StateTransitionInfoLookup,
 
                     // Input
                     StatesToUpdate = m_HorizonStateList.AsDeferredJobArray(),
@@ -611,7 +610,7 @@ namespace Unity.AI.Planner
             jobHandle = new UpdateCompleteStatusJob<TStateKey, TActionKey>
             {
                 StatesToUpdate = m_PredecessorStates,
-                PolicyGraph = policyGraph,
+                planGraph = planGraph,
             }.Schedule(jobHandle);
 
             return jobHandle;
@@ -642,7 +641,7 @@ namespace Unity.AI.Planner
         {
             CurrentJobHandle.Complete();
 
-            m_SearchContext?.Dispose();
+            planData?.Dispose();
             CurrentPlanRequest?.Dispose();
 
             m_AllSelectedStates.Dispose();

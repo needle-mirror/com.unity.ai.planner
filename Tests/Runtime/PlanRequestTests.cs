@@ -1,14 +1,14 @@
 ﻿using System;
 using KeyDomain;
 using NUnit.Framework;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using Unity.Entities;
 using UnityEngine;
 
 
 namespace Unity.AI.Planner.Tests
 {
-    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideHeuristic<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
+    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideCumulativeRewardEstimator<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
 
     class PlanRequestTests
     {
@@ -37,7 +37,7 @@ namespace Unity.AI.Planner.Tests
 
 namespace Unity.AI.Planner.Tests.Unit
 {
-    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideHeuristic<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
+    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideCumulativeRewardEstimator<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
 
     class PlanRequestUnitTests: PlanRequestTests
     {
@@ -91,7 +91,7 @@ namespace Unity.AI.Planner.Tests.Unit
             Assert.Throws<InvalidOperationException>(query.Pause);
             Assert.Throws<InvalidOperationException>(query.Resume);
             Assert.Throws<InvalidOperationException>(query.Cancel);
-            Assert.Throws<InvalidOperationException>(() => query.SearchUntil());
+            Assert.Throws<InvalidOperationException>(() => query.PlanUntil());
             Assert.Throws<InvalidOperationException>(() => query.WithBudget());
             Assert.Throws<InvalidOperationException>(() => query.SchedulingMode());
         }
@@ -100,7 +100,7 @@ namespace Unity.AI.Planner.Tests.Unit
 
 namespace Unity.AI.Planner.Tests.Integration
 {
-    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideHeuristic<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
+    using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideCumulativeRewardEstimator<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
 
     class PlanRequestIntegrationTests : PlanRequestTests
     {
@@ -130,7 +130,7 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             bool complete = false;
             var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey,  plan => { complete = true;})
-                .SearchUntil(maximumUpdates: 1);
+                .PlanUntil(maximumUpdates: 1);
 
             for (int i = 0; i < 3 && !complete; i++)
             {
@@ -147,7 +147,7 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             bool complete = false;
             var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey,  plan => { complete = true;})
-                .SearchUntil(planSize: 2);
+                .PlanUntil(planSize: 2);
 
             for (int i = 0; i < 3 && !complete; i++)
             {
@@ -164,7 +164,7 @@ namespace Unity.AI.Planner.Tests.Integration
         {
             bool complete = false;
             var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey,  plan => { complete = true;})
-                .SearchUntil(rootStateTolerance: float.MaxValue);
+                .PlanUntil(rootStateTolerance: float.MaxValue);
 
             m_Scheduler.Schedule(default);
             m_Scheduler.CurrentJobHandle.Complete();

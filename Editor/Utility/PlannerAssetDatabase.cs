@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Utility;
+using Unity.Semantic.Traits;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 using UnityObject = UnityEngine.Object;
+using TraitDefinition = Unity.Semantic.Traits.TraitDefinition;
 
 namespace UnityEditor.AI.Planner.Utility
 {
@@ -14,8 +16,8 @@ namespace UnityEditor.AI.Planner.Utility
         static string s_BuiltinModulePath = $"com.unity.ai.planner{Path.DirectorySeparatorChar}Runtime{Path.DirectorySeparatorChar}Modules{Path.DirectorySeparatorChar}";
 
         const string k_PackagePath = "Packages";
-        public static readonly string plansPackagePath = Path.Combine(k_PackagePath, TypeResolver.PlansQualifier.ToLower());
-        public static readonly string stateRepresentationPackagePath = Path.Combine(k_PackagePath, TypeResolver.StateRepresentationQualifier.ToLower());
+        public static readonly string plansPackagePath = Path.Combine(k_PackagePath, TypeHelper.PlansQualifier.ToLower());
+        public static readonly string stateRepresentationPackagePath = Path.Combine(k_PackagePath, TypeHelper.StateRepresentationQualifier.ToLower());
 
         public static readonly string[] stateRepresentationAssetTypeNames = {
             nameof(TraitDefinition),
@@ -25,13 +27,13 @@ namespace UnityEditor.AI.Planner.Utility
         public static readonly string[] planAssetTypeNames = {
             nameof(ActionDefinition),
             nameof(StateTerminationDefinition),
-            nameof(PlanDefinition),
+            nameof(ProblemDefinition),
         };
 
         static IEnumerable<TraitDefinition> s_TraitDefinitions = null;
         static IEnumerable<ActionDefinition> s_ActionDefinitions = null;
         static IEnumerable<EnumDefinition> s_EnumDefinitions = null;
-        static IEnumerable<PlanDefinition> s_PlanDefinitions = null;
+        static IEnumerable<ProblemDefinition> s_ProblemDefinitions = null;
         static IEnumerable<StateTerminationDefinition> s_StateTerminationDefinitions = null;
 
         static string s_LastPathUsedForNewAsset;
@@ -40,14 +42,14 @@ namespace UnityEditor.AI.Planner.Utility
         public static IEnumerable<ActionDefinition> ActionDefinitions => s_ActionDefinitions ?? (s_ActionDefinitions = FindAndLoadAssets<ActionDefinition>());
         public static IEnumerable<EnumDefinition> EnumDefinitions => s_EnumDefinitions ?? (s_EnumDefinitions = FindAndLoadAssets<EnumDefinition>());
         public static IEnumerable<StateTerminationDefinition> StateTerminationDefinitions => s_StateTerminationDefinitions ?? (s_StateTerminationDefinitions = FindAndLoadAssets<StateTerminationDefinition>());
-        public static IEnumerable<PlanDefinition> PlanDefinitions => s_PlanDefinitions ?? (s_PlanDefinitions = FindAndLoadAssets<PlanDefinition>());
+        public static IEnumerable<ProblemDefinition> ProblemDefinitions => s_ProblemDefinitions ?? (s_ProblemDefinitions = FindAndLoadAssets<ProblemDefinition>());
 
         public static void Refresh(string[] restrictFolders = null)
         {
             s_EnumDefinitions = FindAndLoadAssets<EnumDefinition>(restrictFolders);
             s_ActionDefinitions = FindAndLoadAssets<ActionDefinition>(restrictFolders);
             s_TraitDefinitions = FindAndLoadAssets<TraitDefinition>(restrictFolders);
-            s_PlanDefinitions = FindAndLoadAssets<PlanDefinition>(restrictFolders);
+            s_ProblemDefinitions = FindAndLoadAssets<ProblemDefinition>(restrictFolders);
             s_StateTerminationDefinitions = FindAndLoadAssets<StateTerminationDefinition>(restrictFolders);
         }
 
@@ -78,8 +80,9 @@ namespace UnityEditor.AI.Planner.Utility
 
         static IEnumerable<T> FindAndLoadAssets<T>(string[] restrictFolders = null) where T : UnityObject
         {
-            var assets = AssetDatabase.FindAssets($"t: {typeof(T).Name}", restrictFolders);
-            return assets.Select(guid => AssetDatabase.LoadAssetAtPath<T>(AssetDatabase.GUIDToAssetPath(guid)));
+            var assets = AssetDatabase.FindAssets($"t: {typeof(T).FullName}", restrictFolders);
+            return assets.Select(guid => AssetDatabase.LoadAssetAtPath<T>(AssetDatabase.GUIDToAssetPath(guid)))
+                .Where(a => a != null);
         }
 
         public static string GetBuiltinModuleName(UnityEngine.Object obj)
@@ -123,23 +126,23 @@ namespace UnityEditor.AI.Planner.Utility
                 return null;
             }
 
-            if (!@namespace.StartsWith(TypeResolver.PlannerAssemblyName))
+            if (!@namespace.StartsWith(TypeHelper.PlannerAssemblyName))
             {
                 return null;
             }
 
-            return @namespace.Substring(TypeResolver.PlannerAssemblyName.Length + 1);
+            return @namespace.Substring(TypeHelper.PlannerAssemblyName.Length + 1);
         }
 
         // PackageInfo.FindForAssetPath requires a forward-slashes relative path for every platforms
-        public static bool StateRepresentationPackageExists() => PackageManager.PackageInfo.FindForAssetPath($"{k_PackagePath}/{TypeResolver.StateRepresentationQualifier.ToLower()}/package.json") != null;
-        public static bool PlansPackageExists() => PackageManager.PackageInfo.FindForAssetPath($"{k_PackagePath}/{TypeResolver.PlansQualifier.ToLower()}/package.json") != null;
+        public static bool StateRepresentationPackageExists() => PackageManager.PackageInfo.FindForAssetPath($"{k_PackagePath}/{TypeHelper.StateRepresentationQualifier.ToLower()}/package.json") != null;
+        public static bool PlansPackageExists() => PackageManager.PackageInfo.FindForAssetPath($"{k_PackagePath}/{TypeHelper.PlansQualifier.ToLower()}/package.json") != null;
 
-        public static bool HasValidPlanDefinition()
+        public static bool HasValidProblemDefinition()
         {
-            foreach (var planDefinition in PlanDefinitions)
+            foreach (var problemDefinition in ProblemDefinitions)
             {
-                if (planDefinition.ActionDefinitions != null && planDefinition.ActionDefinitions.Any())
+                if (problemDefinition.ActionDefinitions != null && problemDefinition.ActionDefinitions.Any())
                     return true;
             }
 

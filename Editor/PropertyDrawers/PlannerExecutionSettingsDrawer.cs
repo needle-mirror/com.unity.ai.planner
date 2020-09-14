@@ -1,5 +1,5 @@
-﻿using UnityEngine;
-using UnityEngine.AI.Planner;
+﻿using Unity.AI.Planner;
+using UnityEngine;
 
 namespace UnityEditor.AI.Planner
 {
@@ -26,8 +26,8 @@ namespace UnityEditor.AI.Planner
                         case PlanExecutionSettings.PlanExecutionMode.WaitForPlanCompletion:
                             break;
 
-                        case PlanExecutionSettings.PlanExecutionMode.WaitForMinimumSearchTime:
-                            EditorGUILayout.PropertyField(property.FindPropertyRelative("MinimumSearchTime"));
+                        case PlanExecutionSettings.PlanExecutionMode.WaitForMinimumPlanningTime:
+                            EditorGUILayout.PropertyField(property.FindPropertyRelative("MinimumPlanningTime"));
                             break;
 
                         case PlanExecutionSettings.PlanExecutionMode.WaitForMaximumDecisionTolerance:

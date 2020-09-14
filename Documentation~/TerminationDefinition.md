@@ -10,4 +10,4 @@ Each termination criterion is defined by a set of traits required to be on an ob
 
 ## Terminal Cost / Reward
 
-Similar to [action definitions](ActionDefinition.md), a state termination can define a cost or reward for reaching a terminal state. The reward is given by a numerical value associated with the inherent benefit or penalty associated with reaching this state. Typically, positive values are referred to as _rewards_ while negative values are referred to as _costs_. The planner maximizes the cumulative reward over the course of the plan, so a terminal state with a high reward or low cost may be factored into the optimal plan.
+Similar to [action definitions](ActionDefinition.md), a state termination can define a cost or reward for reaching a terminal state. The reward is given by a numerical value associated with the inherent benefit or penalty associated with reaching this state. The planner maximizes the cumulative reward over the course of the plan, so a terminal state with a high reward may decide the optimal course of action, despite low intermediate action rewards.

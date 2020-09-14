@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.AI.Planner.DomainLanguage.TraitBased;
+using Unity.AI.Planner.Traits;
 using UnityEngine;
-using UnityEngine.AI.Planner.DomainLanguage.TraitBased;
 
 namespace UnityEditor.AI.Planner.Editors
 {
@@ -55,7 +54,7 @@ namespace UnityEditor.AI.Planner.Editors
                 if (parameterComparerWithReferenceType != null)
                 {
                     var traitTypeExpected = parameterComparerWithReferenceType.GenericTypeArguments[1].Name;
-                    var referenceableParameters = m_AvailableParameters.Where(p => p.RequiredTraits.FirstOrDefault(t => t.Name == traitTypeExpected) != null).ToList();
+                    var referenceableParameters = m_AvailableParameters.Where(p => p.RequiredTraits.FirstOrDefault(t => t.name == traitTypeExpected) != null).ToList();
 
                     GUILayout.Label($"Reference {traitTypeExpected}", EditorStyles.boldLabel);
 

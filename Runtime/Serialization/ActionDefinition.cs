@@ -3,9 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.AI.Planner.Utility;
+using Unity.Semantic.Traits.Utility;
 using UnityEngine.Serialization;
+using UnityEngine;
 
-namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
+namespace Unity.AI.Planner.Traits
 {
     [Serializable]
     [HelpURL(Help.BaseURL + "/manual/ActionDefinition.html")]
@@ -41,11 +43,13 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         public IEnumerable<string> RemovedObjects
         {
             get => m_RemovedObjects;
+            set => m_RemovedObjects = value.ToList();
         }
 
         public float Reward
         {
             get => m_Reward;
+            set => m_Reward = value;
         }
 
         public IEnumerable<CustomRewardData> CustomRewards
