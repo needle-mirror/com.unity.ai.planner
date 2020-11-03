@@ -10,12 +10,22 @@ using UnityEngine.Serialization;
 
 namespace Unity.AI.Planner.Traits
 {
+    /// <summary>
+    /// A ScriptableObject holding serialized data defining a planning problem.
+    /// </summary>
     [Serializable]
     [HelpURL(Help.BaseURL + "/manual/ProblemDefinition.html")]
     [CreateAssetMenu(fileName = "New Problem Definition", menuName = "AI/Planner/Problem Definition")]
-    class ProblemDefinition : ScriptableObject
+    public class ProblemDefinition : ScriptableObject
     {
-        public string Name => TypeResolver.ToTypeNameCase(name);
+        /// <summary>
+        /// The type corresponding to the class capable of initializing the planning systems for this problem definition.
+        /// Returns null if the type cannot be found, which can occur if code has not yet been generated.
+        /// </summary>
+        public Type SystemsProviderType =>
+            TypeResolver.TryGetType($"{TypeHelper.PlansQualifier}.{Name}.PlanningSystemsProvider", out var type) ? type : null;
+
+        internal string Name => TypeResolver.ToTypeNameCase(name);
 
 #pragma warning disable 0649
         [SerializeField]
@@ -43,22 +53,22 @@ namespace Unity.AI.Planner.Traits
         [SerializeField]
         [Tooltip("Multiplicative factor ([0 -> 1]) for discounting future rewards")]
         [Range(0, 1)]
-        public float DiscountFactor = 0.95f;
+        internal float DiscountFactor = 0.95f;
 #pragma warning restore 0649
 
-        public int DefaultEstimateLower
+        internal int DefaultEstimateLower
         {
             get => m_DefaultEstimateLower;
             set => m_DefaultEstimateLower = value;
         }
 
-        public int DefaultEstimateAverage
+        internal int DefaultEstimateAverage
         {
             get => m_DefaultEstimateAverage;
             set => m_DefaultEstimateAverage = value;
         }
 
-        public int DefaultEstimateUpper
+        internal int DefaultEstimateUpper
         {
             get => m_DefaultEstimateUpper;
             set => m_DefaultEstimateUpper = value;
@@ -76,10 +86,10 @@ namespace Unity.AI.Planner.Traits
             set => m_StateTerminationDefinitions = value.ToList();
         }
 
-        public string CustomCumulativeRewardEstimator
+        internal string CustomCumulativeRewardEstimator
         {
-            get { return m_CustomCumulativeRewardEstimator; }
-            set { m_CustomCumulativeRewardEstimator = value; }
+            get => m_CustomCumulativeRewardEstimator;
+            set => m_CustomCumulativeRewardEstimator = value;
         }
 
         Dictionary<string, TraitDefinition> m_TraitNameToDefinition;

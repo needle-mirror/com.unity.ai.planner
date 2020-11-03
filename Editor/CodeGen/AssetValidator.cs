@@ -16,16 +16,6 @@ namespace UnityEditor.AI.Planner.CodeGen
         internal bool CheckStateRepresentationAssetsValidity()
         {
             bool assetValid = true;
-
-            foreach (var enumeration in PlannerAssetDatabase.EnumDefinitions)
-            {
-                assetValid &= IsEnumAssetValid(enumeration);
-            }
-            foreach (var trait in PlannerAssetDatabase.TraitDefinitions)
-            {
-                assetValid &= IsTraitAssetValid(trait);
-            }
-
             if (!PlannerAssetDatabase.ProblemDefinitions.Any())
             {
                 errorLogged?.Invoke($"At least one Problem Definition must exist", null);
@@ -275,44 +265,6 @@ namespace UnityEditor.AI.Planner.CodeGen
             }
 
             return isValid;
-        }
-
-        internal bool IsEnumAssetValid(EnumDefinition enumeration)
-        {
-            bool enumValid = true;
-
-            // Check for duplicate enum values
-            List<string> declaredValueNames = new List<string>();
-            foreach (var value in enumeration.properties)
-            {
-                if (declaredValueNames.Contains(value.property_name))
-                {
-                    errorLogged?.Invoke($"{value} is a duplicated value name.", enumeration);
-                    enumValid = false;
-                }
-                else
-                    declaredValueNames.Add(value.property_name);
-            }
-            return enumValid;
-        }
-
-        internal bool IsTraitAssetValid(TraitDefinition trait)
-        {
-            bool traitValid = true;
-
-            // Check for duplicate field names
-            List<string> declaredTraitNames = new List<string>();
-            foreach (var field in trait.properties)
-            {
-                if (declaredTraitNames.Contains(field.property_name))
-                {
-                    errorLogged?.Invoke($"{field.property_name} is a duplicated Field name.", trait);
-                    traitValid = false;
-                }
-                else
-                    declaredTraitNames.Add(field.property_name);
-            }
-            return traitValid;
         }
     }
 }

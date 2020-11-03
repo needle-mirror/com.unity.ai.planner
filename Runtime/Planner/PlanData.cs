@@ -123,6 +123,20 @@ namespace Unity.AI.Planner
             return false;
         }
 
+        public void Clear(bool keepRootState = false)
+        {
+            if (StateDepthLookup.IsCreated)
+                StateDepthLookup.Clear();
+
+            if (BinnedStateKeyLookup.IsCreated)
+                BinnedStateKeyLookup.Clear();
+
+            PlanGraph.Clear();
+
+            if (keepRootState)
+                UpdateRootState(RootStateKey);
+        }
+
         public void Dispose(JobHandle jobHandle = default)
         {
             if (StateDepthLookup.IsCreated)

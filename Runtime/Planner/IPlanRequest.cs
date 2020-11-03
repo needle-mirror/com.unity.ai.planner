@@ -6,7 +6,7 @@ namespace Unity.AI.Planner
     /// <summary>
     /// An interface that marks an implementation of a plan request, a request to compute a plan
     /// </summary>
-    interface IPlanRequest
+    public interface IPlanRequest
     {
         /// <summary>
         /// The current status of the plan request

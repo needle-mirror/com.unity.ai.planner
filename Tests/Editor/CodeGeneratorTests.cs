@@ -6,7 +6,6 @@ using NUnit.Framework;
 using Unity.Semantic.Traits;
 using Unity.AI.Planner.Utility;
 using Unity.Semantic.Traits.Utility;
-using Unity.DynamicStructs;
 using UnityEditor.AI.Planner.CodeGen;
 using UnityEditor.AI.Planner.Utility;
 using UnityEditorInternal;

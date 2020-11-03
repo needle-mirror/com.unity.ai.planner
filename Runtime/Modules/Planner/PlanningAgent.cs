@@ -40,5 +40,11 @@ namespace Unity.AI.Planner.Traits
         {
             return true;
         }
+
+        /// <inheritdoc />
+        public override string ToString()
+        {
+            return "PlanningAgent";
+        }
     }
 }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using Unity.AI.Planner.Controller;
-using Unity.AI.Planner.Jobs;
 using Unity.Collections;
 using Unity.Entities;
 using UnityEngine;
@@ -9,31 +8,18 @@ using UnityEngine.Assertions;
 
 namespace Unity.AI.Planner.Traits
 {
-    abstract class BaseTraitBasedPlanExecutor<TObject, TStateKey, TStateData, TStateDataContext, TActionScheduler, TCumulativeRewardEstimator, TTerminationEvaluator, TStateManager, TActionKey, TDestroyStatesScheduler> : ITraitBasedPlanExecutor
+    abstract class BaseTraitBasedPlanExecutor<TObject, TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey> : ITraitBasedPlanExecutor
         where TObject : struct, ITraitBasedObject
         where TStateKey : struct, IEquatable<TStateKey>, IStateKey
+        where TActionKey : struct, IEquatable<TActionKey>, IActionKey
         where TStateData : struct, ITraitBasedStateData<TObject, TStateData>
         where TStateDataContext : struct, ITraitBasedStateDataContext<TObject, TStateKey, TStateData>
-        where TActionScheduler : struct, ITraitBasedActionScheduler<TObject, TStateKey, TStateData, TStateDataContext, TStateManager, TActionKey>
-        where TCumulativeRewardEstimator : struct, ICumulativeRewardEstimator<TStateData>
-        where TTerminationEvaluator : struct, ITerminationEvaluator<TStateData>
         where TStateManager : JobComponentSystem, ITraitBasedStateManager<TObject, TStateKey, TStateData, TStateDataContext>
-        where TActionKey : struct, IEquatable<TActionKey>, IActionKeyWithGuid
-        where TDestroyStatesScheduler : struct, IDestroyStatesScheduler<TStateKey, TStateData, TStateDataContext, TStateManager>
     {
-        class DecisionRuntimeInfo
+        struct DecisionRuntimeInfo
         {
             public float StartTimestamp;
-            public DecisionRuntimeInfo() => Reset();
             public void Reset() => StartTimestamp = Time.time;
-        }
-
-        internal struct ActionParameterInfo : IActionParameterInfo
-        {
-            public string ParameterName { get; set; }
-            public string TraitObjectName { get; set; }
-
-            public ObjectId TraitObjectId { get; set; }
         }
 
         /// <summary>
@@ -68,20 +54,6 @@ namespace Unity.AI.Planner.Traits
         IActionKey IPlanExecutor.CurrentActionKey => CurrentActionKey;
         protected TActionKey CurrentActionKey { get; set; }
 
-        /// <summary>
-        /// The object managing the scheduling of planning jobs.
-        /// </summary>
-        IPlannerScheduler IPlanExecutor.PlannerScheduler => PlannerScheduler;
-        protected PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, TCumulativeRewardEstimator, TTerminationEvaluator, TDestroyStatesScheduler> PlannerScheduler;
-
-        /// <summary>
-        /// The domain data.
-        /// </summary>
-        ITraitBasedStateConverter ITraitBasedPlanExecutor.StateConverter => m_StateConverter;
-        protected PlannerStateConverter<TObject, TStateKey, TStateData, TStateDataContext, TStateManager> m_StateConverter;
-
-
-
         protected MonoBehaviour m_Actor;
         protected TStateManager m_StateManager;
         protected ObjectCorrespondence m_PlanStateToGameStateIdLookup = new ObjectCorrespondence(1, Allocator.Persistent);
@@ -90,7 +62,7 @@ namespace Unity.AI.Planner.Traits
 
         DecisionRuntimeInfo m_DecisionRuntimeInfo;
         Coroutine m_CurrentActionCoroutine;
-        IActionExecutionInfo[] m_ActionExecuteInfos;
+        ActionExecutionInfo[] m_ActionExecuteInfos;
 
         Action<IActionKey> m_OnActionComplete;
         Action<IStateKey> m_OnTerminalStateReached;
@@ -98,33 +70,12 @@ namespace Unity.AI.Planner.Traits
 
         protected abstract void Act(TActionKey act);
         public abstract string GetActionName(IActionKey actionKey); //todo move to planWrapper
-        public abstract IActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey);
+        public abstract ActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey);
 
-
-        public virtual void Initialize(MonoBehaviour actor, ProblemDefinition problemDefinition, IActionExecutionInfo[] actionExecutionInfos)
+        public void SetExecutionSettings(MonoBehaviour actor, ActionExecutionInfo[] actionExecutionInfos, PlanExecutionSettings executionSettings, Action<IActionKey> onActionComplete = null, Action<IStateKey> onTerminalStateReached = null, Action<IStateKey> onUnexpectedState = null)
         {
             m_Actor = actor;
             m_ActionExecuteInfos = actionExecutionInfos;
-
-            // Setup world
-            var world = new World($"{actor.name} {actor.GetInstanceID()}");
-            m_StateManager = world.GetOrCreateSystem<TStateManager>();
-            world.GetOrCreateSystem<SimulationSystemGroup>().AddSystemToUpdateList(m_StateManager);
-            var playerLoop = UnityEngine.LowLevel.PlayerLoop.GetCurrentPlayerLoop();
-            ScriptBehaviourUpdateOrder.AddWorldToPlayerLoop(world, ref playerLoop);
-
-            // Setup scheduler - todo move this elsewhere
-            PlannerScheduler = new PlannerScheduler<TStateKey, TActionKey, TStateManager, TStateData, TStateDataContext, TActionScheduler, TCumulativeRewardEstimator, TTerminationEvaluator, TDestroyStatesScheduler>();
-            PlannerScheduler.Initialize(m_StateManager, new TCumulativeRewardEstimator(), new TTerminationEvaluator(), problemDefinition.DiscountFactor);
-
-            // Setup domain data
-            m_StateConverter = new PlannerStateConverter<TObject, TStateKey, TStateData, TStateDataContext, TStateManager>(problemDefinition, m_StateManager);
-
-            m_DecisionRuntimeInfo = new DecisionRuntimeInfo();
-        }
-
-        public void SetExecutionSettings(PlanExecutionSettings executionSettings, Action<IActionKey> onActionComplete = null, Action<IStateKey> onTerminalStateReached = null, Action<IStateKey> onUnexpectedState = null)
-        {
             m_ExecutionSettings = executionSettings;
             m_OnActionComplete = onActionComplete;
             m_OnTerminalStateReached = onTerminalStateReached;
@@ -273,7 +224,7 @@ namespace Unity.AI.Planner.Traits
             }
         }
 
-        protected IActionExecutionInfo GetExecutionInfo(string actionName)
+        protected ActionExecutionInfo GetExecutionInfo(string actionName)
         {
             for (int i = 0; i < m_ActionExecuteInfos.Length; i++)
             {
@@ -285,7 +236,7 @@ namespace Unity.AI.Planner.Traits
             return null;
         }
 
-        protected void StartAction(IActionExecutionInfo executionInfo, object[] arguments)
+        protected void StartAction(ActionExecutionInfo executionInfo, object[] arguments)
         {
             Assert.IsNull(m_CurrentActionCoroutine);
 
@@ -363,11 +314,6 @@ namespace Unity.AI.Planner.Traits
 
         public void Dispose()
         {
-            PlannerScheduler?.CurrentJobHandle.Complete();
-            if (m_StateConverter is IDisposable disposable)
-                disposable.Dispose();
-
-            PlannerScheduler?.Dispose();
             m_PlanStateToGameStateIdLookup.Dispose();
         }
     }

@@ -91,8 +91,8 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 Parameter = m_Parameter,
                 Trait = m_Trait ? m_Trait.GetNewDefinition() : null,
                 Value = m_Value,
-                TraitProperty = m_Trait ? m_Trait.GetNewDefinition().properties.FirstOrDefault(pd =>
-                    pd && pd.property_name == m_Trait.GetFieldName(m_TraitFieldId)) : null
+                TraitPropertyId = m_Trait ? m_Trait.GetNewDefinition().Properties.FirstOrDefault(pd =>
+                    pd.Name == m_Trait.GetFieldName(m_TraitFieldId)).Id : -1
             };
         }
     }

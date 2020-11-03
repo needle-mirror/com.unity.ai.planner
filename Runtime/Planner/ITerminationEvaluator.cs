@@ -1,11 +1,17 @@
 ﻿namespace Unity.AI.Planner
 {
     /// <summary>
-    /// An interface that marks an implementation of a state termination evaluator; Terminal states are not evaluated
-    /// further by the planner
+    /// An interface that marks an implementation of a state termination evaluator. Terminal states are not evaluated
+    /// further by the planner.
+    /// </summary>
+    public interface ITerminationEvaluator { }
+
+    /// <summary>
+    /// An interface that marks an implementation of a state termination evaluator. Terminal states are not evaluated
+    /// further by the planner.
     /// </summary>
     /// <typeparam name="TStateData"></typeparam>
-    interface ITerminationEvaluator<TStateData>
+    interface ITerminationEvaluator<TStateData> : ITerminationEvaluator
         where TStateData : struct
     {
         /// <summary>

@@ -167,6 +167,23 @@ namespace Unity.AI.Planner
                 StateTransitionInfoLookup.Capacity = Math.Max(StateTransitionInfoLookup.Count() + minimumFreeActionCapacity, StateTransitionInfoLookup.Capacity * 2);
         }
 
+        public void Clear()
+        {
+            if (ActionLookup.IsCreated)
+                ActionLookup.Clear();
+            if (ResultingStateLookup.IsCreated)
+                ResultingStateLookup.Clear();
+            if (PredecessorGraph.IsCreated)
+                PredecessorGraph.Clear();
+
+            if (StateInfoLookup.IsCreated)
+                StateInfoLookup.Clear();
+            if (ActionInfoLookup.IsCreated)
+                ActionInfoLookup.Clear();
+            if (StateTransitionInfoLookup.IsCreated)
+                StateTransitionInfoLookup.Clear();
+        }
+
         public void Dispose(JobHandle jobHandle = default)
         {
             if (ActionLookup.IsCreated)

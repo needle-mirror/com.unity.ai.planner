@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.AI.Planner;
 using Unity.AI.Planner.Traits;
-using Unity.AI.Planner.Controller;
 using UnityEngine;
 using {{ state_representation_qualifier }};
 using {{ state_representation_qualifier }}.{{ plan_name }};
@@ -40,7 +39,7 @@ namespace {{ namespace }}
         }
     }
 
-    class {{ plan_name }}Executor : BaseTraitBasedPlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, ActionScheduler, {{ reward_estimator }}, TerminationEvaluator, StateManager, ActionKey, DestroyStatesJobScheduler>
+    class {{ plan_name }}Executor : BaseTraitBasedPlanExecutor<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager, ActionKey>
     {
         static Dictionary<Guid, string> s_ActionGuidToNameLookup = new Dictionary<Guid,string>()
         {
@@ -49,16 +48,18 @@ namespace {{ namespace }}
             {{- end}}
         };
 
+        PlannerStateConverter<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager> m_StateConverter;
+
+        public  {{ plan_name }}Executor(StateManager stateManager, PlannerStateConverter<TraitBasedObject, StateEntityKey, StateData, StateDataContext, StateManager> stateConverter)
+        {
+            m_StateManager = stateManager;
+            m_StateConverter = stateConverter;
+        }
+
         public override string GetActionName(IActionKey actionKey)
         {
             s_ActionGuidToNameLookup.TryGetValue(((IActionKeyWithGuid)actionKey).ActionGuid, out var name);
             return name;
-        }
-
-        public override void Initialize(MonoBehaviour actor, ProblemDefinition problemDefinition, IActionExecutionInfo[] actionExecutionInfos)
-        {
-            base.Initialize(actor, problemDefinition, actionExecutionInfos);
-            m_StateManager.Destroying += () => PlannerScheduler.CurrentJobHandle.Complete();
         }
 
         protected override void Act(ActionKey actionKey)
@@ -154,7 +155,7 @@ namespace {{ namespace }}
             StartAction(executeInfos, arguments);
         }
 
-        public override IActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey)
+        public override ActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey)
         {
             string[] parameterNames = {};
             var stateData = m_StateManager.GetStateData((StateEntityKey)stateKey, false);
@@ -168,7 +169,7 @@ namespace {{ namespace }}
                 {{- end}}
             }
 
-            var parameterInfo = new IActionParameterInfo[parameterNames.Length];
+            var parameterInfo = new ActionParameterInfo[parameterNames.Length];
             for (var i = 0; i < parameterNames.Length; i++)
             {
                 var traitBasedObjectId = stateData.GetTraitBasedObjectId(((ActionKey)actionKey)[i]);

@@ -4,10 +4,9 @@ using System.Linq;
 using Unity.AI.Planner.Traits;
 using Unity.Semantic.Traits;
 using Unity.Entities;
-using Unity.DynamicStructs;
 using UnityEditor.AI.Planner.Editors;
 using UnityEngine;
-using ITrait = Unity.AI.Planner.Traits.ITrait;
+using ITrait = Unity.Semantic.Traits.ITrait;
 
 namespace UnityEditor.AI.Planner.Utility
 {
@@ -19,18 +18,23 @@ namespace UnityEditor.AI.Planner.Utility
         {
             var trait = operand.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition;
             if (trait == null)
-                return null;
-
-            var field = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
-            if (field == null)
-                return null;
-
-            // Enum from Planner asset may be not known ahead of time
-            var propertyType = field.property_type;
-            if (propertyType.AssemblyQualifiedName.StartsWith(Unity.Semantic.Traits.Utility.TypeResolver.EnumsQualifier))
             {
-                unknownType = propertyType.Name;
-                return typeof(Enum);
+                return null;
+            }
+
+            var field = operand.GetValue<OperandValue>().TraitProperty;
+            if (field == default || field.PropertyId == -1 || field.Type == null)
+                return null;
+
+            var propertyType = field.Type;
+            if (propertyType == typeof(Enum))
+            {
+                var propertyDefinition = field.GetPropertyDefinition();
+                if (propertyDefinition is EnumReferenceProperty enumReference)
+                {
+                    unknownType = enumReference.Reference.name;
+                    return field.Type;
+                }
             }
 
             if (propertyType.IsGenericType && typeof(List<>).IsAssignableFrom(propertyType.GetGenericTypeDefinition()))
@@ -50,7 +54,7 @@ namespace UnityEditor.AI.Planner.Utility
                 return elementType;
             }
 
-            return field.property_type;
+            return field.Type;
         }
 
         public static GUIContent GetOperandDisplayContent(SerializedProperty operand, SerializedProperty @operator,
@@ -88,10 +92,10 @@ namespace UnityEditor.AI.Planner.Utility
                 var traitName = traitDefinitionProperty.name;
                 operandString = AppendOperand(operandString, EditorStyleHelper.RichText(traitName, validTrait ? normalColor : errorColor));
 
-                var traitProperty = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
+                var traitProperty = operand.GetValue<OperandValue>().TraitProperty;
                 // Check if the value is a field of the selected Trait
-                bool validTraitValue = traitProperty != null;
-                var displayedTrait = validTraitValue ? traitProperty.property_name : "undefined";
+                bool validTraitValue = traitProperty != default && traitProperty.PropertyId != -1;
+                var displayedTrait = validTraitValue ? traitProperty.Name : "undefined";
 
                 operandString = AppendOperand(operandString, EditorStyleHelper.RichText(displayedTrait, validTraitValue ? normalColor : errorColor));
 
@@ -105,8 +109,7 @@ namespace UnityEditor.AI.Planner.Utility
                 {
                     operandString = EditorStyleHelper.RichText(enumProperty.name, normalColor, true);
 
-                    validValue = enumProperty.properties.Any(p => p.property_type == typeof(string)
-                        && p.property_name == valueProperty);
+                    validValue = enumProperty.Elements.Any(p => p.Name == valueProperty);
                 }
 
                 if (!string.IsNullOrEmpty(valueProperty))
@@ -156,11 +159,11 @@ namespace UnityEditor.AI.Planner.Utility
             if (trait == null)
                 return false;
 
-            var traitProperty = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
+            var traitProperty = operand.GetValue<OperandValue>().TraitProperty;
 
-            if (traitProperty != null)
+            if (traitProperty != default)
             {
-                var propertyType = traitProperty.property_type;
+                var propertyType = traitProperty.Type;
                 if (propertyType != null && propertyType.IsGenericType &&
                     typeof(List<>).IsAssignableFrom(propertyType.GetGenericTypeDefinition()))
                 {
@@ -221,11 +224,11 @@ namespace UnityEditor.AI.Planner.Utility
             if (trait == null)
                 return false;
 
-            var traitProperty = operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition;
+            var traitProperty = operand.GetValue<OperandValue>().TraitProperty;
 
-            if (traitProperty != null)
+            if (traitProperty != default && traitProperty.PropertyId != -1)
             {
-                var propertyType = traitProperty.property_type;
+                var propertyType = traitProperty.Type;
                 if (propertyType != null && propertyType.IsPrimitive)
                 {
                     switch (Type.GetTypeCode(propertyType))
@@ -261,7 +264,8 @@ namespace UnityEditor.AI.Planner.Utility
             if (GUI.Button(rect, content, EditorStyleHelper.listPopupStyle))
             {
                 var allowParameterSelection = expectedType != null &&
-                    (typeof(TraitBasedObjectId).IsAssignableFrom(expectedType) || expectedType == typeof(GameObject) || expectedType == typeof(Entity));
+                    (typeof(TraitBasedObjectId).IsAssignableFrom(expectedType)
+                        || expectedType == typeof(GameObject) || expectedType == typeof(Entity));
                 var allowTraitSelection = !allowParameterSelection && expectedType != null && typeof(ITrait).IsAssignableFrom(expectedType);
 
                 var popup = new OperandSelectorPopup(operand, parameters, allowParameterSelection, allowTraitSelection, onExpectedTypeChanged, expectedType, expectedUnknownType);
@@ -296,7 +300,7 @@ namespace UnityEditor.AI.Planner.Utility
         {
             operand.FindPropertyRelative("m_Parameter").stringValue = string.Empty;
             operand.FindPropertyRelative("m_Trait").objectReferenceValue = null;
-            operand.FindPropertyRelative("m_TraitProperty").objectReferenceValue = null;
+            operand.FindPropertyRelative("m_TraitPropertyId").intValue = -1;
             operand.FindPropertyRelative("m_Enum").objectReferenceValue =  null;
             operand.FindPropertyRelative("m_Value").stringValue = string.Empty;
 

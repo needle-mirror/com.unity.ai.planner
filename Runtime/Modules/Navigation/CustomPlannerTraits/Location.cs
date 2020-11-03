@@ -169,7 +169,7 @@ namespace Unity.AI.Planner.Traits
         /// <returns>A string that represents the location</returns>
         public override string ToString()
         {
-            return $"Location: {Position} {Forward} {TransformInstanceId}";
+            return $"Location:\n  Position: {Position}\n  Forward: {Forward}\n  TransformId: {TransformInstanceId}";
         }
     }
 }

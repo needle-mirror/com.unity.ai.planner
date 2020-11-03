@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.AI.Planner.Traits;
 using Unity.Semantic.Traits;
-using Unity.DynamicStructs;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
 
@@ -37,7 +36,7 @@ namespace UnityEditor.AI.Planner.Editors
             {
                 Parameter = property.FindPropertyRelative("m_Parameter").stringValue,
                 Trait = property.FindPropertyRelative("m_Trait").objectReferenceValue as TraitDefinition,
-                TraitProperty = property.FindPropertyRelative("m_TraitProperty").objectReferenceValue as PropertyDefinition,
+                TraitPropertyId = property.FindPropertyRelative("m_TraitPropertyId").intValue,
                 Enum = property.FindPropertyRelative("m_Enum").objectReferenceValue as EnumDefinition,
                 Value = property.FindPropertyRelative("m_Value").stringValue
             };
@@ -66,7 +65,7 @@ namespace UnityEditor.AI.Planner.Editors
                 // Add only parameters that allow valid fields selection
                 foreach (var parameter in parameters)
                 {
-                    if (parameter.RequiredTraits.Any(t => t.properties.Any(IsValidField)))
+                    if (parameter.RequiredTraits.Any(t => t.Properties.Any(IsValidField)))
                     {
                         m_ParameterValues.Add(parameter.Name);
                     }
@@ -101,38 +100,38 @@ namespace UnityEditor.AI.Planner.Editors
                     if (parameterDefinition != null)
                     {
                         var traits = parameterDefinition.RequiredTraits;
-                        var propertyValues = new List<(TraitDefinition, PropertyDefinition)>();
+                        var propertyValues = new List<(TraitDefinition, int)>();
                         foreach (var trait in traits)
                         {
                             if (trait == null)
                                 continue;
 
                             if (m_AllowTrait)
-                                propertyValues.Add((trait, null));
+                                propertyValues.Add((trait, -1));
 
                             if (m_ExpectedType != null)
                             {
-                                foreach (var field in trait.properties)
+                                foreach (var field in trait.Properties)
                                 {
                                     if (IsValidField(field))
-                                        propertyValues.Add((trait, field));
+                                        propertyValues.Add((trait, field.Id));
                                 }
                             }
                             else
                             {
-                                propertyValues.AddRange(trait.properties
-                                    .Select(field => (trait, field)));
+                                propertyValues.AddRange(trait.Properties
+                                    .Select(field => (trait, field.Id)));
                             }
                         }
 
                         if (propertyValues.Count > 0)
                         {
                             if (m_AllowParameter)
-                                propertyValues.Insert(0, (null, null));
+                                propertyValues.Insert(0, (null, -1));
 
-                            var propertyValue = (m_EditingOperand.Trait, TraitProperty: m_EditingOperand.TraitProperty);
+                            var propertyValue = (m_EditingOperand.Trait, TraitProperty: m_EditingOperand.TraitPropertyId);
                             var displayedOptions = propertyValues.Select(p =>
-                                p.Item1 == null ? "-" : p.Item2==null ? p.Item1.name : $"{p.Item1.name}.{p.Item2.property_name}").ToArray();
+                                p.Item1 == null ? "-" : p.Item2 == -1 ? p.Item1.name : $"{p.Item1.name}.{p.Item1.GetProperty(p.Item2)?.Name}").ToArray();
 
                             EditorGUI.BeginChangeCheck();
                             var propertyIndex = EditorGUILayout.Popup(GUIContent.none, propertyValues.IndexOf(propertyValue), displayedOptions);
@@ -144,7 +143,7 @@ namespace UnityEditor.AI.Planner.Editors
                                 m_EditingOperand.Clear();
                                 m_EditingOperand.Parameter = parameterDefinition.Name;
                                 m_EditingOperand.Trait = newValue.Item1;
-                                m_EditingOperand.TraitProperty = newValue.Item2;
+                                m_EditingOperand.TraitPropertyId = newValue.Item2;
                             }
                         }
                     }
@@ -154,9 +153,7 @@ namespace UnityEditor.AI.Planner.Editors
             }
 
             if (m_ExpectedType != null)
-            {
                 DrawFixedValue();
-            }
         }
 
         void DrawFixedValue()
@@ -166,21 +163,13 @@ namespace UnityEditor.AI.Planner.Editors
 
             if (m_ExpectedType == typeof(Enum))
             {
-                if (isFixedValue && m_EditingOperand.Enum)
-                {
-                    fixedValue = $"{m_EditingOperand.Enum.name}.{fixedValue}";
-                }
-
-                var enumShortName = m_ExpectedUnknownType;
-                if (enumShortName.Contains("."))
-                {
-                    var enumsNamespaceLength = Unity.Semantic.Traits.Utility.TypeResolver.EnumsQualifier.Length;
-                    m_ExpectedUnknownType.Substring(enumsNamespaceLength, m_ExpectedUnknownType.Length - enumsNamespaceLength);
-                }
-                var enumDefinition = PlannerAssetDatabase.EnumDefinitions.FirstOrDefault(d => d.name == enumShortName);
+                var enumDefinition = PlannerAssetDatabase.EnumDefinitions.FirstOrDefault(d => d.name == m_ExpectedUnknownType);
                 if (enumDefinition != null)
                 {
-                    var values = enumDefinition.properties.Select(e => $"{enumShortName}.{e.property_name}").ToList();
+                    if (isFixedValue)
+                        fixedValue = $"{enumDefinition.name}.{fixedValue}";
+
+                    var values = enumDefinition.Elements.Select(e => $"{enumDefinition.name}.{e.Name}").ToList();
 
                     BeginSection(k_SectionFixedValue, values.Contains(fixedValue));
                     EditorGUI.BeginChangeCheck();
@@ -190,14 +179,15 @@ namespace UnityEditor.AI.Planner.Editors
                     {
                         m_EditingOperand.Clear();
                         m_EditingOperand.Enum = enumDefinition;
-                        m_EditingOperand.Value = enumDefinition.properties.ToArray()[enumIndex].property_name;
+                        m_EditingOperand.Value = enumDefinition.Elements.ToArray()[enumIndex].Name;
                     }
 
                     EndSection();
                 }
+
                 return;
             }
-            else if (m_ExpectedType == typeof(GameObject))
+            else if (m_ExpectedType == typeof(TraitBasedObjectId))
             {
                 EditorGUI.BeginChangeCheck();
 
@@ -302,14 +292,14 @@ namespace UnityEditor.AI.Planner.Editors
             }
         }
 
-        bool IsValidField(PropertyDefinition field)
+        bool IsValidField(TraitPropertyDefinition field)
         {
-            if (field.property_type == m_ExpectedType)
+            if (field.Type == m_ExpectedType)
             {
                 return true;
             }
 
-            return m_ExpectedType == typeof(Enum) && field.property_type.FullName.StartsWith(Unity.Semantic.Traits.Utility.TypeResolver.EnumsQualifier);
+            return m_ExpectedType == typeof(Enum) && field.Type.FullName.StartsWith(Unity.Semantic.Traits.Utility.TypeResolver.EnumsQualifier);
         }
 
         static void BeginSection(string title, bool sectionInUse)
@@ -330,7 +320,7 @@ namespace UnityEditor.AI.Planner.Editors
 
             m_Property.FindPropertyRelative("m_Parameter").stringValue = m_EditingOperand.Parameter;
             m_Property.FindPropertyRelative("m_Trait").objectReferenceValue = m_EditingOperand.Trait;
-            m_Property.FindPropertyRelative("m_TraitProperty").objectReferenceValue = m_EditingOperand.TraitProperty;
+            m_Property.FindPropertyRelative("m_TraitPropertyId").intValue = m_EditingOperand.TraitProperty.PropertyId;
             m_Property.FindPropertyRelative("m_Enum").objectReferenceValue = m_EditingOperand.Enum;
             m_Property.FindPropertyRelative("m_Value").stringValue = m_EditingOperand.Value;
             m_Property.serializedObject.ApplyModifiedProperties();
@@ -345,3 +335,4 @@ namespace UnityEditor.AI.Planner.Editors
         }
     }
 }
+

@@ -27,6 +27,8 @@ MonoImporter:
   - m_TemplateTrait: {fileID: 4900000, guid: ea72ba89ab2c80241a8a4e9d390f99b7, type: 3}
   - m_TemplatePlanExecutor: {fileID: 4900000, guid: c0815597e284fbc4faa054f4b8273a9a,
       type: 3}
+  - m_TemplateSystemsProvider: {fileID: 4900000, guid: 5d59e22dff2bf0b44a5b03084274dd71,
+      type: 3}
   - m_TemplatePackage: {fileID: 4900000, guid: ee17fffe131ff934b8e256d955fbeaba, type: 3}
   - m_TemplateAsmRef: {fileID: 4900000, guid: 9e4892309f31f449a86295325205c63b, type: 3}
   executionOrder: 0

@@ -6,19 +6,24 @@ using Unity.Jobs;
 
 namespace Unity.AI.Planner.Tests.Integration
 {
+    using CountToScheduler = PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, CountToCumulativeRewardEstimator, CountToTerminationEvaluator, DestroyIntsScheduler>;
+    using DefaultScheduler = PlannerScheduler<int, int, TestStateManager, int, TestStateDataContext, CountToActionScheduler, DefaultCumulativeRewardEstimator<int>, DefaultTerminalStateEvaluator<int>, DestroyIntsScheduler>;
+
+    struct DestroyIntsScheduler : IDestroyStatesScheduler<int, int, TestStateDataContext, TestStateManager>
+    {
+        public TestStateManager StateManager { get; set; }
+        public NativeQueue<int> StatesToDestroy { get; set; }
+        public JobHandle Schedule(JobHandle inputDeps)
+        {
+            return inputDeps;
+        }
+    }
+
     [Category("Integration")]
     [TestFixture]
     class PlannerSchedulerTests
     {
-        struct DestroyIntsScheduler : IDestroyStatesScheduler<int, int, TestStateDataContext, TestStateManager>
-        {
-            public TestStateManager StateManager { get; set; }
-            public NativeQueue<int> StatesToDestroy { get; set; }
-            public JobHandle Schedule(JobHandle inputDeps)
-            {
-                return inputDeps;
-            }
-        }
+
 
         [Test]
         public void TestTenIterations()
@@ -76,8 +81,8 @@ namespace Unity.AI.Planner.Tests.Integration
             scheduler.UpdatePlanRequestRootState(1);
             scheduler.CurrentJobHandle.Complete();
 
-            var planRootState = scheduler.planData.RootStateKey;
-            var zeroInPlan = scheduler.planData.StateDepthLookup.ContainsKey(k_RootState);
+            var planRootState = scheduler.m_PlanData.RootStateKey;
+            var zeroInPlan = scheduler.m_PlanData.StateDepthLookup.ContainsKey(k_RootState);
             request.Dispose();
             scheduler.Dispose();
 

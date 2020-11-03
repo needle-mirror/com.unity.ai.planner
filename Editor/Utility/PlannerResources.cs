@@ -17,6 +17,7 @@ class PlannerResources : ScriptableSingleton<PlannerResources>
     public TextAsset TemplateTermination => m_TemplateTermination;
     public TextAsset TemplateTrait => m_TemplateTrait;
     public TextAsset TemplatePlanExecutor => m_TemplatePlanExecutor;
+    public TextAsset TemplateSystemsProvider => m_TemplateSystemsProvider;
     public TextAsset TemplatePackage => m_TemplatePackage;
     public TextAsset TemplateAsmRef => m_TemplateAsmRef;
 
@@ -49,6 +50,8 @@ class PlannerResources : ScriptableSingleton<PlannerResources>
     TextAsset m_TemplateTrait;
     [SerializeField]
     TextAsset m_TemplatePlanExecutor;
+    [SerializeField]
+    TextAsset m_TemplateSystemsProvider;
     [SerializeField]
     TextAsset m_TemplatePackage;
     [SerializeField]

@@ -869,8 +869,6 @@ namespace {{ namespace }}
             if (!m_ObjectCorrespondence.IsCreated)
                 m_ObjectCorrespondence = new ObjectCorrespondence(x.TraitBasedObjectIds.Length, Allocator.Temp);
 
-            m_ObjectCorrespondence.Initialize(x.TraitBasedObjectIds, y.TraitBasedObjectIds);
-
             return x.TryGetObjectMapping(y, m_ObjectCorrespondence);
         }
 

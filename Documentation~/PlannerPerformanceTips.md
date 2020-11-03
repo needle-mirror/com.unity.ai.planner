@@ -7,17 +7,37 @@ lengthen start-up time due to extra compilation, especially if *Synchronous Comp
 ![Burst](images/EnableBurst.png)
 
 ## Limiting Agent Perception
-Limit the number of objects the agent perceives/reasons about. The most straightforward way to do this is through the "World query" on the decision controller. If you've set "Next State Update" to "Use World State" on your actions in the DecisionController, the agent will query the scene's game objects to update its world state. You can build this query in the last section of the DecisionController.
+Limit the number of objects the agent perceives/reasons about. The most straightforward way to do this is through the "World query" on the decision controller. If you've set "Next State Update" to "Use World State" on your actions in the [DecisionController](xref:Unity.AI.Planner.Controller.DecisionController), the agent will query the scene's game objects to update its world state. You can build this query in the last section of the DecisionController.
 
 ## Planning and Execution Settings
 Use advanced settings in order to manually control when and how much search occurs. You can access these settings via the cog on the DecisionController component, as shown below. Each of the settings has a tooltip. 
 
 ![Advanced Settings](images/AdvancedSettings.png)
 
+A brief overview of the planner settings:
+* Plan Iterations Per Update - How many iterations of planning occur each time planning is scheduled.
+* State Expansion Budget Per Iteration - How many states are expanded at each planning iteration.
+* Use Custom Planning Frequency / Minimum Frames Per Planning Update - schedule planning every X frames.
+* Cap Plan Size / Maximum States in Plan - A threshold of plan size after which no more planning will occur.
+* Stop Planning When Tolerance Achieved / Root Estimated Reward Tolerance - A threshold for the convergence of the plan's estimated cumulative reward. When the value estimate range falls below the threshold, planning will stop.
+* Graph Selection / Graph Backpropagation Job Modes - Specifies the type of planning job used for selecting states to expand and updating reward values. Options: sequential (single-core job) or parallel (multi-core job).   
+  
+
 A few common tips:
 * If planning occurs too often, reduce the frequency. 
 * If your plans are larger than needed, try capping the plan size. 
 * If your plans are necessarily large, try out the parallel selection and backpropagation job modes, which operate more efficiently on large plans but less efficiently on small plans.
+
+
+
+Plan execution modes:
+* Act Immediately - Execute the next action in the plan immediately.
+* Wait for Manual Execution Call - The controller will not execute the next step of the plan until `DecisionController.UpdateExecutor(forceAct: true)` is called (note the optional argument). 
+* Wait for Plan Completion - The controller will not act until the best current plan ends in a terminal state, as defined by the termination criteria on the [ProblemDefinition](xref:Unity.AI.Planner.Traits.ProblemDefinition). 
+* Wait for Maximum Decision Tolerance - Execute an action only once the plan's cumulative reward estimate has converged to a given tolerance.
+* Wait for Minimum Plan Size - Execute an action only once the plan graph has either resolved a complete plan **or** grown in size to the specified threshold of states. 
+* Wait for Minimum Planning Time - The controller will delay execution until enough planning time (in seconds) has passed.
+
 
 ## Designing a Custom Cumulative Reward Estimator
 The amount of search required to find a successful plan can be directly related to the quality of the cumulative reward estimator used. Custom cumulative reward estimators allow users to incorporate domain-knowledge about their game and planning problem to improve search. 

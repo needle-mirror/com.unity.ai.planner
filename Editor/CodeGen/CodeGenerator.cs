@@ -6,11 +6,10 @@ using System.Reflection;
 using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Utility;
 using Unity.Semantic.Traits.Utility;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
+using Unity.Semantic.Traits;
 using UnityEditor.AI.Planner.Utility;
 using UnityEngine;
-using ICustomTrait = Unity.AI.Planner.Traits.ICustomTrait;
 using TraitDefinition = Unity.Semantic.Traits.TraitDefinition;
 
 namespace UnityEditor.AI.Planner.CodeGen
@@ -81,26 +80,29 @@ namespace UnityEditor.AI.Planner.CodeGen
                 GenerateActionScheduler(plan, plan.Name, outputPath);
 
                 GeneratePlanner(plan, plan.Name, outputPath, anyEnums);
+
+                GenerateSystemsProvider(plan, plan.Name, outputPath);
             }
 
             // Make a copy, so this is re-entrant
             return m_GeneratedFilePaths.ToList();
         }
 
-        Type GetConvertedType(Type type)
+        static string GetRuntimePropertyType(TraitPropertyDefinition property)
         {
-            if (type == typeof(GameObject) || type == typeof(Entity))
-                return typeof(TraitBasedObjectId);
+            if (property.Type == typeof(GameObject) || property.Type == typeof(Entity))
+                return TypeResolver.GetUnmangledName(typeof(TraitBasedObjectId));
 
-            return Unity.Semantic.Traits.Utility.TypeResolver.GetBlittableTypeEquivalent(type);
+            var descriptor = Semantic.Traits.CodeGen.CodeGenerator.GetTraitDescriptorData(property);
+            return descriptor?.RuntimeType;
         }
 
         void GenerateTrait(TraitDefinition trait, string outputPath, bool includeEnums = false)
         {
-            var fields = trait.properties.Select(p => new
+            var fields = trait.Properties.Select(p => new
             {
-                field_type = Unity.Semantic.Traits.Utility.TypeResolver.GetUnmangledName(GetConvertedType(p.property_type)),
-                field_name = p.property_name
+                field_type = GetRuntimePropertyType(p),
+                field_name = p.Name
             });
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateTrait, new
@@ -118,20 +120,20 @@ namespace UnityEditor.AI.Planner.CodeGen
         {
             var traits = problemDefinition.GetTraitsUsed()
                     .Append(PlannerAssetDatabase.TraitDefinitions.FirstOrDefault(t => t.name == nameof(PlanningAgent)))
+                    .Distinct()
                     .Where(t => t != null)
                     .Select(t => new
                     {
                         name = t.name,
-                        relations = t.properties.Where(p =>
-                                p.property_type == typeof(GameObject) || p.property_type == typeof(Entity))
-                            .Select(p => new { name = p.property_name }),
-                        attributes = t.properties.Where(p =>
-                                p.property_type != typeof(GameObject) && p.property_type != typeof(Entity)
-                            && (p.property_type == null // It's possible the type isn't available for reflection, so just assume it's blittable for now
-                            || UnsafeUtility.IsUnmanaged(GetConvertedType(p.property_type)))).Select(p => new
+                        relations = t.Properties.Where(p =>
+                                p.Type == typeof(GameObject) || p.Type == typeof(Entity))
+                            .Select(p => new { name = p.Name }),
+                        attributes = t.Properties.Where(p =>
+                                p.Type != typeof(GameObject) && p.Type != typeof(Entity) && GetRuntimePropertyType(p) != null)
+                            .Select(p => new
                         {
-                            field_type = Unity.Semantic.Traits.Utility.TypeResolver.GetUnmangledName(GetConvertedType(p.property_type)),
-                            field_name = p.property_name
+                            field_type = GetRuntimePropertyType(p),
+                            field_name = p.Name
                         })
                     });
 
@@ -265,6 +267,22 @@ namespace UnityEditor.AI.Planner.CodeGen
             SaveToFile(Path.Combine(outputPath, TypeHelper.PlansQualifier, planName, $"{definition.name}Executor.cs"), result);
         }
 
+        void GenerateSystemsProvider(ProblemDefinition definition, string planName, string outputPath)
+        {
+            var customHeuristic = definition.CustomCumulativeRewardEstimator;
+            var heuristicTypeName = string.IsNullOrEmpty(customHeuristic) ? "DefaultHeuristic" : $"global::{customHeuristic}";
+
+            var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateSystemsProvider, new
+            {
+                @namespace = $"{TypeHelper.PlansQualifier}.{planName}",
+                plan_name = definition.Name,
+                heuristic = heuristicTypeName,
+                state_representation_qualifier = TypeHelper.StateRepresentationQualifier
+            });
+
+            SaveToFile(Path.Combine(outputPath, TypeHelper.PlansQualifier, planName, "PlannerSystemsProvider.cs"), result);
+        }
+
         void GenerateAction(ActionDefinition action, string planName, Type[] customTypes, string outputPath, bool includeEnums = false)
         {
             var parameterNames = action.Parameters.Select(p => p.Name).ToList();
@@ -284,7 +302,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                 operand_a = GetPreconditionOperandString(p.OperandA, p.Operator, parameterNames),
                 operand_b = GetPreconditionOperandString(p.OperandB, p.Operator, parameterNames),
                 is_list_method = p.OperandA.Trait != null && p.OperandA.TraitProperty != null
-                                                             && IsListType(p.OperandA.TraitProperty.property_type)
+                                                             && IsListType(p.OperandA.TraitProperty.Type)
                                                              && p.Operator.Contains("contains"),
                 loop_index = Mathf.Max(parameterNames.FindIndex(name => name == p.OperandA.Parameter),
                     parameterNames.FindIndex(name => name == p.OperandB.Parameter))
@@ -414,7 +432,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
                     var paramA = operandA.Parameter;
                     var traitA = operandA.Trait.name;
-                    var fieldA = operandA.TraitPropertyName;
+                    var fieldA = operandA.TraitProperty.Name;
 
                     requiredTraitBuffers.Add(traitA);
 
@@ -428,7 +446,7 @@ namespace UnityEditor.AI.Planner.CodeGen
 
                     modifierLines.Add($"var @{traitA} = new{traitA}Buffer[{objectAPrefix}{paramA}Object.{traitA}Index];");
 
-                    var operandAType = operandA.TraitProperty.property_type;
+                    var operandAType = operandA.TraitProperty.Type;
                     var isListOperation = operandAType != null && IsListType(operandAType);
 
                     if (operandB.Trait == null)
@@ -459,7 +477,7 @@ namespace UnityEditor.AI.Planner.CodeGen
                     else
                     {
                         string traitB = operandB.Trait.name;
-                        string fieldB = operandB.TraitPropertyName;
+                        string fieldB = operandB.TraitProperty.Name;
 
                         requiredTraitBuffers.Add(traitB);
 
@@ -576,11 +594,11 @@ namespace UnityEditor.AI.Planner.CodeGen
             }
 
             var precondition =  $"{operand.Trait.name}Buffer[{operand.Parameter}Object.{operand.Trait.name}Index]";
-            if (!string.IsNullOrEmpty(operand.TraitPropertyName))
+            if (!string.IsNullOrEmpty(operand.TraitProperty.Name))
             {
-                precondition += $".{operand.TraitPropertyName}";
+                precondition += $".{operand.TraitProperty.Name}";
 
-                var operandPropertyType = operand.TraitProperty.property_type;
+                var operandPropertyType = operand.TraitProperty.Type;
                 if (IsListType(operandPropertyType))
                 {
                     if (IsComparisonOperator(@operator))

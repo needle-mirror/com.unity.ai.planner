@@ -22,24 +22,21 @@ namespace Unity.AI.Planner.Traits
         NativeHashMap<TraitBasedObjectId, Entity> m_ObjectIdToEntity;
         TStateManager m_StateManager;
 
-        ProblemDefinition m_Definition;
-
         // Used locally for caching purposes
         Dictionary<ObjectId, TObject> m_ObjectIdToObject = new Dictionary<ObjectId, TObject>();
         Dictionary<Entity, TraitBasedObjectId> m_EntityToObjectId = new Dictionary<Entity, TraitBasedObjectId>();
-
         NativeHashMap<ComponentType, ComponentType> m_TypeLookup;
         public PlannerStateConverter(ProblemDefinition problemDefinition, TStateManager stateManager)
         {
-            m_Definition = problemDefinition;
             m_StateManager = stateManager;
             m_ObjectIdToEntity = new NativeHashMap<TraitBasedObjectId, Entity>(1, Allocator.Persistent);
-            BuildTypeCorrespondence();
+
+            BuildTypeCorrespondence(problemDefinition);
         }
 
-        void BuildTypeCorrespondence()
+        void BuildTypeCorrespondence(ProblemDefinition problemDefinition)
         {
-            var traitDefinitions = m_Definition.GetTraitsUsed().ToArray();
+            var traitDefinitions = problemDefinition.GetTraitsUsed().ToArray();
 
             m_TypeLookup = new NativeHashMap<ComponentType, ComponentType>(traitDefinitions.Length, Allocator.Persistent);
 
@@ -120,7 +117,10 @@ namespace Unity.AI.Planner.Traits
                     plannerTypes.Add(typeof(PlanningAgent));
 
                 TObject traitBasedObject;
-                var entityName = sourceEntityManager.GetName(entity);
+                FixedString64 entityName = default;
+#if UNITY_EDITOR
+                entityName= sourceEntityManager.GetName(entity);
+#endif
                 if (m_EntityToObjectId.TryGetValue(entity, out var traitBasedObjectId))
                 {
                     state.AddObject(plannerTypes, out traitBasedObject, traitBasedObjectId, entityName);

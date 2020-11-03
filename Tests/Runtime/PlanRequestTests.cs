@@ -22,7 +22,7 @@ namespace Unity.AI.Planner.Tests
 
             m_StateManager = KeyDomainUtility.StateManager;
             m_Scheduler = new KeyDomainScheduler();
-            m_Scheduler.Initialize(m_StateManager, terminationEvaluator: default);
+            m_Scheduler.Initialize(m_StateManager);
         }
 
         [TearDown]

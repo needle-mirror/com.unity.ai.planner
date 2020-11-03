@@ -1,10 +1,15 @@
 ﻿namespace Unity.AI.Planner
 {
     /// <summary>
+    /// An interface that marks an implementation of a cumulative reward estimator
+    /// </summary>
+    public interface ICumulativeRewardEstimator { }
+
+    /// <summary>
     /// An interface that marks an implementation of a cumulative reward estimator for states in a specific domain
     /// </summary>
     /// <typeparam name="TStateData"></typeparam>
-    public interface ICumulativeRewardEstimator<TStateData>
+    public interface ICumulativeRewardEstimator<TStateData> : ICumulativeRewardEstimator
         where TStateData : struct
     {
         /// <summary>

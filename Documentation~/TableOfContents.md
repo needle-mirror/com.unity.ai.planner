@@ -7,5 +7,6 @@
   * [Configuring the scene](ConfigureScene.md)
  * Debugging and Advanced Usage
   * [Visualizing a plan](PlanVisualizer.md)
-  * [Custom planner extensions](CustomPlannerExtensions.md)  
+  * [Custom planner extensions](CustomPlannerExtensions.md) 
   * [Improving performance](PlannerPerformanceTips.md)
+  * [Experimental API](CodeAPI.md)

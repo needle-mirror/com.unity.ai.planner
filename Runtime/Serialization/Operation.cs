@@ -1,7 +1,6 @@
 #if !UNITY_DOTSPLAYER
 using Unity.Semantic.Traits;
 using System;
-using Unity.DynamicStructs;
 using UnityEngine;
 
 namespace Unity.AI.Planner.Traits
@@ -16,7 +15,7 @@ namespace Unity.AI.Planner.Traits
         TraitDefinition m_Trait;
 
         [SerializeField]
-        PropertyDefinition m_TraitProperty;
+        int m_TraitPropertyId = -1;
 
         [SerializeField]
         EnumDefinition m_Enum;
@@ -36,13 +35,13 @@ namespace Unity.AI.Planner.Traits
             set => m_Trait = value;
         }
 
-        public string TraitPropertyName => m_TraitProperty ? m_TraitProperty.property_name : string.Empty;
-
-        public PropertyDefinition TraitProperty
+        public int TraitPropertyId
         {
-            get => m_TraitProperty;
-            set => m_TraitProperty = value;
+            get => m_TraitPropertyId;
+            set => m_TraitPropertyId = value;
         }
+
+        public TraitPropertyHandle TraitProperty => new TraitPropertyHandle(m_Trait, m_TraitPropertyId);
 
         public EnumDefinition Enum
         {
@@ -62,7 +61,7 @@ namespace Unity.AI.Planner.Traits
             m_Trait = null;
             m_Enum = null;
             m_Value = string.Empty;
-            m_TraitProperty = null;
+            m_TraitPropertyId = -1;
         }
 
         public override string ToString()
@@ -71,9 +70,9 @@ namespace Unity.AI.Planner.Traits
                 return $"{m_Enum.name}.{m_Value}";
 
             if (m_Trait != null)
-                return TraitPropertyName == null ?
+                return m_TraitPropertyId == -1 ?
                     $"{m_Parameter}.{m_Trait.name}" :
-                    $"{m_Parameter}.{m_Trait.name}.{TraitPropertyName}";
+                    $"{m_Parameter}.{m_Trait.name}.{TraitProperty.Name}";
 
             if (!string.IsNullOrEmpty(m_Parameter))
                 return m_Parameter;

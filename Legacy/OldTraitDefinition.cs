@@ -10,7 +10,7 @@ using UnityEngine;
 #if UNITY_EDITOR
 using System.IO;
 using Unity.Semantic.Traits.Utility;
-using Unity.DynamicStructs;
+using UnityEditor.Semantic.Traits.Utility;
 using UnityEditor;
 #endif
 
@@ -104,17 +104,12 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         [ContextMenu("Convert")]
         void Convert()
         {
-            var definition = DynamicStruct.Create<TraitDefinition>();
+            TraitAssetDatabase.Refresh();
 
-            // Have to save the asset first before adding properties
-            var assetPath = AssetDatabase.GetAssetPath(this);
-            var directory = Path.Combine(Path.GetDirectoryName(assetPath), "New");
-            var fileName = Path.GetFileName(assetPath);
+			var definition = ScriptableObject.CreateInstance<TraitDefinition>();
 
-            var newPath = Path.Combine(directory, fileName);
-            Directory.CreateDirectory(directory);
-            AssetDatabase.CreateAsset(definition, newPath);
-
+            int id = 0;
+            var properties = new List<TraitPropertyDefinition>();
             foreach (var field in m_Fields)
             {
                 var fieldType = field.FieldType != null ? field.FieldType :
@@ -129,16 +124,49 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
                 {
                     var type = fieldType == typeof(SemanticObjectData) || fieldType == typeof(TraitBasedObjectId) ?
                         typeof(GameObject) : fieldType;
-                    var property = definition.CreateProperty(type, field.Name);
+
                     var defaultValue = field.DefaultValue.GetValue(type);
-                    if (!defaultValue.Equals(null) && (defaultValue is long defaultNum) && defaultNum != 0)
-                        property.SetValue(defaultValue);
+
+                    if (fieldType == typeof(bool))
+                        properties.Add(new BooleanProperty { Value = (bool)defaultValue, Name = field.Name, Id = id++});
+                    else if (fieldType == typeof(float))
+                        properties.Add(new FloatProperty { Value = (float)defaultValue, Name = field.Name, Id = id++});
+                    else if (fieldType == typeof(int))
+                        properties.Add(new IntProperty { Value = (int)defaultValue, Name = field.Name, Id = id++});
+                    else if (fieldType == typeof(long))
+                        properties.Add(new IntProperty { Value = System.Convert.ToInt32(defaultValue), Name = field.Name, Id = id++});
+                    else if (fieldType == typeof(string))
+                        properties.Add(new StringProperty { Value = (string)defaultValue, Name = field.Name, Id = id++});
+                    else if (typeof(TraitBasedObjectId).IsAssignableFrom(fieldType))
+                        properties.Add(new ObjectReferenceProperty { Name = field.Name, Id = id++});
+                    else
+                        Debug.LogError($"No conversion for type {field.Type}");
+                }
+                else if (field.Type.StartsWith("Generated.AI.Planner.StateRepresentation.Enums."))
+                {
+                    var enumAsset = TraitAssetDatabase.EnumDefinitions.FirstOrDefault(e => e.name == field.Type.Substring("Generated.AI.Planner.StateRepresentation.Enums.".Length));
+                    if (enumAsset != default)
+                        properties.Add(new EnumReferenceProperty() { Name = field.Name, Id = id++, Reference = enumAsset, Value = (int)field.DefaultValue.IntValue});
+                }
+                else if (field.Type == "Unity.AI.Planner.DomainLanguage.TraitBased.TraitBasedObjectId")
+                {
+                    properties.Add(new ObjectReferenceProperty { Name = field.Name, Id = id++});
                 }
                 else
                 {
                     Debug.LogError($"Couldn't find type {field.Type}");
                 }
             }
+
+            definition.Properties = properties;
+
+            var assetPath = AssetDatabase.GetAssetPath(this);
+            var directory = Path.Combine(Path.GetDirectoryName(assetPath), "New");
+            var fileName = Path.GetFileName(assetPath);
+
+            var newPath = Path.Combine(directory, fileName);
+            Directory.CreateDirectory(directory);
+            AssetDatabase.CreateAsset(definition, newPath);
         }
 
         const string k_BuildMenuTitle = "AI/Planner/Upgrader/2. Convert Old Traits to New";

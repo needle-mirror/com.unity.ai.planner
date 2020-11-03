@@ -20,7 +20,7 @@ The plan visualizer has a simple inspector to view the state data for a node. Cl
 ![Inspector](images/PlanVisualizerInspector.png)
 
 
-By default, the plan visualizer limits the number of branches shown for each state, which can be set using the slider at the top of the window. This set of actions represents the best *N* actions, according to predicted cumulative reward from each action through the end of the plan. On occasion, it is useful to explore lower ranking actions. You can include such actions by selecting them in the **Successor Actions** foldout. 
+By default, the plan visualizer limits the number of branches shown for each state, which can be set using the slider at the top of the window. This set of actions represents the best *N* actions, according to predicted cumulative reward from each action through the end of the plan. On occasion, it is useful to explore lower ranking actions. You can include such actions by selecting them in the **Actions** foldout. 
 
 Below is a view of a plan limited to the top 2 actions, but for the middle state, two additional actions have been selected, as you can see in the side panel. 
 

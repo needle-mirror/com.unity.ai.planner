@@ -6,7 +6,6 @@ using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Utility;
 using Unity.Semantic.Traits;
 using Unity.Semantic.Traits.Queries;
-using Unity.Semantic.Traits.Utility;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -110,7 +109,7 @@ namespace Unity.AI.Planner.Controller
             set
             {
                 m_ExecutionSettings = value;
-                m_PlanExecutor?.SetExecutionSettings(value, OnActionComplete, OnTerminalStateReached, OnUnexpectedState);
+                m_PlanExecutor?.SetExecutionSettings(this, m_ActionExecuteInfos, value, OnActionComplete, OnTerminalStateReached, OnUnexpectedState);
             }
         }
 
@@ -149,7 +148,7 @@ namespace Unity.AI.Planner.Controller
         /// </summary>
         public PlanExecutionStatus PlanExecutionStatus => m_PlanExecutor.Status;
 
-        SemanticObject m_PlanningAgent;
+        SemanticObject m_PlanningAgentObject;
 
         string Name => $"{gameObject.name} {gameObject.GetInstanceID()}";
 
@@ -158,9 +157,9 @@ namespace Unity.AI.Planner.Controller
         /// </summary>
         public void Initialize()
         {
-            if (m_PlanExecutor != null)
+            if (Initialized)
             {
-                Debug.LogWarning("Plan executor instance already created");
+                Debug.LogWarning("DecisionController already initialized.");
                 return;
             }
 
@@ -171,49 +170,29 @@ namespace Unity.AI.Planner.Controller
                 return;
             }
 
-            var planExecutorTypeName = $"{TypeHelper.PlansQualifier}.{m_ProblemDefinition.Name}.{m_ProblemDefinition.Name}Executor,{TypeHelper.PlansQualifier}";
-            if (!TypeResolver.TryGetType(planExecutorTypeName, out var executorType))
+            var systemsProviderType = m_ProblemDefinition.SystemsProviderType;
+            if (systemsProviderType == null)
             {
-                Debug.LogError($"Cannot find type {planExecutorTypeName}");
+                Debug.LogError($"Planner systems provider not found. Have you generated the code (AI->Planner->Build)?");
                 enabled = false;
                 return;
             }
+            var systemsProvider = (IPlanningSystemsProvider) Activator.CreateInstance(systemsProviderType);
+            systemsProvider.Initialize(m_ProblemDefinition, Name);
 
-            m_PlanExecutor = (ITraitBasedPlanExecutor)Activator.CreateInstance(executorType);
-            if (m_PlanExecutor == null)
-            {
-                Debug.LogError($"Unable to create an instance of {planExecutorTypeName}");
-                enabled = false;
-                return;
-            }
+            m_PlanningAgentObject = GetComponent<SemanticObject>();
+            m_PlannerScheduler = systemsProvider.PlannerScheduler;
+            m_StateConverter = systemsProvider.StateConverter;
+            m_PlanExecutor = systemsProvider.PlanExecutor;
+            m_PlanExecutor.SetExecutionSettings(this, m_ActionExecuteInfos, m_ExecutionSettings, OnActionComplete, OnTerminalStateReached, OnUnexpectedState);
 
-            m_PlanningAgent = GetComponent<SemanticObject>();
-            m_PlanExecutor.Initialize(this, m_ProblemDefinition, m_ActionExecuteInfos);
-            m_PlanExecutor.SetExecutionSettings(m_ExecutionSettings, OnActionComplete, OnTerminalStateReached, OnUnexpectedState);
-
-            m_PlannerScheduler = m_PlanExecutor.PlannerScheduler;
-            if (m_PlannerScheduler == null)
-            {
-                Debug.LogError($"No planning scheduler was found.");
-                enabled = false;
-                return;
-            }
-
-            m_StateConverter = m_PlanExecutor.StateConverter;
-            if (m_StateConverter == null)
-            {
-                Debug.LogError($"No domain data was found.");
-                enabled = false;
-                return;
-            }
+            Initialized = true;
 
             // Query for initial state and plan
             var initialState = CreateNewStateFromWorldQuery();
             m_PlannerScheduler.RequestPlan(initialState, null, m_PlannerSettings);
             m_PlanExecutor.SetPlan(m_CurrentPlanRequest.Plan);
             m_PlanExecutor.UpdateCurrentState(initialState);
-
-            Initialized = true;
         }
 
         /// <summary>
@@ -250,13 +229,11 @@ namespace Unity.AI.Planner.Controller
         /// Updates execution of the plan. If the plan execution criteria are satisfied, the executor will enact the
         /// next action of the plan.
         /// </summary>
-        public void UpdateExecutor()
+        /// <param name="forceAct">Force the execution of the next action in the plan.</param>
+        public void UpdateExecutor(bool forceAct = false)
         {
-            // Complete previous jobs and set new auto-complete frame
-            m_PlannerScheduler.CurrentJobHandle.Complete();
-
             // Update executor
-            if (m_PlanExecutor.ReadyToAct())
+            if (forceAct || m_PlanExecutor.ReadyToAct())
                 m_PlanExecutor.ExecuteNextAction();
         }
 
@@ -331,7 +308,7 @@ namespace Unity.AI.Planner.Controller
                 UpdateScheduler();
         }
 
-        IActionExecutionInfo GetExecutionInfo(string actionName)
+        ActionExecutionInfo GetExecutionInfo(string actionName)
         {
             for (int i = 0; i < m_ActionExecuteInfos.Length; i++)
             {
@@ -392,7 +369,7 @@ namespace Unity.AI.Planner.Controller
 
             var traitBasedObjects = GetTraitBasedObjects();
             var stateKey = m_StateConverter.CreateState(
-                m_PlanningAgent ? m_PlanningAgent.Entity : default,
+                m_PlanningAgentObject ? m_PlanningAgentObject.Entity : default,
                 traitBasedObjects.Select(o => o.Entity)); // Ids are maintained
 
             return stateKey;

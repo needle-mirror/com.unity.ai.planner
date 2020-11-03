@@ -1,14 +1,14 @@
 {
   "name": "com.unity.ai.planner",
   "displayName": "AI Planner",
-  "version": "0.2.4-preview.1",
+  "version": "0.2.4-preview.2",
   "unity": "2020.1",
   "unityRelease": "2f1",
   "description": "The AI Planner includes authoring tools and a system for automated decision-making.\r\n\r\nAutomated planners are useful for:\r\n▪ Directing agent behavior either in a cooperative, neutral, or adversarial capacity\r\n▪ Auto-generating storylines or as an online story manager\r\n▪ Validating game design mechanics\r\n▪ Assisting in creating tutorials\r\n▪ Automated testing\r\n\r\nStart by defining a domain definition of traits/enumerations. Then, create action definitions for what actions are possible in the domain. Once the planning problem is defined, the planner system will iteratively build a plan that converges to an optimal solution. Execute these plans by adding a decision controller to your agent.",
   "dependencies": {
-    "com.unity.entities": "0.14.0-preview.18",
+    "com.unity.entities": "0.16.0-preview.21",
     "com.unity.playablegraph-visualizer": "0.2.1-preview.3",
-    "com.unity.ai.traits": "0.2.4-preview"
+    "com.unity.semantic.traits": "0.2.7-preview"
   },
   "keywords": [
     "ai",
@@ -17,11 +17,11 @@
     "plan"
   ],
   "upmCi": {
-    "footprint": "aafe631bfa9c0298235606acc458977dd925824b"
+    "footprint": "ca1ed470404df3c9616aa9ee7ab64664e92be4c4"
   },
   "repository": {
     "url": "https://github.com/Unity-Technologies/com.unity.ai.planner.git",
     "type": "git",
-    "revision": "ff846800de3b77647b9e02d2eae41cde8daa59c4"
+    "revision": "3cb13ba41b17ddaf60c37d5e2368863a0b8bfb91"
   }
 }

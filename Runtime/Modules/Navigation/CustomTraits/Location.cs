@@ -137,6 +137,12 @@ namespace Generated.Semantic.Traits
             Transform = gameObject.transform;
         }
 
+        /// <summary>
+        /// Converts and assigns the monobehaviour trait component data to the entity representation.
+        /// </summary>
+        /// <param name="entity">The entity on which the trait data is to be assigned.</param>
+        /// <param name="destinationManager">The entity manager for the given entity.</param>
+        /// <param name="_">An unused GameObjectConversionSystem parameter, needed for IConvertGameObjectToEntity.</param>
         public void Convert(Entity entity, EntityManager destinationManager, GameObjectConversionSystem _)
         {
             m_Entity = entity;

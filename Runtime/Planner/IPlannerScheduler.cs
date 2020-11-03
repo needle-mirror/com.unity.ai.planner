@@ -6,7 +6,7 @@ namespace Unity.AI.Planner
     /// <summary>
     /// Interface marking an implementation of the planner scheduler.
     /// </summary>
-    interface IPlannerScheduler
+    public interface IPlannerScheduler
     {
         /// <summary>
         /// The current plan request for which the planning jobs are scheduled.
@@ -27,6 +27,20 @@ namespace Unity.AI.Planner
         /// </summary>
         /// <param name="newRootState">The key for the new root state of the plan.</param>
         void UpdatePlanRequestRootState(IStateKey newRootState);
+
+        /// <summary>
+        /// Assigns the state termination evaluator to be used by the planner. This procedure will reset the current plan.
+        /// </summary>
+        /// <param name="evaluator">The instance of the state termination evaluator to be used.</param>
+        /// <typeparam name="TEvaluator">The type of termination evaluator. If an incorrect type is used, an error will be logged.</typeparam>
+        void SetTerminationEvaluator<TEvaluator>(TEvaluator evaluator) where TEvaluator : struct, ITerminationEvaluator;
+
+        /// <summary>
+        /// Assigns the cumulative reward estimator  to be used by the planner. This procedure will reset the current plan.
+        /// </summary>
+        /// <param name="estimator">The instance of the cumulative reward estimator to be used.</param>
+        /// <typeparam name="TEstimator">The type of cumulative reward estimator.  If an incorrect type is used, an error will be logged.</typeparam>
+        void SetCumulativeRewardEstimator<TEstimator>(TEstimator estimator) where TEstimator : struct, ICumulativeRewardEstimator;
 
         /// <summary>
         /// The job handle for the current planning jobs.

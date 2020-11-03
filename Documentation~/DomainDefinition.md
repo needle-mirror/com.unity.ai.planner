@@ -18,8 +18,12 @@ The trait-based domain language supports most basic data types, such as int, flo
 
 ## Traits
 
-Traits are the fundamental data that represent your game/simulation. Each trait specifies a quality which objects can possess, such as the ability to be carried or to be used as a weapon. Each trait is composed of properties which reflect attributes specific to each trait. For example, consider creating a trait "Cell" which marks objects in a Match3 game that are cells. Such a trait may possess a property "Type" (utilizing a CellType enumeration), which denotes the color of the cell. In this way, traits are defined by:
+Traits are the fundamental data that represent your game/simulation. Each trait specifies a quality which objects can possess, such as the ability to be carried or to be used as a weapon. Traits are composed of properties which reflect attributes specific to each trait. For example, consider a trait "Cell" which marks objects in a Match3 game that are cells. Such a trait may possess a property "Type" (utilizing a CellType enumeration), which denotes the color of the cell. In this way, traits are defined by:
 * A name
 * A list of named properties with types and default values
 
 ![Image](images/Traits.png)
+
+## Generating Code
+
+Once your traits have been defined, you will need to generate code for the component and data representations. To trigger this step, use the build command from the Semantic menu (Semantic -> Traits -> Build). 

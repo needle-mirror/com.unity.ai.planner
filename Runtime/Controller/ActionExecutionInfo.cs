@@ -7,8 +7,11 @@ using UnityEngine;
 
 namespace Unity.AI.Planner.Controller
 {
+    /// <summary>
+    /// Serialized data pertaining to the execution of plan actions.
+    /// </summary>
     [Serializable]
-    class ActionExecutionInfo : IActionExecutionInfo
+    public class ActionExecutionInfo
     {
 #pragma warning disable 0649
         [SerializeField]
@@ -34,7 +37,15 @@ namespace Unity.AI.Planner.Controller
 
         MethodInfo m_methodInfo;
 
-        public PlanExecutorStateUpdateMode PlanExecutorStateUpdateMode => m_PlanExecutorStateUpdateMode;
+        /// <summary>
+        /// An enum defining whether the plan executor should be updated with world state data or with the predicted
+        /// state from the current plan.
+        /// </summary>
+        public PlanExecutorStateUpdateMode PlanExecutorStateUpdateMode
+        {
+            get => m_PlanExecutorStateUpdateMode;
+            set => m_PlanExecutorStateUpdateMode = value;
+        }
 
         MethodInfo MethodInfo
         {
@@ -50,12 +61,12 @@ namespace Unity.AI.Planner.Controller
             }
         }
 
-        public bool IsValidForAction(string actionName)
+        internal bool IsValidForAction(string actionName)
         {
             return actionName == m_ActionName;
         }
 
-        public Type GetParameterType(int parameterIndex)
+        internal Type GetParameterType(int parameterIndex)
         {
             var method = MethodInfo;
             if (method == null)
@@ -73,12 +84,12 @@ namespace Unity.AI.Planner.Controller
             return parameters[parameterIndex].ParameterType;
         }
 
-        public IEnumerable<string> GetArgumentValues()
+        internal IEnumerable<string> GetArgumentValues()
         {
             return m_Arguments.Select(a => a.ToString());
         }
 
-        public object InvokeMethod(object[] arguments)
+        internal object InvokeMethod(object[] arguments)
         {
             return MethodInfo?.Invoke(m_Source, arguments);
         }

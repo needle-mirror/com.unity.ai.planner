@@ -3,26 +3,30 @@ using System.Collections.Generic;
 using KeyDomain;
 using NUnit.Framework;
 using Unity.AI.Planner.Traits;
+using Unity.Entities;
 using UnityEngine;
 using UnityEngine.TestTools;
 
 namespace Unity.AI.Planner.Tests.Integration
 {
-    using KeyDomainBaseExecutor = BaseTraitBasedPlanExecutor<TraitBasedObject,StateEntityKey,StateData,StateDataContext,ActionScheduler,DefaultCumulativeRewardEstimator<StateData>,DefaultTerminalStateEvaluator<StateData>,StateManager,ActionKey,DestroyStatesJobScheduler>;
+    using KeyDomainBaseExecutor = BaseTraitBasedPlanExecutor<TraitBasedObject,StateEntityKey,StateData,StateDataContext,StateManager,ActionKey>;
     using KeyDomainScheduler = PlannerScheduler<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext, ActionScheduler, TestManualOverrideCumulativeRewardEstimator<StateData>, TestManualOverrideTerminationEvaluator<StateData>, DestroyStatesJobScheduler>;
 
     class PlanExecutorTests
     {
         class MockKeyDomainPlanExecutor : KeyDomainBaseExecutor
         {
-            public StateManager StateManager => m_StateManager;
-
             public PlanWrapper<StateEntityKey, ActionKey, StateManager, StateData, StateDataContext> Plan => m_PlanWrapper;
+
+            public MockKeyDomainPlanExecutor(StateManager stateManager)
+            {
+                m_StateManager = stateManager;
+            }
 
             public override string GetActionName(IActionKey actionKey) =>
                 ActionScheduler.s_ActionGuidToNameLookup[((IActionKeyWithGuid)actionKey).ActionGuid];
 
-            public override IActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey) => null;
+            public override ActionParameterInfo[] GetActionParametersInfo(IStateKey stateKey, IActionKey actionKey) => null;
 
             protected override void Act(ActionKey actionKey) { }
         }
@@ -32,18 +36,22 @@ namespace Unity.AI.Planner.Tests.Integration
         MockKeyDomainPlanExecutor m_Executor;
         StateManager m_StateManager;
         KeyDomainScheduler m_Scheduler;
+        MonoBehaviour m_Actor;
 
         [SetUp]
         public void SetUp()
         {
-            m_Executor = new MockKeyDomainPlanExecutor();
-            m_Executor.Initialize(new GameObject("TestGameObject").AddComponent<MockMonoBehaviour>(), ScriptableObject.CreateInstance<ProblemDefinition>(), null);
-            m_StateManager = m_Executor.StateManager;
+            var world = new World("TestWorld");
+            m_StateManager = world.GetOrCreateSystem<StateManager>();
+            world.GetOrCreateSystem<SimulationSystemGroup>().AddSystemToUpdateList(m_StateManager);
 
+            KeyDomainUtility.Initialize(world);
+            m_Actor = new GameObject("TestGameObject").AddComponent<MockMonoBehaviour>();
+            m_Executor = new MockKeyDomainPlanExecutor(m_StateManager);
+            m_Executor.SetExecutionSettings(m_Actor, null, default);
             m_Scheduler = new KeyDomainScheduler();
-            m_Scheduler.Initialize(m_StateManager, terminationEvaluator: default);
+            m_Scheduler.Initialize(m_StateManager);
 
-            KeyDomainUtility.Initialize(m_StateManager.World);
         }
 
         [TearDown]
@@ -82,7 +90,7 @@ namespace Unity.AI.Planner.Tests.Integration
             var nextState = GetNextPlanState(plan.RootStateKey, GetOptimalAction(plan, plan.RootStateKey));
 
             // Assert we reach the correct terminal state in callback
-            m_Executor.SetExecutionSettings(default, onTerminalStateReached: (state) => Assert.AreEqual(nextState, state));
+            m_Executor.SetExecutionSettings(m_Actor, null, default, onTerminalStateReached: (state) => Assert.AreEqual(nextState, state));
 
             // Execute
             m_Executor.UpdateCurrentState(KeyDomainUtility.InitialStateKey);
@@ -90,6 +98,28 @@ namespace Unity.AI.Planner.Tests.Integration
             m_Executor.UpdateCurrentState(nextState);
 
             Assert.AreEqual(PlanExecutionStatus.AwaitingPlan, m_Executor.Status);
+        }
+
+        [Test]
+        public void ExecutorWithManualExecutionMode_WithCompletePlan_IsNotReadyToAct()
+        {
+            // Force terminal evaluation.
+            m_Scheduler.Dispose();
+            m_Scheduler = new KeyDomainScheduler();
+            m_Scheduler.Initialize(m_StateManager, terminationEvaluator: new TestManualOverrideTerminationEvaluator<StateData> { TerminationReturnValue = true });
+
+            // Initiate query
+            var query = m_Scheduler.RequestPlan(KeyDomainUtility.InitialStateKey).PlanUntil(maximumUpdates: 1);
+
+            // Schedule single iteration
+            m_Scheduler.Schedule(default);
+            m_Scheduler.CurrentJobHandle.Complete();
+
+            // Set plan and grab next state
+            m_Executor.SetPlan(query.Plan);
+            m_Executor.SetExecutionSettings(m_Actor, null, new PlanExecutionSettings { ExecutionMode = PlanExecutionSettings.PlanExecutionMode.WaitForManualExecutionCall});
+
+            Assert.IsFalse(m_Executor.ReadyToAct(), "Executor call of ReadyToAct() with mode PlanExecutionMode.WaitForManualExecutionCall should return false.");
         }
 
         [Test]
@@ -140,7 +170,7 @@ namespace Unity.AI.Planner.Tests.Integration
 
             // Set unexpected state callback
             var triggered = false;
-            m_Executor.SetExecutionSettings(default, onUnexpectedState: (state) => triggered = true);
+            m_Executor.SetExecutionSettings(m_Actor, null, default, onUnexpectedState: (state) => triggered = true);
 
             // Execute
             m_Executor.UpdateCurrentState(KeyDomainUtility.InitialStateKey);
@@ -170,7 +200,7 @@ namespace Unity.AI.Planner.Tests.Integration
 
             // Set unexpected state callback
             var triggered = false;
-            m_Executor.SetExecutionSettings(default, onUnexpectedState: (state) => triggered = true);
+            m_Executor.SetExecutionSettings(m_Actor, null, default, onUnexpectedState: (state) => triggered = true);
 
             // Execute
             m_Executor.UpdateCurrentState(m_StateManager.CopyState(KeyDomainUtility.InitialStateKey));

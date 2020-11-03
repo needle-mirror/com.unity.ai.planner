@@ -23,13 +23,7 @@ or
 [X.Y.Z] - date
  -->
 
-## [Unreleased]
-
-### Added
-
-* 
-
-## [0.2.4-preview.1] - 2020-09-14
+## [0.2.4-preview.2] - 2020-11-03
 
 ### Added
 * List support (fixed size) in `ActionDefinition`: Contains, Length, Clear, `=`, `+=`, `-=`
@@ -37,13 +31,14 @@ or
 * PlanningAgent trait to allow distinguishing between the entity the agent is on from other agents in action definitions
 * Search to Plan Visualizer for filtering state data
 * Support for a custom named "AI.Shared" AsmDef to be created to allow for additional dependencies; AI.Planner.Custom will utilize this as a dependency 
+* Experimental C# API, allowing access to the planning modules 
 
 ### Changed
 * `TraitDefinition` and `EnumDefinition` are now part of a separate AI Traits package that the AI Planner uses
 * `SemanticObject` component replaces the `TraitComponent` (deprecated)
 * Individual traits are now separate authoring components that can be added to GameObjects
 * Minimum Unity version is now 2020.1.2f
-* Entities dependency updated to version 0.14.0-preview.18
+* Entities dependency updated to version 0.16.0-preview.21
 * World queries are now handled through a SemanticQuery component from the Traits package (assigned on the DecisionController)
 * UnityEngine.* namespaces renamed to Unity.*
 * Planning jobs now allocate less memory during execution
@@ -55,6 +50,10 @@ or
 * Items in the namespace "Unity.AI.Planner.DomainLanguage.TraitBased" have been moved to "Unity.AI.Planner.Traits"
 * "Subgraph complete" has been refactored to "subplan is complete"
 * `PlanDefinition` assets are now `ProblemDefinition` assets
+
+### Fixed
+
+* The execution mode for "WaitForManualExecutionCall" will now prevent the DecisionController from automatically executing actions until `DecisionController.UpdateExecutor(forceAct: true)` is called.
 
 ### Removed
 * Scriban removed as a package dependency (though still a dependency of Traits)

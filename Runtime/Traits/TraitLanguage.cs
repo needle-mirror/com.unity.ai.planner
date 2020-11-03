@@ -196,7 +196,7 @@ namespace Unity.AI.Planner.Traits
         public override string ToString()
         {
 #if DEBUG
-            return $"{Name} ({Id})";
+            return $"{Name} (ID={Id})";
 #else
             return $"Object ({Id})";
 #endif

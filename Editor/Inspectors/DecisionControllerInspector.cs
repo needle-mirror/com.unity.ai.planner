@@ -231,20 +231,19 @@ namespace UnityEditor.AI.Planner.Editors
 
                 if (!queryProperty.objectReferenceValue)
                 {
-                    var source = ((DecisionController)target).GetComponent<SemanticObject>();
-
-                    if (source.gameObject.GetComponent<SemanticQuery>() != null)
+                    var source = ((DecisionController)target).gameObject;
+                    if (source.GetComponent<SemanticQuery>() != null)
                     {
                         if (GUILayout.Button("Assign", EditorStyles.miniButtonMid, GUILayout.Width(45)))
                         {
-                            queryProperty.objectReferenceValue = source.gameObject.GetComponent<SemanticQuery>();
+                            queryProperty.objectReferenceValue = source.GetComponent<SemanticQuery>();
                         }
                     }
                     else
                     {
                         if (GUILayout.Button("Add", EditorStyles.miniButtonMid, GUILayout.Width(35)))
                         {
-                            var newQuery = source.gameObject.AddComponent<SemanticQuery>();
+                            var newQuery = source.AddComponent<SemanticQuery>();
                             queryProperty.objectReferenceValue = newQuery;
                         }
                     }

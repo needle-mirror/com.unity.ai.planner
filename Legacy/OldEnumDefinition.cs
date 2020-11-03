@@ -6,7 +6,6 @@ using System.Linq;
 using Unity.AI.Planner;
 using Unity.AI.Planner.Utility;
 using Unity.Semantic.Traits;
-using Unity.DynamicStructs;
 using Unity.Semantic.Traits.Utility;
 using UnityEditor;
 
@@ -43,9 +42,16 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
         [ContextMenu("Convert")]
         void Convert()
         {
-            var definition = DynamicStruct.Create<EnumDefinition>();
+			var definition = ScriptableObject.CreateInstance<EnumDefinition>();
 
-            // Have to save the asset before adding properties to it
+            var id = 0;
+            var values = new List<EnumElementDefinition>();
+            foreach (var field in m_Values)
+            {
+                values.Add(new EnumElementDefinition(field, id++));
+            }
+            definition.Elements = values;
+
             var assetPath = AssetDatabase.GetAssetPath(this);
             var directory = Path.Combine(Path.GetDirectoryName(assetPath), "New");
             var fileName = Path.GetFileName(assetPath);
@@ -53,11 +59,6 @@ namespace UnityEngine.AI.Planner.DomainLanguage.TraitBased
             var newPath = Path.Combine(directory, fileName);
             Directory.CreateDirectory(directory);
             AssetDatabase.CreateAsset(definition, newPath);
-
-            foreach (var field in m_Values)
-            {
-                definition.CreateProperty<string>(field);
-            }
         }
 
         const string k_BuildMenuTitle = "AI/Planner/Upgrader/1. Convert Old Enums to New";
