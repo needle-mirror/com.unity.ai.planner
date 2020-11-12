@@ -23,8 +23,11 @@ or
 [X.Y.Z] - date
  -->
 
-## [0.2.4-preview.2] - 2020-11-03
+## [0.2.4-preview.3] - 2020-11-12
+### Fixed
+* Code generation for problem definitions using the default reward estimator now emits correct code
 
+## [0.2.4-preview.2] - 2020-11-03
 ### Added
 * List support (fixed size) in `ActionDefinition`: Contains, Length, Clear, `=`, `+=`, `-=`
 * Temporary converters for convenience to convert old assets to new assets (will be removed in a future version)

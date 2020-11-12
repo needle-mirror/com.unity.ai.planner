@@ -269,14 +269,14 @@ namespace UnityEditor.AI.Planner.CodeGen
 
         void GenerateSystemsProvider(ProblemDefinition definition, string planName, string outputPath)
         {
-            var customHeuristic = definition.CustomCumulativeRewardEstimator;
-            var heuristicTypeName = string.IsNullOrEmpty(customHeuristic) ? "DefaultHeuristic" : $"global::{customHeuristic}";
+            var customCumulativeRewardEstimator = definition.CustomCumulativeRewardEstimator;
+            var rewardEstimatorTypeName = string.IsNullOrEmpty(customCumulativeRewardEstimator) ? "DefaultCumulativeRewardEstimator" : $"global::{customCumulativeRewardEstimator}";
 
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateSystemsProvider, new
             {
                 @namespace = $"{TypeHelper.PlansQualifier}.{planName}",
                 plan_name = definition.Name,
-                heuristic = heuristicTypeName,
+                heuristic = rewardEstimatorTypeName,
                 state_representation_qualifier = TypeHelper.StateRepresentationQualifier
             });
 
