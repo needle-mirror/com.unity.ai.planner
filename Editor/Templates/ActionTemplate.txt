@@ -111,9 +111,10 @@ namespace {{ namespace }}
                 {{- for c in precondition_list }}
                 {{ if param_index == c.loop_index }}
                 {{- if c.is_list_method }}
-                if (!({{ c.operand_a }}{{ c.operator }}({{ c.operand_b }})))
+                var {{ p.name }}{{ for.index }}List = {{ c.operand_a }};
+                if ({{- if !c.inverse_condition }}!{{- end }}({{ p.name }}{{ for.index }}List{{ c.operator }}({{ c.operand_b }})))
                 {{- else }}
-                if (!({{ c.operand_a }} {{ c.operator }} {{ c.operand_b }}))
+                if ({{- if !c.inverse_condition }}!{{- end }}({{ c.operand_a }} {{ c.operator }} {{ c.operand_b }}))
                 {{- end }}
                     continue;
                 {{- end }}

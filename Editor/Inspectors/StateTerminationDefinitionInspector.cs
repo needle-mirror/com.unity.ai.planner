@@ -42,21 +42,8 @@ namespace UnityEditor.AI.Planner.Editors
 
         public override void OnInspectorGUI()
         {
-            var terminalStateDefinition = (StateTerminationDefinition) target;
-            var assetPath = AssetDatabase.GetAssetPath(terminalStateDefinition);
-            var assetOnDisk = !string.IsNullOrEmpty(assetPath);
-            var editable = !assetOnDisk || AssetDatabaseUtility.IsEditable(assetPath);
-
-            if (!editable)
-            {
-                EditorGUILayout.HelpBox(
-                    "This file is currently read-only. You probably need to check it out from version control.",
-                    MessageType.Info);
-            }
-
             EditorGUILayout.Separator();
 
-            GUI.enabled = editable;
             serializedObject.Update();
 
             var parametersProperty = serializedObject.FindProperty("m_Parameters");
@@ -101,7 +88,6 @@ namespace UnityEditor.AI.Planner.Editors
                     GUILayout.Space(EditorStyleHelper.subHeaderPaddingBottom);
                 }
             }
-
 
             serializedObject.ApplyModifiedProperties();
 

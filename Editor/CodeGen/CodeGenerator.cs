@@ -137,11 +137,15 @@ namespace UnityEditor.AI.Planner.CodeGen
                         })
                     });
 
+            int numTraits = traits.Count();
+            int traitsAlignmentSize = ((numTraits + 3) / 4) * 4;
+
             var result = m_CodeRenderer.RenderTemplate(PlannerResources.instance.TemplateStateRepresentation, new
             {
                 @namespace = $"{TypeHelper.StateRepresentationQualifier}.{problemDefinition.Name}",
                 trait_list = traits,
-                num_traits = traits.Count()
+                num_traits = numTraits,
+                alignment_size = traitsAlignmentSize
             });
 
             SaveToFile(Path.Combine(outputPath, TypeHelper.StateRepresentationQualifier, problemDefinition.Name, "PlanStateRepresentation.cs"), result);
@@ -299,6 +303,7 @@ namespace UnityEditor.AI.Planner.CodeGen
             var preconditions = traitPreconditionList.Select(p => new
             {
                 @operator = p.Operator.Contains("contains") ? ".Contains" : p.Operator,
+                inverse_condition = p.Operator.Contains("!contains"),
                 operand_a = GetPreconditionOperandString(p.OperandA, p.Operator, parameterNames),
                 operand_b = GetPreconditionOperandString(p.OperandB, p.Operator, parameterNames),
                 is_list_method = p.OperandA.Trait != null && p.OperandA.TraitProperty != null
@@ -603,8 +608,6 @@ namespace UnityEditor.AI.Planner.CodeGen
                 {
                     if (IsComparisonOperator(@operator))
                         precondition += ".Length";
-                    else if (@operator == "!contains")
-                        precondition = "!" + precondition;
                 }
             }
 

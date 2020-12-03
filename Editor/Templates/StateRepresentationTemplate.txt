@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Unity.AI.Planner;
 using Unity.AI.Planner.Traits;
 using Unity.AI.Planner.Jobs;
@@ -43,7 +44,8 @@ namespace {{ namespace }}
         }
     }
 
-    public struct TraitBasedObject : ITraitBasedObject
+    [StructLayout(LayoutKind.Sequential, Size={{ alignment_size }})]
+    public struct TraitBasedObject : ITraitBasedObject, IEquatable<TraitBasedObject>
     {
         public int Length => {{ num_traits }};
 
@@ -159,6 +161,36 @@ namespace {{ namespace }}
             }
 
             return true;
+        }
+
+        public bool Equals(TraitBasedObject other)
+        {
+            {{~ for trait in trait_list }}
+                {{- if for.index == 0 }}
+                return {{trait.name}}Index == other.{{trait.name}}Index
+                {{- else }} && {{trait.name}}Index == other.{{trait.name}}Index
+                {{- end }}
+            {{- end }};
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is TraitBasedObject other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                {{~ for trait in trait_list }}
+                    {{- if for.index == 0 }}
+                    var hashCode = {{trait.name}}Index.GetHashCode();
+                    {{ else }}
+                     hashCode = (hashCode * 397) ^ {{trait.name}}Index.GetHashCode();
+                    {{- end }}
+                {{- end }}
+                return hashCode;
+            }
         }
     }
 

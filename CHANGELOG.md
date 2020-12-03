@@ -23,6 +23,22 @@ or
 [X.Y.Z] - date
  -->
 
+## [0.3.0-preview.1] - 2020-12-03
+### Added
+
+* Assembly attributes for preserving and linking package assemblies
+
+### Fixed
+
+* Code generation for actions using contains operator on list properties
+* Fix remove trait effect on actions when Burst is enabled
+* Fix crashes due to improper memory alignment on certain Android devices
+* Fix crash when editing actions while using Perforce
+
+### Removed
+
+* Unnecessary warning when assets are not checked-out
+
 ## [0.2.4-preview.3] - 2020-11-12
 ### Fixed
 * Code generation for problem definitions using the default reward estimator now emits correct code

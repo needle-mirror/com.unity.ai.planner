@@ -11,7 +11,7 @@ Automated planners are useful for:
 Start by defining a domain definition of traits/enumerations. Then, create action definitions for what actions are possible in the domain. Once the planning problem is defined, the planner system will iteratively build a plan that converges to an optimal solution. Execute these plans by adding a decision controller to your agent.
 
 ## Required Software
-Unity 2020.1
+Unity 2020.1  (Release 2f1 or later).
 
 ## Documentation
 Documentation for the AI Planner is available in [unpublished](Documentation~/index.md) and [published](https://docs.unity3d.com/Packages/com.unity.ai.planner@latest/) form.

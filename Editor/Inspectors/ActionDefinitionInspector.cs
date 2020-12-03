@@ -62,20 +62,6 @@ namespace UnityEditor.AI.Planner.Editors
 
         public override void OnInspectorGUI()
         {
-            var action = (ActionDefinition)target;
-            var assetPath = AssetDatabase.GetAssetPath(action);
-            var assetOnDisk = !string.IsNullOrEmpty(assetPath);
-            var editable = !assetOnDisk || AssetDatabaseUtility.IsEditable(assetPath);
-
-            if (!editable)
-            {
-                EditorGUILayout.HelpBox(
-                    "This file is currently read-only. You probably need to check it out from version control.",
-                    MessageType.Info);
-            }
-
-            GUI.enabled = editable;
-
             serializedObject.Update();
 
             EditorGUILayout.Space();
